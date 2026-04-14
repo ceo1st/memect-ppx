@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "docx-preview": "^0.3.2",
+    "monaco-editor": "^0.50.0"
+    
+  }
+}

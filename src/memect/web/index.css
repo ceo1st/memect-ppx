@@ -1,0 +1,581 @@
+html,
+body {
+    border: none;
+    margin: 0px;
+    padding: 0px;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.x-app {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    border: none;
+    display: grid;
+    grid-template-columns: auto 1fr;
+
+}
+
+.x-sidebar {
+    width: 250px;
+    height: 100%;
+    box-sizing: border-box;
+    border: none;
+    padding: 10px;
+    overflow-y: auto;
+    background-color: #e3e3e3;
+}
+
+.x-main {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid blue;*/
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.x-file {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid yellow;*/
+    overflow: hidden;
+
+}
+
+.x-file-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: gray;
+    font-size: 24px;
+}
+
+.x-result {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid salmon;*/
+    overflow: hidden;
+}
+
+.x-result-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: gray;
+    font-size: 24px;
+}
+
+.x-zip-viewer {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-zip-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    column-gap: 10px;
+    padding: 5px 10px;
+    background-color: #ddd;
+}
+
+.x-zip-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+
+}
+
+.x-code-viewer {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-code-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    row-gap: 10px;
+    padding: 0px 10px;
+}
+
+.x-code-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+
+}
+
+.x-ocr-viewer {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-ocr-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    background-color: #ddd;
+    /*border: 2px solid green;*/
+    display: flex;
+    flex-direction: row;
+    column-gap: 10px;
+    align-items: center;
+    padding: 5px 10px;
+}
+
+.x-ocr-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid rebeccapurple;*/
+    overflow: auto;
+    
+}
+
+
+
+.x-ocr-page-wrapper {
+    --scale:1;
+    margin: auto;
+    width: fit-content;
+    box-sizing: content-box;
+    padding: 10px;
+
+}
+
+.x-detect-viewer {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-detect-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    background-color: #ddd;
+    /*border: 2px solid green;*/
+    display: flex;
+    flex-direction: row;
+    column-gap: 10px;
+    align-items: center;
+    padding: 5px 10px;
+}
+
+.x-detect-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid rebeccapurple;*/
+    overflow: auto;
+    
+}
+
+
+
+.x-detect-page-wrapper {
+    --scale:1;
+    margin: auto;
+    width: fit-content;
+    box-sizing: content-box;
+    padding: 10px;
+
+}
+
+
+
+
+.x-pdf-viewer {
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.x-pdf-viewer iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.x-pdf-viewer embed {
+    width: 100%;
+    height: 100%;
+    border: none;
+    box-sizing: border-box;
+
+
+}
+
+
+
+.x-image-viewer {
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-image-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 10px;
+    background-color: #ddd;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    column-gap: 10px;
+}
+
+.x-image-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    display: flex;
+    justify-content: center;
+
+
+}
+
+.x-image-body img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    box-sizing: border-box;
+    object-fit: scale-down;
+}
+
+.x-image-body img:hover {
+    outline: 1px solid dashed yellow;
+}
+
+.x-text-viewer {
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-text-toolbar {
+    display: flex;
+    flex-direction: row;
+    column-gap: 10px;
+    padding: 5px 10px;
+    background-color: antiquewhite;
+    align-items: center;
+}
+
+.x-text-toolbar>label {
+    display: flex;
+    align-items: center;
+}
+
+.x-text-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    box-sizing: border-box;
+}
+
+.x-docx-viewer {
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+.x-docx-toolbar{
+    width: 100%;
+    box-sizing: border-box;
+    background-color: #ddd;
+    /*border: 2px solid green;*/
+    display: flex;
+    flex-direction: row;
+    column-gap: 10px;
+    align-items: center;
+    padding: 5px 10px;
+}
+.x-docx-body{
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: none;
+    overflow: auto;
+    box-sizing: border-box;
+    background-color: gray;
+}
+.x-docx-body .docx-wrapper{
+    /*需要补充下面的支持区域太小的时候显示友好一点*/
+    width: max-content;
+    box-sizing: border-box;
+    margin: auto;
+}
+
+
+.x-api {
+    width: 100%;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 10px;
+    row-gap: 5px;
+}
+
+
+
+.x-api-item-label {
+    cursor: help;
+    text-decoration: none;
+    color: black;
+}
+
+.x-api-item-tooltip {
+    color: gray;
+    font-size: 12px;
+}
+
+.x-task{
+    display: flex;
+    flex-direction: column;
+    row-gap: 5px;
+}
+
+.x-params {
+    width: 100%;
+    height: 100%;
+    /*border: 4px solid green;*/
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.x-params-toolbar{
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    column-gap: 10px;
+}
+.x-params-body{
+    flex:1;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid gray;*/
+    display: flex;
+    flex-direction: row;
+}
+
+.x-index{
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid red;*/
+
+}
+
+.x-preview{
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    /*border: 2px solid black;*/
+    display: flex;
+    flex-direction: row;
+}
+
+.x-preview-spliter{
+    height: 100%;
+    background-color: #d3d3d3;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    row-gap: 10px;
+}
+.x-preview-spliter > button{
+    font-size: 12px;
+}
+
+/*==================== x-ocr-page  ==========================*/
+
+.x-ocr-page {
+    display: block;
+    position: relative;
+
+    --span-color: grey;
+    --span-hover-color: blue;
+}
+
+.x-ocr-page-span {
+    display: block;
+    outline: 1px solid yellow;
+    box-sizing: border-box;
+    position: absolute;
+    text-wrap: nowrap;
+    font-family: 'Courier New', Courier, monospace;
+    white-space: pre;
+    word-break: keep-all;
+    line-height: 1em;
+    color: var(--span-color);
+}
+
+.x-ocr-page-span:hover {
+    outline: 1px dashed red;
+    color: var(--span-hover-color);
+}
+
+.x-ocr-page-bg .x-ocr-page-span {
+    /*显示了图片，文字颜色透明，且hover不改变颜色*/
+    color:transparent;
+}
+.x-ocr-page-bg .x-ocr-page-span:hover{
+    color:var(--span-hover-color);
+    background-color: #ffffff;
+}
+
+/*==================== x-detect-page  ==========================*/
+
+.x-detect-page {
+    display: block;
+    position: relative;
+
+    --span-color: grey;
+    --span-hover-color: blue;
+}
+
+.x-detect-page-object {
+    display: block;
+    outline: 2px solid yellow;
+    box-sizing: border-box;
+    position: absolute;
+    text-wrap: nowrap;
+    font-family: 'Courier New', Courier, monospace;
+    white-space: pre;
+    word-break: keep-all;
+    font-size: 10px;
+    color: var(--span-color);
+}
+
+.x-detect-page-object:hover {
+    outline: 2px dashed red;
+    color: var(--span-hover-color);
+    z-index: 1;
+}
+
+.x-detect-page-object:hover > span {
+    background-color: #d3d3d3;
+    color: blue;
+}
+
+.x-detect-page-bg  {
+
+}
+
+/*======json viewer*/
+.x-json-viewer {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.x-json-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    row-gap: 10px;
+    padding: 0px 10px;
+}
+
+.x-json-body {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+
+}
+
+/*===============jsondialog============*/
+#jsoneditor-dialog {
+    width: 500px;
+    height: 600px;
+    resize: auto;
+    min-width: 200px;
+    min-height: 200px;
+}
+
+.x-jsoneditor-wrapper {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    row-gap: 10px;
+    overflow: hidden;
+}
+
+.x-jsoneditor {
+    flex: 1px;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.jsoneditor {
+    /*提供这个的目的是修正jsoneditor的显示一个bug，状态栏的位置错位了*/
+    display: flex;
+    flex-direction: column;
+}
+
+/*===========================================*/
