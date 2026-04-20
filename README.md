@@ -291,10 +291,14 @@ uv pip install memect-ppx
 uv pip install onnxruntime --no-config
 uv pip install opencv-contrib-python --no-config   # or opencv-contrib-python-headless
 
+
 # GPU (CUDA) build
 uv pip install memect-ppx[cuda]
 uv pip install onnxruntime-gpu --no-config
 uv pip install opencv-contrib-python --no-config
+
+ppx --help
+ppx parse document.pdf -o output/
 ```
 
 > **Why install `onnxruntime` and `opencv` manually?**
