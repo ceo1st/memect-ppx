@@ -20,7 +20,7 @@
 !/CONTRIBUTING.md
 !/THIRD_PARTY_LICENSES.md
 !/NOTICE
-
+!.github
 
 **/.DS_Store
 **/__pycache__/**
