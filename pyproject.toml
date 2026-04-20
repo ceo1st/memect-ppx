@@ -12,9 +12,7 @@ readme = "README.md"
 license = "Apache-2.0"
 dynamic = ["version"]
 requires-python = ">= 3.12"
-classifiers = [
-    "License :: OSI Approved :: Apache Software License",
-]
+classifiers = []
 dependencies = [
     "anyio>=4.12.1",
     "beautifulsoup4>=4.14.3",
