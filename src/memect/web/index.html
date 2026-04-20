@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCRApp</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+
+    <!-- 把依赖的包下载到本地部署，速度更快，但是git上不方便 -->
+    <script src="./libs/jszip/dist/jszip.min.js"></script>
+    <script src="https://unpkg.com/docx-preview@0.3.2/dist/docx-preview.js"></script>
+    <script src="https://unpkg.com/json5@2/dist/index.min.js"></script>
+    <script src="https://unpkg.com/vue@3.4.35/dist/vue.global.prod.js"></script>
+    <!-- element plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus"></script>
+
+    <!-- monaco editor -->
+    <!-- 本地部署的速度快，但是git上缺很不方便
+    <script src="./node_modules/monaco-editor/min/vs/loader.js"></script>
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+    <!-- index -->
+    <script src="./index.js"></script>
+    <link rel="stylesheet" href="./index.css">
+</head>
+
+<body>
+    <script src="./libs/pdfjs/build/pdf.mjs" type="module"></script>
+    <script type="module">
+        const { pdfjsLib } = globalThis
+        pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/build/pdf.worker.mjs';
+    </script>
+    <div id="app" class="x-app">
+        <x-sidebar></x-sidebar>
+        <div style="width: 100%;height: 100%;box-sizing: border-box;overflow: hidden;">
+            <x-params v-if="api.params.visible"></x-params>
+
+            <!-- 这两个需要保留滚动等状态的，使用v-show，否则使用v-else-if -->
+            <x-preview v-show="state.viewer.name=='preview' && !api.params.visible"></x-preview>
+            <x-index v-show="state.viewer.name=='index' && !api.params.visible"></x-index>
+            <!-- 不经常需要，使用v-if -->
+            <x-system v-if="state.viewer.name=='system' && !api.params.visible"></x-system>
+
+        </div>
+        <!--
+        <x-main v-show="!api.params.visible" :api="api" :pdf-viewer="pdfViewer" :viewer="viewer"></x-main>
+        <x-params v-show="api.params.visible" :api="api"></x-params>
+    -->
+    </div>
+
+    <!-- 大一些的组建在这里定义 -->
+    <template id="x-sidebar">
+        <div class="x-sidebar">
+            <div style="display: flex;flex-direction: row;column-gap: 10px;align-items: center;">
+                <div>PDF</div>
+                <select style="flex: 1;" v-model="state.pdfViewer">
+                    <option v-for="viewer in state.pdfViewers" :key="viewer" :value="viewer">{{viewer}}
+                    </option>
+                </select>
+                <div>显示</div>
+                <select style="flex:1" v-model="state.viewer">
+                    <option v-for="v in state.viewers" :key="v.name" :value="v">{{v.label}}</option>
+                </select>
+            </div>
+            <hr>
+            <x-api v-if="state.api"></x-api>
+            <hr>
+            <x-task v-if="state.api"></x-task>
+
+        </div>
+    </template>
+
+    <template id="x-api">
+        <div class="x-api">
+            <div>API</div>
+            <div style="width: 100%;">
+                <select style="width: 100%;" v-model="state.api" :disabled="api.disabled || api.params.visible">
+                    <option v-for="api in state.apis" :key="api.id" :value="api">{{api.model.url}}</option>
+                </select>
+            </div>
+            <!---->
+            <div>文件</div>
+            <div style="width: 100%;">
+                <input ref="file" type="file" style="display: none;" :accept="api.accept" @change="onSelectFile">
+                <button @click="onClickFile" :disabled="api.disabled" style="width:100%;box-sizing: border-box;"
+                    @drop.prevent="onDropFile" @dragover.prevent="onDragOver">选择文件或<br>拖动文件到这</button>
+                <div v-for="t in api.model.file.types" style="word-break: break-all;font-size: 12px;color:red">
+                    {{t.name}}:最大{{formatSize(t.max_length)}}
+                </div>
+                <template v-if="api.file">
+                    <div style="word-break: break-all;font-size: 12px;color: gray;">{{api.file.name}}
+                    </div>
+                    <div style="font-size: 12px;color:blue;">{{formatSize(api.file.size)}}</div>
+                    <hr>
+                </template>
+            </div>
+
+            <!---->
+            <template v-if="api.model.allow_form">
+                <div>form</div>
+                <div style="width: 100%;"><input type="checkbox" v-model="api.params.use_form" :disabled="api.disabled">
+                </div>
+            </template>
+
+            <template v-if="api.model.allow_async">
+                <div>async</div>
+                <div style="width: 100%;"><input type="checkbox" v-model="api.params.async" :disabled="api.disabled">
+                </div>
+            </template>
+            <!-- -->
+            <template v-if="api.model.allow_timeout">
+                <div>timeout</div>
+                <div style="width: 100%;"><input type="text" v-model="api.params.timeout" :disabled="api.disabled"
+                        style="width:100%;box-sizing: border-box;"></div>
+            </template>
+            <!-- -->
+            <template v-if="api.allow_task_id">
+                <div>task_id</div>
+                <div style="width: 100%;"><input type="text" v-model="api.params.task_id" :disabled="api.disabled"
+                        style="width:100%;box-sizing: border-box;"></div>
+            </template>
+            <!-- -->
+
+            <div>params</div>
+            <div style="width: 100%;display: flex;flex-direction: row;column-gap: 10px;">
+                <button :disabled="api.disabled"
+                    @click="api.params.visible=!api.params.visible">{{api.params.visible?'关闭':'设置'}}</button>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-task">
+        <div class="x-task">
+            <div style="display: flex;flex-direction: row;column-gap: 10px;align-items: center;">
+                <button @click="toggle" :disabled="!mayExecute">{{task.running?'取消':'执行'}}</button>
+                <span>{{task.status}}</span>
+            </div>
+            <div style="display: flex;flex-direction: column;">
+                <div style="font-size: 12px;color: gray;">上传:{{task.upload.loaded}}/{{task.upload.total}}
+                    耗时:{{formatElapsed(task.upload.elapsed)}}秒</div>
+                <div style="font-size: 12px;color: gray;">执行:{{formatElapsed(task.execute.elapsed)}}秒</div>
+                <div style="font-size: 12px;color: gray;">下载:{{task.download.loaded}}/{{api.task.download.total}}
+                    耗时:{{formatElapsed(task.download.elapsed)}}秒
+                </div>
+            </div>
+            <div v-if="task.status=='success'">
+                <a href="" download="" target="_blank" @click="download">下载</a></a>
+            </div>
+            <div v-else-if="task.status=='error'">
+                <div style="overflow-wrap: break-word;font-size: 12px;color: red;">{{task.error}}</div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-main">
+        <div class="x-main" :style="{'grid-template-columns':viewer=='all'?'1fr 1fr':'1fr'}">
+            <x-file v-show="viewer=='all' || viewer=='file'" :file="api.file.native" :pdf-viewer="pdfViewer"></x-file>
+            <x-result v-show="viewer=='all' || viewer=='result'" :api="api"></x-result>
+        </div>
+
+    </template>
+    <template id="x-index">
+        <div class="x-index">
+            <h1>index</h1>
+        </div>
+    </template>
+    <template id="x-preview">
+        <div class="x-preview">
+            <x-file v-show="leftVisible"></x-file>
+            <div class="x-preview-spliter"><button @click="toggleLeft" :disabled="!leftVisible">⬅</button><button
+                    @click="toggleRight" :disabled="!rightVisible">⮕</button></div>
+            <x-result v-show="rightVisible"></x-result>
+        </div>
+    </template>
+    <template id="x-params">
+        <div class="x-params" class="x-params">
+            <div class="x-params-toolbar">
+                <label>主题<select v-model="theme">
+                        <option v-for="theme in themes" :key="theme" :value="theme">{{theme}}</option>
+                    </select></label>
+                <label><input type="checkbox">默认值</label>
+            </div>
+            <div class="x-params-body">
+                <div ref="editor" style="flex: 1;height: 100%;"></div>
+                <div ref="defaultEditor" style="flex:1;height: 100%;"></div>
+            </div>
+
+        </div>
+    </template>
+
+    <template id="x-file">
+        <div class="x-file">
+            <div v-if="!file" class="x-file-empty">
+                <div>未选择文件</div>
+            </div>
+            <x-pdf-viewer v-else-if="isPDF" :file="file"></x-pdf-viewer>
+            <x-zip-viewer v-else-if="isZIP" :file="file"></x-zip-viewer>
+            <x-image-viewer v-else-if="isImage" :file="file"></x-image-viewer>
+            <x-text-viewer v-else-if="isText" :file="file"></x-text-viewer>
+            <x-docx-viewer v-else-if="isDocx" :file="file"></x-docx-viewer>
+            <div v-else class="x-file-empty">
+                <div>不支持预览:{{ext}}</div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-result">
+        <div class="x-result">
+            <template v-if="api.task.status=='success'">
+                <!-- 根据api的类型来选择合适的viewer -->
+                <!-- 如：api.name=='ocr' 或者 api.url='/api/ocr' -->
+                <!-- 如：api.url=/api/docx2pdf，返回的就是pdf，需要使用x-pdf-viewer -->
+
+                <x-ocr-viewer v-if="api.model.url=='/api/ocr'" :task="api.task">
+                </x-ocr-viewer>
+                <x-ocr-viewer v-else-if="api.model.url=='/api/openocr'" :task="api.task">
+                </x-ocr-viewer>
+                <x-detect-viewer v-else-if="api.model.url=='/api/detect' || api.model.url=='/api/classify'"
+                    :task="api.task">
+                </x-detect-viewer>
+                <x-pdf-viewer v-else-if="['/api/docx2pdf','/api/pptx2pdf'].includes(api.model.url)"
+                    :file="api.task.data"></x-pdf-viewer>
+                <!-- TODO 还需要多一个判断，如：api.model.name=="invoice_parse" -->
+                <x-json-viewer v-if="api.model.url=='/api/parse'" :task="api.task">
+                </x-json-viewer>
+            </template>
+            <div v-else-if="api.task.status=='error'" class="x-result-empty">
+                <div>执行失败</div>
+                <!-- 考虑使用json高亮？ -->
+                <div>{{api.task.error}}</div>
+            </div>
+            <div v-else-if="api.task.running" class="x-result-empty">
+                <div>正在执行...</div>
+            </div>
+            <div v-else class="x-result-empty">
+                <div>未执行</div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-pdf-viewer">
+        <div class="x-pdf-viewer">
+            <!-- 可以统一使用iframe -->
+            <iframe :src="src"></iframe>
+            <!--
+            <iframe v-if="viewer=='pdfjs'"
+                :src="`./libs/pdfjs/web/viewer.html?file=${encodeURIComponent(url)}`"></iframe>
+            <embed v-else type="application/pdf" :src="url">
+            -->
+        </div>
+
+    </template>
+    <template id="x-zip-viewer">
+        <div class="x-zip-viewer">
+            <div class="x-zip-toolbar">
+                <button @click="index--" :disabled="index<=0">上一个</button>
+                <select v-model="index" style="flex:1;width:100%;">
+                    <option v-for="(item,index) in items" :key="index" :value="index">{{item.name}}</option>
+                </select>
+                <select v-model="type">
+                    <option v-for="type2 in types" :key="type2.value" :value="type2.value">{{type2.label}}</option>
+                </select>
+                <button @click="index++" :disabled="index>=items.length-1">下一个</button>
+                <div v-show="index<=items.length-1">{{index+1}}/{{items.length}}</div>
+            </div>
+            <div class="x-zip-body">
+                <div v-if="!blob">
+                    <h1>没有内容</h1>
+                </div>
+                <x-image-viewer v-if="type=='image'" :file="blob"></x-image-viewer>
+                <x-text-viewer v-else-if="type=='text'" :file="blob"></x-text-viewer>
+                <div v-else>
+                    <h1>不支持的文件类型</h1>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-image-viewer">
+        <div class="x-image-viewer">
+            <div class="x-image-toolbar">
+                <label>背景<input type="color" v-model="bgColor"></label>
+                <label>旋转<select v-model="rotate" style="width:60px;">
+                        <option v-for="r in [0,90,180,270]" :key="r" :value="r">{{r}}</option>
+                    </select></label>
+                <label style="flex:1;display: flex;flex-direction: row;"><input type="range" min="0" max="5"
+                        v-model="scale" step="0.01"
+                        style="flex:1;width: 100%;box-sizing: border-box;">{{parseInt(scale*100)}}%</label>
+            </div>
+            <div class="x-image-body" :style="{'background-color':bgColor}">
+                <!-- 使用了object-fit，zoom存在的目的就是为了支持小图片放大 -->
+                <img :src="url" :style="{'transform-origin':'center',transform:`rotate(${rotate}deg) scale(${scale})`}">
+
+            </div>
+        </div>
+
+    </template>
+
+    <template id="x-text-viewer">
+        <div v-if="!preview">
+            <div>文件太大，不预览</div>
+        </div>
+        <div v-else class="x-text-viewer">
+            <div class="x-text-toolbar">
+                <label>
+                    <input type="checkbox" v-model="wrap">wrap
+                </label>
+                <div style="flex:1"></div>
+                <div>
+                    <span>仅仅显示{{count}}/{{total}}</span>
+                </div>
+
+            </div>
+            <div class="x-text-body">
+                <!-- 大文件使用textarea会非常的卡顿 -->
+                <!-- 或者使用pre -->
+                <textarea style="width: 100%;height: 100%;border: none;resize: none;" :wrap="wrap?'soft':'off'" readonly
+                    autocomplete="off" spellcheck="false" ref="textarea"></textarea>
+
+            </div>
+
+        </div>
+    </template>
+
+    <template id="x-code-viewer">
+        <div v-if="!preview" class="x-no-preview">
+            <div>文件太大，不预览</div>
+        </div>
+        <div class="x-code-viewer">
+            <div class="x-code-toolbar">
+                <div>语言:</div>
+                <select v-model="language">
+                    <option v-for="language in languages" :key="language" :value="language">{{language}}</option>
+                </select>
+                <div>主题:</div>
+                <select v-model="theme">
+                    <option v-for="theme in themes" :key="theme" :value="theme">{{theme}}</option>
+                </select>
+            </div>
+            <div ref="body" class="x-code-body">
+
+            </div>
+        </div>
+    </template>
+
+    <template id="x-docx-viewer">
+        <div class="x-docx-viewer">
+            <div class="x-docx-toolbar">
+                <input type="range" min="0" max="1" step="0.1" v-model="zoom" style="width: min(100%,200px);">
+                <div>{{parseInt(zoom*100)}}%</div>
+            </div>
+            <div class="x-docx-body" ref="body" :style="{zoom:zoom}">
+
+            </div>
+        </div>
+    </template>
+
+    <template id="x-ocr-viewer">
+        <!--显示ocr识别的返回结果-->
+        <div class="x-ocr-viewer">
+            <div class="x-ocr-toolbar">
+                <button @click="index--" :disabled="index<=0">❮</button>
+                <select v-model="index" style="flex:1;min-width: 60px;">
+                    <option v-for="(page,index) in pages" :key="index" :value="index">{{page.name}}</option>
+                </select>
+                <button @click="index++" :disabled="index>=pages.length-1">❯</button>
+                <label>
+                    <select v-model="scale">
+                        <option v-for="scale in scales" :key="scale.id" :value="scale">{{scale.label}}</option>
+                    </select>
+                </label>
+                <label><input type="checkbox" v-model="sourceVisible">原文</label>
+                <label><input type="color" v-model="bgColor">背景</label>
+
+            </div>
+            <div class="x-ocr-body" ref="body" :style="bodyStyle">
+                <div class="x-ocr-page-wrapper" ref="wrapper" v-html="html" :style="pageStyle">
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-detect-viewer">
+        <!--显示detect识别的返回结果-->
+        <div class="x-detect-viewer">
+            <div class="x-detect-toolbar">
+                <button @click="index--" :disabled="index<=0">❮</button>
+                <select v-model="index" style="flex:1;min-width: 60px;">
+                    <option v-for="(page,index) in pages" :key="index" :value="index">{{page.name}}</option>
+                </select>
+                <button @click="index++" :disabled="index>=pages.length-1">❯</button>
+
+                <select v-model="model" style="flex:1;min-width: 60px;">
+                    <option v-for="model in models" :key="model" :value="model">{{model}}</option>
+                </select>
+                <label>
+                    <select v-model="scale">
+                        <option v-for="scale in scales" :key="scale.id" :value="scale">{{scale.label}}</option>
+                    </select>
+                </label>
+                <label><input type="checkbox" v-model="sourceVisible">原文</label>
+                <label><input type="color" v-model="bgColor">背景</label>
+
+            </div>
+            <div class="x-detect-body" ref="body" :style="bodyStyle">
+                <div class="x-detect-page-wrapper" ref="wrapper" v-html="html" :style="pageStyle">
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="x-json-viewer">
+        <div class="x-json-viewer">
+            <div class="x-json-toolbar">
+                <div>主题:</div>
+                <select v-model="theme">
+                    <option v-for="theme in themes" :key="theme" :value="theme">{{theme}}</option>
+                </select>
+            </div>
+            <div class="x-json-body" ref="body"></div>
+        </div>
+    </template>
+
+
+    <template id="x-system">
+        <div class="x-system">
+            <h1>😄</h1>
+        </div>
+    </template>
+</body>
+
+</html>

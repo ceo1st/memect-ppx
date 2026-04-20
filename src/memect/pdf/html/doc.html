@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}}</title>
+
+    <!-- 为了避免需要打包很多内容，使用外网连接，不过在内网就不方便使用了 -->
+    <!-- https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.22/vue.global.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.22/vue.global.prod.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/element-plus/2.11.4/index.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/element-plus/2.11.4/index.full.js"></script>
+    <!-- 
+    https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.0.0/tex-chtml.min.js
+https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.0.0/tex-mml-svg.min.js
+https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.0.0/tex-svg.min.js
+https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.0.0/tex-chtml.min.js
+    -->
+    <script>
+        window.MathJax = {
+            loader: {load: ['[tex]/boldsymbol']},
+            tex: {packages: {'[+]': ['boldsymbol']}},
+            options: {
+                // Disables the generation of assistive MathML, which uses SRE
+                //enableAssistiveMml: false,
+                //右键公式不显示菜单
+                enableMenu: false,
+                menuOptions: {
+                    settings: {
+                        // Ensures semantic enrichment is off by default in the menu
+                        enrich: false
+                    }
+                }
+            },
+            // Optionally, if you use the sre block directly (less common for basic config)
+            sre: {
+                speech: 'none' // Disables speech generation entirely
+            },
+            startup: {
+                //如果为true，会自动把latex，或者mml（如果支持），自动转换为svg
+                //且会监听内容的改变，同步转换，所以必须设置为false
+                typeset: false,
+            }
+        };
+    </script>
+    <!-- 这个生成mml -->
+    <!-- 这个使用mml2svg -->
+    <!--<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.0.0/tex-svg.min.js"></script>-->
+    <script  src="https://cdn.jsdelivr.net/npm/mathjax@4.1.0/tex-svg.js"></script>
+    <!-- 为了避免需要复制doc.js在输出文件中 -->
+    <script type="text/javascript">
+        '{{doc_js}}'
+    </script>
+
+
+
+    <style>
+        :root {
+            --image-display: 'none';
+            --page-header-display: block;
+            --page-footer-display: block;
+            --page-footnote-display: block;
+            --page-body-display: block;
+            --page-other-display: block;
+            --page-read-order-display: block;
+        }
+
+        html,
+        body {
+            padding: 0px;
+            border: none;
+            margin: 0px;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        #app {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+
+            overflow: hidden;
+            /*border: 2px solid black;*/
+
+        }
+
+        .toolbar {
+            height: fit-content;
+            width: 100%;
+            background-color: #dfdfdf;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: row;
+            padding: 5px 5px;
+            align-items: center;
+            column-gap: 5px;
+        }
+
+        .workspace {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            /*border: 2px solid yellow;*/
+            flex: 1;
+            overflow: hidden;
+            flex-direction: row;
+        }
+
+        .sidebar {
+            width: 250px;
+            height: 100%;
+            box-sizing: border-box;
+            overflow: auto;
+            /*border: 2px solid seagreen;*/
+        }
+
+        .viewer {
+            box-sizing: border-box;
+            /*border: 2px solid blue;*/
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #EAECEE;
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            column-gap: 10px;
+        }
+
+        /*显示原文的style*/
+        .file {
+            flex: 1;
+            box-sizing: border-box;
+            border: 2px slategray solid;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .file-placeholder {
+            justify-content: center;
+            align-items: center;
+            display: flex;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            font-size: 20px;
+            color: gray;
+        }
+
+        .file-error {
+            justify-content: center;
+            align-items: center;
+            display: flex;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            font-size: 20px;
+            color: red;
+        }
+
+        .file embed {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border: none;
+        }
+
+        .file iframe {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border: none;
+        }
+
+        /*原文为图片的style*/
+        .file-image-contain {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /*表示原文为图片，图片使用原始的size*/
+        .file-image-auto {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            scrollbar-width: thin;
+            padding: 10px;
+            box-sizing: border-box;
+
+        }
+
+        .file-image-auto img {
+            display: block;
+        }
+
+        .file-image-contain img {
+            /*或者使用contain，表示图片小于区域会自动变大，scale-down图片小于区域居中*/
+            object-fit: scale-down;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .doc-wrapper {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            /*border: 2px solid black;*/
+            box-sizing: border-box;
+            display: flex;
+
+            overflow: auto;
+            padding: 10px;
+            scrollbar-width: thin;
+        }
+
+        .doc {
+            /*background-color: gray;*/
+            /*
+            display: grid;
+            grid-template-columns: auto;
+            justify-items: center;*/
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            row-gap: 10px;
+            align-items: center;
+            height: max-content;
+            font-family: var(--font-family);
+        }
+
+
+
+        .page-wrapper {
+            /*border: 1px solid #cccccc;*/
+            width: max-content;
+            height: max-content;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: center;
+            column-gap: 10px;
+
+            /*使用这两个可以支持内容按需渲染，但是又可以查找文本等*/
+            /*当这个设置为auto，.page的outline只能够显示右边和.image只能够显示左边，这是bug?*/
+            content-visibility: auto;
+            contain-intrinsic-size:auto none;
+        }
+
+        .page-placeholder {
+            box-sizing: content-box;
+        }
+
+        .image-placeholder {
+            /*是否需要隐藏并排的图片*/
+            display: var(--image-display);
+            box-sizing: content-box;
+        }
+
+
+        .page {
+            /*现在在page-wrapper中使用了content-visiblity，可以设置为block，不需要再设置为none*/
+            /*设置为none，就不支持查找，除非滚动到*/
+            display: block;
+            background-color: #ffffff;
+            /*border: 1px solid gray;*/
+            position: relative;
+            box-sizing: border-box;
+            overflow: hidden;
+            /*outline: 2px solid slategray;*/
+
+        }
+
+        .image {
+            /*页面显示并排的图片就显示*/
+            /*现在统一在page-wrapper中使用了content-visiblity，可以设置为block，不需要再设置为none*/
+            display: block;
+            /*outline: 2px solid slategray;*/
+            box-sizing: border-box;
+        }
+
+        .page-pdf {
+            /*表示页面的类型为pdf*/
+        }
+
+        .page-image {
+            /*表示页面的类型为图片*/
+            border-radius: 8px;
+            outline-color: lightskyblue;
+        }
+
+        .page-rotate {
+            /*表示页面旋转了*/
+            outline: 2px dashed slategray;
+        }
+
+        .page-helper {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 40px;
+            height: 40px;
+            box-sizing: border-box;
+            background-color: #ffff00;
+            z-index: 1000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+        }
+
+        .page-helper:hover {
+            outline: 2px solid red;
+
+        }
+
+        .page-helper:hover span {
+            animation: shake 1s linear;
+        }
+
+        @keyframes shake {
+            33% {
+                transform: rotate(-45deg);
+            }
+
+            66% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+
+                transform: rotate(45deg);
+            }
+        }
+
+        .page-helper-hide {
+            display: none;
+        }
+
+
+
+        .hide-table .table {
+            display: none;
+        }
+
+        .hide-figure .figure {
+            display: none;
+        }
+
+        .hide-span .span {
+            display: none;
+        }
+
+        .highlight-span .span {
+            color: #ffff00 !important;
+        }
+
+        .header {
+            position: absolute;
+            box-sizing: border-box;
+            outline: 2px solid yellow;
+            outline-offset: -2px;
+            z-index: 1;
+            display: var(--page-header-display);
+        }
+
+        .footer {
+            position: absolute;
+            box-sizing: border-box;
+            outline: 2px solid blue;
+            outline-offset: -2px;
+            z-index: 1;
+            display: var(--page-footer-display);
+        }
+
+        .header:hover {
+            outline-style: dashed;
+        }
+
+        .footer:hover {
+            outline-style: dashed;
+        }
+
+        .footnote {
+            position: absolute;
+            box-sizing: border-box;
+            outline: 2px solid red;
+            outline-offset: 2px;
+            border-radius: 4px;
+            display: var(--page-footnote-display);
+        }
+
+        .footnote:hover {
+            outline-style: dashed;
+        }
+
+        .body {
+            position: absolute;
+            box-sizing: border-box;
+            display: var(--page-body-display);
+        }
+
+        .other {
+            position: absolute;
+            box-sizing: border-box;
+            display: var(--page-other-display);
+        }
+
+        .block {
+            position: absolute;
+            box-sizing: border-box;
+            border: 2px dashed moccasin;
+        }
+
+        .block-hover {
+            border-style: solid;
+        }
+
+        .span {
+            position: absolute;
+            display: block;
+            white-space: pre;
+            word-break: keep-all;
+            line-height: 1em;
+            color: #000000;
+        }
+
+        .span:hover {
+            outline: 1px solid yellow;
+            background-color: rgba(255, 0, 0, 0.5);
+        }
+
+        .span-line-through {
+            text-decoration: line-through;
+            text-decoration-color: yellow;
+            /* Color for the line-through */
+        }
+
+        .span-underline {
+            text-decoration: underline;
+            text-decoration-color: blue;
+            /* Color for the underline */
+        }
+
+
+
+        .supscript {
+            background-color: red;
+            color: white;
+            padding: 2px;
+        }
+
+        .subscript {
+            background-color: blue;
+            color: white;
+            padding: 2px;
+        }
+
+        .line {
+            position: absolute;
+            background-color: black;
+            min-width: 1px;
+            min-height: 1px;
+        }
+
+        .rect {
+            position: absolute;
+            background-color: yellow;
+            min-width: 1px;
+            min-height: 1px;
+            box-sizing: border-box;
+        }
+
+        .rect:hover {
+            background-color: #ffff00 !important;
+        }
+
+
+
+        .table {
+            position: absolute;
+            border-collapse: collapse;
+            /*使用content-box可以完整显示内容，但是会大4px，使用border-box，靠近边界的内容可能被覆盖*/
+            box-sizing: border-box;
+        }
+
+        .table:hover {
+            outline: 2px solid red;
+        }
+
+
+        .table-ybk {}
+
+        .table-ybk td {
+            border: 1px solid black;
+            box-sizing: border-box;
+        }
+
+        .table-wbk {}
+
+        .table-wbk td {
+            border: 1px dashed black;
+            box-sizing: border-box;
+        }
+
+        .table-merged {
+            /*表示为跨页跨栏表格*/
+            outline: 2px dashed blue;
+        }
+
+        .table-no-v-edges td:first-child {
+            border-left-style: dashed;
+        }
+
+        .table-no-v-edges td:last-child {
+            border-right-style: dashed;
+        }
+
+        td:hover {
+            background-color: antiquewhite;
+        }
+
+        .cell-merged {
+            background-color: yellow;
+        }
+
+        .cell-no-merged {
+            background-color: gainsboro;
+        }
+
+        .cell-header {
+            background-color: red;
+        }
+
+
+        .figure {
+            display: block;
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .figure:hover {
+            outline: 2px solid blue;
+        }
+
+        .formula {
+            display: block;
+            position: absolute;
+            box-sizing: border-box;
+            outline: 2px solid blue;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+
+            background-color: lightgoldenrodyellow;
+
+            transform-origin: center;
+            transition-property: transform;
+            transition-duration: 0.5s;
+        }
+
+        .formula:hover {
+            outline: 2px solid yellow;
+
+            transform: scale(2, 2);
+
+            z-index: 200;
+        }
+
+        .formula .MathJax {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .formula .MathJax svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .title {
+            background-color: #D5D8DC;
+        }
+
+        .quote {
+            background-color: antiquewhite;
+        }
+
+        .textline {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .textline:hover {
+            outline: 2px dashed darkblue;
+        }
+
+        .text {
+            position: absolute;
+            box-sizing: border-box;
+            outline: 1px solid salmon;
+        }
+
+        .cell .text{
+            outline: none;
+        }
+
+        .text-merged {
+            outline: 2px dashed salmon;
+        }
+
+        .text:hover {
+            background-color: lightgreen;
+        }
+
+
+        .x-hover {
+            outline-color: black;
+        }
+
+        .read-order {
+            display: var(--page-read-order-display);
+            background-color: yellow;
+            color: red;
+            padding: 0px 5px;
+            position: absolute;
+            font-size: 10px;
+        }
+
+        .read-order-merged {
+            /*表示被合并的对象的阅读顺序，使用相反的配色*/
+            background-color: red;
+            color: yellow;
+        }
+
+        .text:hover,
+        .table:hover,
+        .figure:hover,
+        .formula:hover {
+            z-index: 100;
+        }
+
+
+        #copy-layer {
+            position: absolute;
+            left: 0px;
+            top: 0px;
+            /*width: 0px;*/
+            /*height: 0px;*/
+            overflow: hidden;
+            box-sizing: border-box;
+            opacity: 0;
+        }
+
+        /*为了支持水平滚动*/
+        .el-tree>.el-tree-node {
+            width: fit-content;
+        }
+
+        .help-table td {
+            vertical-align: top;
+        }
+
+        .info-table td {
+            vertical-align: top;
+        }
+
+        .annot-highlight {
+            position: absolute;
+            background-color: lightskyblue;
+            /*opacity: 0.5;*/
+        }
+
+        /*pdf的tag和form，目前不显示了*/
+        .form {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .form:hover {
+            /*border: 2px solid red;*/
+            outline: 2px solid red;
+            background-color: gray;
+            opacity: 0.5;
+        }
+
+        .form-highlight {
+            outline: 2px dashed red;
+            /*background-color: gray;
+            opacity: 0.5;*/
+            z-index: 1;
+        }
+
+        .form-item-highlight {
+            outline: 2px dashed yellow;
+            /*避免和form-highlight的重叠*/
+            outline-offset: -2px;
+        }
+
+        .form-even {
+            /*background-color: rgba(255, 255, 0, 0.5);*/
+        }
+
+        .form-odd {
+            /*background-color: rgba(255, 255, 0, 0.2);*/
+        }
+
+        .tag-highlight {
+            outline: 2px dashed red;
+            background-color: rgba(255, 255, 0, 0.5);
+            z-index: 2;
+        }
+
+        .tag {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .tag-multi {
+            border: 1px dashed yellow;
+        }
+
+        .tag-even {
+            background-color: rgba(255, 0, 0, 0.5);
+        }
+
+        .tag-odd {
+            background-color: rgba(255, 0, 0, 0.2);
+        }
+
+        .tag:hover {
+            outline: 2px solid blue;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="copy-layer"></div>
+    <dialog id="figure-dialog" onclick="this.close()"></dialog>
+    <div id="app" style="display: none;">
+        <div class="toolbar">
+            <el-select v-model="doc.currentPageNumber" placeholder="请选择页码" style="width: 80px;" size="default">
+                <el-option v-for="page in doc.pages" :key="page.number" :label="page.number" :value="page.number">
+                </el-option>
+            </el-select>
+
+            <el-dropdown split-button :hide-on-click="false" @click="resetFilters">
+                全部
+                <template #dropdown>
+                    <el-dropdown-menu>
+                        <el-dropdown-item v-for="(value,key,index) in filters">
+                            <el-checkbox v-model="filters[key]" :label="key"></el-checkbox>
+                        </el-dropdown-item>
+                    </el-dropdown-menu>
+                </template>
+            </el-dropdown>
+
+            <el-input-number v-model="zoom" size="default" style="width:120px;" :precision="2" :step="0.1" :max="10"
+                :min="0" @change="onChangeZoom"></el-input-number>
+
+            <el-select v-model="fontFamily" size="default" @change="onChangeFont" style="width:100px;">
+                <el-option v-for="font in fonts" :key="font" :label="font" :value="font"></el-option>
+            </el-select>
+
+            <el-dropdown @command="onCommand">
+                <el-button type="default" size="default">
+                    更多<el-icon class="el-icon--right"></el-icon>
+                </el-button>
+                <template #dropdown>
+                    <el-dropdown-menu>
+                        <el-dropdown-item command="info">信息</el-dropdown-item>
+                        <el-dropdown-item command="help">说明</el-dropdown-item>
+                    </el-dropdown-menu>
+                </template>
+            </el-dropdown>
+
+            <!-- <el-checkbox v-model="sidebar.visible" label="侧边栏"></el-checkbox>-->
+            <el-checkbox v-model="doc.imageVisible" label="并排图片"></el-checkbox>
+            <template v-if="mode=='lite'">
+                <!-- 不显示更多了 -->
+            </template>
+            <template v-else>
+                <el-checkbox v-model="file.visible" label="原文"></el-checkbox>
+                <el-checkbox v-model="file.usePdfViewer" label="PDFViewer"></el-checkbox>
+                <!-- 控制图片如何显示 -->
+                <el-select v-model="file.imageMode" size="default" style="width:100px;">
+                    <el-option v-for="mode in file.imageModes" :key="mode" :label="mode" :value="mode"></el-option>
+                </el-select>
+            </template>
+        </div>
+        <div class="workspace" @drop.prevent="onDrop" @dragover.prevent="onDragOver">
+
+            <el-splitter>
+                <el-splitter-panel :collapsible="sidebar.collapsible" :resizable="sidebar.resizable"
+                    :size="sidebar.size" :min="sidebar.min" :max="sidebar.max" v-if="sidebar.visible" class="sidebar">
+                    <el-tree ref="tree" :highlight-current="true" :data="outline.data" :props="outline.props"
+                        @node-click="onNodeClick" node-key="id" empty-text="没有解析章节树">
+                    </el-tree>
+                </el-splitter-panel>
+                <el-splitter-panel :collapsible="false" class="viewer">
+                    <div class="doc-wrapper" id="doc-wrapper" :style="docStyle" @scroll.passive="updatePageNumberByScroll">
+                        {{doc_html}}
+                    </div>
+
+                    <div class="file" v-show="file.visible">
+                        <div v-if="!file.url" class="file-placeholder">
+                            <div>请拖动原文到这里</div>
+                        </div>
+                        <iframe v-else-if="file.type=='pdf'" :src="pdfUrl" allowfullscreen>
+                        </iframe>
+                        <div v-else-if="file.type=='image'" :class="`file-image-${file.imageMode}`">
+                            <img :src="file.url">
+                        </div>
+
+                        <div v-else class="file-error">
+                            <div>不支持的文件类型:{{file.type}}</div>
+                        </div>
+
+                    </div>
+                </el-splitter-panel>
+            </el-splitter>
+
+
+        </div>
+    </div>
+    <script type="text/javascript">
+        window.MathJax.startup.promise.then(()=>{
+            new App('{{outline.data}}', '{{doc}}')
+        },(err)=>{})
+        
+    </script>
+
+</body>
+
+
+</html>

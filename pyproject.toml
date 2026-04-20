@@ -1,0 +1,127 @@
+[build-system]
+requires = ["setuptools", "wheel", "cython"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py312"
+
+[project]
+name = 'memect-ppx'
+description = 'memect-ppx 是一个 PDF / 图片文档解析工具，将输入文件转换为结构化的 Markdown、JSON。支持本地模型（默认）和多种 LLM 后端（DeepSeek、PaddleOCR、GLM等），适用于高精度文档理解场景。'
+readme = "README.md"
+license = "Apache-2.0"
+dynamic = ["version"]
+requires-python = ">= 3.12"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
+dependencies = [
+    "anyio>=4.12.1",
+    "beautifulsoup4>=4.14.3",
+    "concurrent-log-handler>=0.9.29",
+    "fastapi>=0.135.1",
+    "filetype>=1.2.0",
+    "fonttools>=4.62.1",
+    "freetype-py>=2.5.1",
+    "httpx[brotli,http2,socks]>=0.28.1",
+    "openai>=2.29.0",
+    "orjson>=3.11.7",
+    "pdf-oxide>=0.3.17",
+    "pillow>=12.1.1",
+    "pptx-ea-font>=0.0.4",
+    "pydantic>=2.12.5",
+    "pymupdf>=1.27.2",
+    "pypdf>=6.9.1",
+    "python-multipart>=0.0.22",
+    "python-pptx>=1.0.2",
+    "rapid-layout>=1.2.1",
+    "rapidocr>=3.8.1",
+    "rich>=14.3.3",
+    "shapely>=2.1.2",
+    "table-cls>=1.2.0",
+    "typer>=0.24.1",
+    "uvicorn[standard]>=0.42.0",
+    "openvino==2025.4.1 ; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "openvino; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "psutil>=7.2.2",
+    "rapid-latex-ocr>=0.0.6",
+]
+
+[project.scripts]
+# 格式: "命令名 = "Python模块路径:函数名""
+ppx = "memect.cli:main"
+
+#开发中的依赖，项目发布/运行不需要，使用
+#uv sync --group train 
+[dependency-groups]
+train = ["ultralytics>=8.4.23"]
+
+#运行的依赖，如：
+#uv sync --extra cpu
+[project.optional-dependencies]
+cuda = [
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "nvidia-nvjpeg-cu12",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+
+# ── index 配置 ────────────────────────────────────────────────────
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+#cu126,cu128,cu130
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pypi"
+#url = "https://pypi.org/simple"
+# url = "https://mirrors.aliyun.com/pypi/simple"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
+
+# torch 按 extra 选择不同 index
+#torch = [
+#{ index = "pytorch-cpu", extra = "cpu" },
+#{ index = "pytorch-cuda", extra = "cuda" },
+#{ index = "pytorch-cuda", extra = "tensorrt" },
+#{ index = "pytorch-cuda", extra = "cann" },
+#]
+
+#
+
+
+[tool.uv]
+override-dependencies = [
+    # 排除所有 opencv 相关的包
+    "opencv-python ; sys_platform == 'never'",
+    "opencv-contrib-python ; sys_platform == 'never'",
+    "opencv-python-headless ; sys_platform == 'never'",
+    "opencv-contrib-python-headless ; sys_platform == 'never'",
+    # 排除所有 onnxruntime
+    "onnxruntime;sys_platform == 'never'",
+    "onnxruntime-gpu;sys_platform == 'never'",
+    #排除torch
+    "torch;sys_platform == 'never'",
+    "torchvision;sys_platform == 'never'"
+]
+conflicts = [[{ extra = "cuda" }, { extra = "cann" }]]
+
+[tool.setuptools.dynamic]
+version = { file = "version.txt" }
