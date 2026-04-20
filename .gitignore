@@ -21,6 +21,7 @@
 !/THIRD_PARTY_LICENSES.md
 !/NOTICE
 
+
 **/.DS_Store
 **/__pycache__/**
 /src/**/*.c
@@ -30,5 +31,4 @@
 
 !/docker-compose.yaml
 !/.env.sample
-
 **/**/others
