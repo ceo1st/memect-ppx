@@ -1,15 +1,12 @@
 
-from __future__ import annotations
-
 import base64
 import io
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 
-if TYPE_CHECKING:
-    import cv2.typing
-
+import cv2
+import cv2.typing
 import PIL
 import PIL.Image
 import PIL.ImageOps
