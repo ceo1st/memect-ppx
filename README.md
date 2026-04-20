@@ -32,11 +32,15 @@ uv venv -p 3.12
 uv pip install memect-ppx 
 uv pip install onnxruntime --no-config
 uv pip install opencv-contrib-python --no-config
+# update
+uv pip install --upgrade memect-ppx
 # or
 python3.12 -m venv .venv
 pip install memect-ppx 
 pip install onnxruntime 
 pip install opencv-contrib-python
+# update
+pip install --upgrade memect-ppx
 
 # parse pdf
 ppx parse document.pdf -o output/
@@ -403,6 +407,16 @@ uv pip uninstall opencv-python opencv-contrib-python \
                   opencv-python-headless opencv-contrib-python-headless
 uv pip install opencv-contrib-python --no-config
 ```
+
+### `ImportError: libGL.so.1` on Linux servers
+
+Install the headless OpenCV variant instead:
+
+```bash
+uv pip install opencv-python-headless
+```
+
+Or install the system library: `sudo apt-get install -y libgl1`
 
 ### Can `onnxruntime` and `onnxruntime-gpu` coexist?
 

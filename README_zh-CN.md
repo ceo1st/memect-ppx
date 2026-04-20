@@ -401,6 +401,16 @@ uv pip uninstall opencv-python opencv-contrib-python \
 uv pip install opencv-contrib-python --no-config
 ```
 
+### Linux 服务器上出现 `ImportError: libGL.so.1`
+
+改用 headless 版本的 OpenCV：
+
+```bash
+uv pip install opencv-python-headless
+```
+
+或安装系统库：`sudo apt-get install -y libgl1`
+
 ### `onnxruntime` 和 `onnxruntime-gpu` 能共存吗？
 
 不能。只安装其中一个。GPU 版本必须与系统的 CUDA 版本匹配。
