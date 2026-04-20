@@ -35,6 +35,10 @@ jobs:
         run: |
           uv sync --index-url https://pypi.org/simple
 
+      - name: Install opencv
+        run: |
+          uv pip install opencv-contrib-python-headless --no-config
+
       - name: Verify CLI entry point
         run: |
           uv run ppx --help
