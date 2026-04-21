@@ -123,3 +123,32 @@ conflicts = [[{ extra = "cuda" }, { extra = "cann" }]]
 
 [tool.setuptools.dynamic]
 version = { file = "version.txt" }
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"memect.web" = [
+    "index.html",
+    "index.css",
+    "index.js",
+    "package.json",
+    "favicon.ico",
+    "favicon-16x16.png",
+    "favicon-32x32.png",
+    "admin/*.html",
+    "libs/**/*",
+]
+"memect.pdf.html" = [
+    "doc.html",
+    "doc.js",
+]
+"memect.pdf.fonts" = [
+    "*.ttf",
+    "*.ttc",
+    "sans-serif/*.ttc",
+    "serif/*.ttc",
+]
