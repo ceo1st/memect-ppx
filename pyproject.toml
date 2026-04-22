@@ -126,6 +126,7 @@ version = { file = "version.txt" }
 
 [tool.setuptools]
 include-package-data = true
+py-modules = ["ppx"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
