@@ -155,6 +155,23 @@ ppx parse report.pdf --ocr no
 ppx parse scan.png
 ```
 
+### 解析表格
+
+```bash
+# 使用无边框表格识别（wbk）解析含表格的图片，结果输出到 output/
+ppx parse table_color_zh.png --table wbk -o output/
+```
+
+`--table` 可选值：
+
+| 值 | 说明 |
+|----|------|
+| `no` | 跳过表格识别 |
+| `ybk` | 有线表格（默认推荐） |
+| `wbk` | 无线/复杂表格 |
+| `auto` | 自动选择（默认） |
+| `llm` | 使用大模型解析表格 |
+
 ### 批量处理
 
 ```bash
