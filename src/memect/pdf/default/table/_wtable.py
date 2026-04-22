@@ -11,13 +11,13 @@ import PIL.ImageDraw
 from memect.base import lists, utils
 from PIL.Image import Image
 
-from ..core.bbox import B, BBox, Group
-from ..core.matrix import M
-from ..core.xdebugger import XDebugger
-from ._base import (Block, Line, Page, PageType, Rect, Sorter, Table,
-                    TableType, Text, TObject)
-from ._grid import Grid
-from ._xbase import XTable
+from memect.base.bbox import BBox, Group
+from memect.base.matrix import Matrix
+from memect.base.debug import XDebugger
+
+from memect.pdf.base import KObject
+from memect.pdf.grid import Grid
+#from ._xbase import XTable
 
 #允许修改
 type _Line=list[float]
@@ -28,17 +28,10 @@ type _Range=tuple[int,int,int,int]
 
 class WObject:
     """表示单元格中包含的对象，支持跨页/跨栏合并后，使用新的BBox"""
-    def __init__(self,bbox:BBox,*,object:TObject,block:Block):
+    def __init__(self,bbox:BBox,*,object:KObject):
         super().__init__()
         self.bbox=bbox
         self.object:Final=object
-        #可以关联之前的表格
-        #self.table=None
-        #所在的block
-        self.block:Final=block
-        """所在的block，可能为跨栏"""
-        self.page:Final = block.page
-        """所在的页面"""
 
 class WCell:
     """
@@ -83,7 +76,7 @@ class WCell:
     @property
     def content_bbox(self)->BBox|None:
         if self._content_bbox is None:
-            self._content_bbox = BBox.x_union(self.objects)
+            self._content_bbox = BBox.join2(self.objects)
         return self._content_bbox
     
     @property

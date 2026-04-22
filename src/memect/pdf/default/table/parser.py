@@ -9,6 +9,7 @@ from memect.pdf.model import ModelManager
 class TableParser:
     def __init__(self,manager:ModelManager):
         super().__init__()
+        self._manager:Final = manager
         self._table_cls: Final = manager.get("table_cls")
         self._table_cls_key: Final = "cache/default/table_cls"
         self._table_det: Final = manager.get("table_det")
@@ -67,7 +68,7 @@ class TableParser:
     def _parse_llm(self, doc: KDocument, *, max_workers: int = 0):
         """使用llm来解析表格"""
         from .llm import Parser
-        Parser().parse(doc,max_workers=max_workers)
+        Parser(self._manager).parse(doc,max_workers=max_workers)
 
     def _parse_ybk(self, doc: KDocument, *, max_workers: int = 0):
         """全部按有边框来解析，如果没有线，就是1*1的表格
@@ -79,7 +80,7 @@ class TableParser:
     def _parse_wbk(self, doc: KDocument, *, max_workers: int = 0):
         """全部按无边框解析，表格的线仅仅用来参考"""
         from .wbk import Parser        
-        Parser().parse(doc,max_workers=max_workers)
+        Parser(self._manager).parse(doc,max_workers=max_workers)
 
     def _parse_auto(self, doc: KDocument, *, max_workers: int = 0):
         """先判断是无边框表格还是有边框表格"""

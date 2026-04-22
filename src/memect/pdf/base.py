@@ -11,7 +11,6 @@ from enum import StrEnum, auto
 from functools import cached_property
 from pathlib import Path
 from typing import (
-    Annotated,
     Any,
     ClassVar,
     Final,
@@ -28,7 +27,7 @@ import PIL
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
 
 from memect.base import images, lists, pdfs
 from memect.base.api import ApiError
@@ -36,7 +35,7 @@ from memect.base.bbox import BBox, Quad
 from memect.base.matrix import Matrix
 from memect.base.utils import AutoCleaner, MyBaseModel, safe_write
 from memect.pdf.grid import Grid
-
+from memect.base.zip import Archiver
 
 class PageParams(MyBaseModel):
     number: int = 1
@@ -191,8 +190,9 @@ class VObjectType(StrEnum):
 
 
 class VObject:
-    def __init__(self, type: str, quad: Quad, score: float = 1, raw_type: str = ""):
+    def __init__(self,page:"KPage",type: str, quad: Quad, score: float = 1, raw_type: str = ""):
         super().__init__()
+        self.page:Final=page
         self.type: Final = VObjectType(type)
         self.bbox: Final = quad.bbox
         self.quad: Final = quad
@@ -202,6 +202,8 @@ class VObject:
         self.debug: Final[dict[str, Any]] = {}
         self.ocr_chars: Final[list[KChar]] = []
         """该对象区域试验ocr识别的字符串"""
+        self.vobjects:Final[list[VObject]]=[]
+        """如果是表格，可以继续包含对象，如：图片等"""
         # self.pdf_chars:Final[list[KChar]]=[]
         # self.ocr_spans:Final[list[KSpan]]=[]
 
@@ -271,6 +273,11 @@ class VObject:
 
     def is_footnote(self) -> bool:
         return self.type == VObjectType.FOOTNOTE
+    
+    def make_figure(self)->"KFigure":
+        figure = self.page.make_figure(self.quad)
+        assert figure is not None
+        return figure
 
 
 class KDocument:
@@ -492,8 +499,6 @@ class KDocument:
         return self._filetype == "pdf"
 
     def make_zip(self, zip_file: str | Path | None = None):
-        from ..x2x.zip import Archiver
-
         if not zip_file:
             zip_file = self.zip_file
         else:
@@ -899,6 +904,7 @@ class KPage:
                 self._logger.warning("去掉无效的vobject=%s", obj)
                 continue
             vobj = VObject(
+                self,
                 type=obj["type"],
                 quad=quad,
                 score=obj["score"],
@@ -923,6 +929,7 @@ class KPage:
         # 2. 区域过大或者过小，不处理，这是模型的锅
         # 3. 区域重叠，如：大文本包含小文本，可能都是错误的，也可能都是正确的
 
+        raw_vobjects = vobjects
         vobjects = list(vobjects)
         # 可以删除太小的对象，目前仅仅删除为0
         lists.remove2(vobjects, lambda i, vobjs: vobjs[i].bbox.area <= 0)
@@ -932,6 +939,7 @@ class KPage:
         # 2.面积排序，大的留下，小的去掉
         # 3.相互重叠的情况就不考虑了
         vobjects.sort(key=lambda vobj: vobj.bbox.area, reverse=True)
+        removed_objects:list[VObject]=[]
         i = 0
         while i < len(vobjects):
             vobj = vobjects[i]
@@ -952,9 +960,15 @@ class KPage:
                         overlap_ratio,
                     )
                     vobjects.remove(vobj2)
+                    removed_objects.append(vobj2)
                     continue
                 # 如果仅仅部分区域重叠，合并为一个？
             i += 1
+        
+        for vobj in vobjects:
+            if vobj.is_table():
+                #如果是表格，内部可能还包含有图片或者其他
+                vobj.vobjects.extend(vobj.bbox.get(removed_objects,ratio=0.7,remove=True))
         return vobjects
 
     def draw(
@@ -1996,6 +2010,39 @@ class KTable(KObject):
                 return cell
         raise ValueError(f"错误的的行列坐标:{key}")
 
+    def get_lines(self) -> list["KLine"]:
+        """根据当前cells的bbox，构造水平线和垂直线（合并共线重叠段）。"""
+        horiz: list[tuple[float, float, float]] = []  # (y, x0, x1)
+        vert:  list[tuple[float, float, float]] = []  # (x, y0, y1)
+        for cell in self.cells:
+            if cell.bbox is None:
+                continue
+            x0, y0, x1, y1 = cell.bbox.x0, cell.bbox.y0, cell.bbox.x1, cell.bbox.y1
+            horiz.append((y0, x0, x1))
+            horiz.append((y1, x0, x1))
+            vert.append((x0, y0, y1))
+            vert.append((x1, y0, y1))
+
+        def _merge(segs: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:
+            if not segs:
+                return []
+            segs = sorted(segs, key=lambda s: (round(s[0], 2), s[1]))
+            merged: list[tuple[float, float, float]] = []
+            for coord, a, b in segs:
+                if merged and abs(merged[-1][0] - coord) < 0.5 and a <= merged[-1][2] + 0.5:
+                    pc, pa, pb = merged[-1]
+                    merged[-1] = (pc, pa, max(pb, b))
+                else:
+                    merged.append((coord, a, b))
+            return merged
+
+        lines: list[KLine] = []
+        for y, x0, x1 in _merge(horiz):
+            lines.append(KLine(self.page, BBox(x0, y, x1, y)))
+        for x, y0, y1 in _merge(vert):
+            lines.append(KLine(self.page, BBox(x, y0, x, y1)))
+        return lines
+
     def jsonify(self) -> Any:
         data = {
             "type": self.type,
@@ -2013,6 +2060,29 @@ class KTable(KObject):
         # 没有使用这个就是返回最基本的table的结构，不需要style
         # table.html()
         from html import escape
+
+        def render_objects(objs:Sequence[KObject])->str:
+            buf:list[str]=[]
+            for obj in objs:
+                if isinstance(obj,KTextbox):
+                    #TODO 如果全部是文字，如果包含有图片
+                    for tl in obj.lines:
+                        buf.append('<div>')
+                        buf.append(render_objects(tl.objects))
+                        buf.append('</div>')
+                elif isinstance(obj,KFigure):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj,KFormula):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj,KChar):
+                    buf.append(escape(obj.text))
+                elif isinstance(obj,KText):
+                    buf.append(escape(obj.text))
+                elif isinstance(obj,KMarkdown):
+                    buf.append(escape(obj.plaintext()))
+                else:
+                    pass
+            return ''.join(buf)
 
         buf: list[str] = []
         buf.append("<table>")
@@ -2033,7 +2103,10 @@ class KTable(KObject):
             else:
                 tr.append(f'<td colspan="{cell.col_span}" rowspan="{cell.row_span}">')
             # tr.append(self._render_block(cell.body,use_html=True))
-            tr.append(escape(cell.text))
+            if cell.objects:
+                tr.append(render_objects(cell.objects))
+            else:
+                tr.append(escape(cell.text))
             tr.append("</td>")
 
         if tr:
@@ -2499,6 +2572,12 @@ class KPDFFigure(KObject):
     def __init__(self, page: KPage, quad: Quad, *, transparent: bool = False):
         super().__init__(page, quad)
         self.transparent = transparent
+    
+    def make_figure(self)->KFigure:
+        #TODO 可以使用截图，也可以直接使用原图，但是需要补充flip+旋转等信息
+        figure = self.page.make_figure(self.quad,add=False)
+        assert figure is not None
+        return figure
 
 
 class Group[T](list[T]):
