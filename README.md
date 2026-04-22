@@ -25,7 +25,6 @@ PPX is an open-source document parsing engine built for high-fidelity extraction
 ---
 
 ## Get Started in 30 Seconds
-## Get Started in 30 Seconds
 
 ```bash
 # python version >= 3.12
