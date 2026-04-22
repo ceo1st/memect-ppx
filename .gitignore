@@ -21,6 +21,7 @@
 !/THIRD_PARTY_LICENSES.md
 !/NOTICE
 !.github
+!example
 
 **/.DS_Store
 **/__pycache__/**
