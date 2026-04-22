@@ -506,7 +506,11 @@ settings: dict[str, Any] = {
                 },
             },
             "table_det": {
-                "name": "TestModel"
+                "name": "TableDetModel",
+                "kwargs":{
+                    'model_path':get_model_path('./models/memect/table_det.onnx'),
+                    'score_threshold':0.5
+                }
             },
             "formula": {"name": "RapidFormulaModel", "kwargs": {}},
         },
@@ -566,6 +570,11 @@ settings: dict[str, Any] = {
             },
             #图片解析的配置
             "image": {},
+            "table":{
+                "ybk":{},
+                "wbk":{},
+                "llm":{}
+            }
         },
     },
     "pdf_service": {

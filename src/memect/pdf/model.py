@@ -755,6 +755,26 @@ class TableClsModel(Model):
 
 
 
+class TableDetModel(Model):
+    def __init__(self,*,model_path: str|Path|None=None, score_threshold: float = 0.5):
+        super().__init__()
+        from .table_det import RTDETRTableCellDet
+        from memect.models import get_model_path
+        if not model_path:
+            model_path=get_model_path('table_det.onnx')
+        else:
+            model_path = Path(model_path)
+        self._model = RTDETRTableCellDet(model_path, score_threshold)
+
+    @override
+    def _execute(self, files: Sequence[FileInfo]):
+        results: list[Any] = []
+        for file in files:
+            result = self._model(file.cv2_image,show_gui=False)
+            results.append(result)
+        return results
+    
+
 class LLMModel(Model):
     # 通过api调用，不需要lock，一个模型就足够了
     _use_lock = False
