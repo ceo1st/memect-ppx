@@ -12,6 +12,10 @@
 !/docs/
 !/LICENSE
 !/PPX_CLA.md
+!/README_zh-CN.md
+!/docs/
+!/LICENSE
+!/PPX_CLA.md
 !/pyproject.toml
 !/.gitignore
 !/.dockerignore

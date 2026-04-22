@@ -25,6 +25,7 @@ PPX is an open-source document parsing engine built for high-fidelity extraction
 ---
 
 ## Get Started in 30 Seconds
+## Get Started in 30 Seconds
 
 ```bash
 # python version >= 3.12
@@ -359,9 +360,20 @@ vllm serve ./hub/deepseek-ai/DeepSeek-OCR-2 \
   --gpu-memory-utilization 0.8 \
   --port 4000
 ```
+vllm serve ./hub/deepseek-ai/DeepSeek-OCR-2 \
+  --served-model-name deepseek-ocr-2 \
+  --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+  --mm-processor-cache-gb 0 \
+  --no-enable-prefix-caching \
+  --gpu-memory-utilization 0.8 \
+  --port 4000
+```
 
 ### PaddleOCR-VL / PaddleOCR-VL-1.5 (~10 GB VRAM)
+### PaddleOCR-VL / PaddleOCR-VL-1.5 (~10 GB VRAM)
 
+```bash
+vllm serve ./hub/PaddlePaddle/PaddleOCR-VL \
 ```bash
 vllm serve ./hub/PaddlePaddle/PaddleOCR-VL \
   --served-model-name paddleocr-vl \
@@ -370,7 +382,25 @@ vllm serve ./hub/PaddlePaddle/PaddleOCR-VL \
   --no-enable-prefix-caching \
   --mm-processor-cache-gb 0 \
   --gpu-memory-utilization 0.5 \
+  --gpu-memory-utilization 0.5 \
   --port 4001
+```
+
+> Replace `PaddleOCR-VL` with `PaddleOCR-VL-1.5` to use the newer model; port and `--served-model-name` remain the same.
+
+### GLM-OCR (~10 GB VRAM)
+
+```bash
+# Requires transformers >= 5.3.0
+uv pip install "transformers>=5.3.0"
+
+vllm serve ./hub/ZhipuAI/GLM-OCR \
+  --served-model-name glmocr \
+  --max-num-batched-tokens 16384 \
+  --max-model-len 16384 \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+  --gpu-memory-utilization 0.5 \
+  --port 4002
 ```
 
 > Replace `PaddleOCR-VL` with `PaddleOCR-VL-1.5` to use the newer model; port and `--served-model-name` remain the same.
