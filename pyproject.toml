@@ -39,6 +39,7 @@ dependencies = [
     "openvino; sys_platform != 'darwin' or platform_machine != 'x86_64'",
     "psutil>=7.2.2",
     "rapid-latex-ocr>=0.0.6",
+    "filelock>=3.25.2",
 ]
 
 [project.scripts]

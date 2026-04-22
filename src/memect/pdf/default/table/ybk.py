@@ -84,7 +84,7 @@ class Parser:
             #但是如果是先处理表格后再处理文本的，怎么知道文本被表格给用掉了？
             #创建一个新的VObject替代？
 
-        grid = Grid(table_lines,chars)
+        grid = Grid(table_lines,chars+figures)
         page.objects.append(KTable.from_grid(page,grid))
 
         if debugger.allow("draw"):

@@ -20,8 +20,10 @@
 /src/**/*.c
 /src/**/*.so
 /src/**/*.egg-info/
+/src/**/*.onnx
 
 
 !/docker-compose.yaml
 !/.env.sample
+
 

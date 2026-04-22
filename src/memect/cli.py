@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 import typer
 
-from .base.config import get_settings
 from .pdf.base import Backend,OCRMode, ParseMode, TableMode
 
 app = typer.Typer()
