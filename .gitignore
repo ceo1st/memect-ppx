@@ -13,6 +13,9 @@
 !/.dockerignore
 !/install
 !/.gitattributes
+!/skills/
+!/skills/ppx-parse/
+!/skills/ppx-parse/**
 
 
 **/.DS_Store
@@ -25,5 +28,4 @@
 
 !/docker-compose.yaml
 !/.env.sample
-
 
