@@ -3,7 +3,7 @@
 This document tracks third-party code, assets, and bundled resources that
 are included in or redistributed by this repository.
 
-It is intended to support open-source release review and downstream
+It is intended to support public source release review and downstream
 redistribution. The authoritative license terms remain the original license
 files provided by upstream projects and asset authors.
 

@@ -128,5 +128,6 @@ I have read and agree to the PPX Contributor License Agreement.
 
 ## License
 
-PPX is licensed under [Apache-2.0](./LICENSE).  
-By submitting a contribution, you agree to license your work under the same terms.
+PPX is licensed under [PolyForm Noncommercial License 1.0.0](./LICENSE).  
+PPX is free for personal, research, and noncommercial use. For commercial use, contact `contact@memect.co`.
+By submitting a contribution, you agree that your work may be distributed under those terms.
