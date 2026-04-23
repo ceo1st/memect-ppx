@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/memect-ppx.svg)](https://pypi.org/project/memect-ppx/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/memect-ppx.svg)](https://pypi.org/project/memect-ppx/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.12-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/memect/memect-ppx)](https://github.com/memect/memect-ppx/issues)
 
 [简体中文](README_zh-CN.md) | English
@@ -14,13 +14,13 @@
 
 **Convert PDF and images to structured Markdown / JSON — locally, accurately, production-ready.**
 
-PPX is an open-source document parsing engine built for high-fidelity extraction of text, tables, figures, formulas, and layout from PDFs and images. It ships with a built-in OCR + layout pipeline and optionally offloads recognition to state-of-the-art LLM backends (DeepSeek-OCR, PaddleOCR-VL, GLM-OCR).
+PPX is a source-available document parsing engine built for high-fidelity extraction of text, tables, figures, formulas, and layout from PDFs and images. It ships with a built-in OCR + layout pipeline and optionally offloads recognition to state-of-the-art LLM backends (DeepSeek-OCR, PaddleOCR-VL, GLM-OCR).
 
 - **What output do I get?** — Markdown and JSON; every object carries page coordinates.
 - **Do I need a GPU?** — No. The default backend runs on CPU. GPU (CUDA) is optional for throughput.
 - **Does it handle scanned PDFs?** — Yes. OCR is applied automatically when native text is absent.
 - **Can I use my own LLM?** — Yes. Any OpenAI-compatible endpoint is accepted via `--backend`.
-- **Is it embeddable?** — Yes. Apache-2.0 allows commercial use, modification, and redistribution with minimal obligations.
+- **Is it embeddable?** — Free for personal, research, and noncommercial use. For commercial use, contact `contact@memect.co`.
 
 ---
 
@@ -457,7 +457,7 @@ No. Neither Apple Silicon nor Intel Macs support CUDA. The CPU backend works on 
 
 ### Can I embed PPX in a commercial product?
 
-Yes. Apache-2.0 allows using PPX in proprietary and commercial software with minimal redistribution requirements.
+Not under the default license. PPX is free for personal, research, and noncommercial use. For commercial use, contact `contact@memect.co`.
 
 ### How do I parse only specific pages?
 
@@ -493,8 +493,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 ## License
 
-PPX is released under the [Apache License 2.0 (Apache-2.0)](LICENSE).
+PPX is released under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-Apache-2.0 allows commercial use, modification, redistribution, and internal use with minimal obligations. It also includes an express patent license from contributors.
+PPX is free for personal, research, and noncommercial use. For commercial use, contact `contact@memect.co`.
 
 For bundled third-party code and assets, see [NOTICE](NOTICE) and [docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md). Those files document attribution and redistribution review items for vendored components and bundled resources shipped with this repository.

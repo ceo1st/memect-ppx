@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/memect-ppx.svg)](https://pypi.org/project/memect-ppx/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/memect-ppx.svg)](https://pypi.org/project/memect-ppx/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.12-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/memect/memect-ppx)](https://github.com/memect/memect-ppx/issues)
 
 [English](README.md) | 简体中文
@@ -14,13 +14,13 @@
 
 **将 PDF 和图片转换为结构化 Markdown / JSON — 本地运行，高精度，生产可用。**
 
-PPX 是一款开源文档解析引擎，专为高保真提取 PDF 和图片中的文本、表格、图形、公式及版面结构而构建。内置 OCR + 版面分析流水线，并可选接入主流大模型后端（DeepSeek-OCR、PaddleOCR-VL、GLM-OCR）。
+PPX 是一款源码可见的文档解析引擎，专为高保真提取 PDF 和图片中的文本、表格、图形、公式及版面结构而构建。内置 OCR + 版面分析流水线，并可选接入主流大模型后端（DeepSeek-OCR、PaddleOCR-VL、GLM-OCR）。
 
 - **输出格式是什么？** — Markdown 和 JSON；每个对象均携带页面坐标。
 - **需要 GPU 吗？** — 不需要。默认后端在 CPU 上运行，GPU（CUDA）为可选项。
 - **支持扫描件 PDF 吗？** — 支持。当原生文本缺失时，OCR 自动介入。
 - **能用自己的大模型吗？** — 能。通过 `--backend` 接受任意 OpenAI 兼容接口。
-- **可嵌入商业产品吗？** — 可以。Apache-2.0 允许商业使用、修改和再分发，约束更少。
+- **可嵌入商业产品吗？** — 个人 / 研究 / 非商业用途免费，商用请联系 `contact@memect.co`。
 
 ---
 
@@ -154,6 +154,23 @@ ppx parse report.pdf --ocr no
 # 解析图片
 ppx parse scan.png
 ```
+
+### 解析表格
+
+```bash
+# 使用无边框表格识别（wbk）解析含表格的图片，结果输出到 output/
+ppx parse table_color_zh.png --table wbk -o output/
+```
+
+`--table` 可选值：
+
+| 值 | 说明 |
+|----|------|
+| `no` | 跳过表格识别 |
+| `ybk` | 有线表格（默认推荐） |
+| `wbk` | 无线/复杂表格 |
+| `auto` | 自动选择（默认） |
+| `llm` | 使用大模型解析表格 |
 
 ### 批量处理
 
@@ -421,7 +438,7 @@ uv pip install opencv-python-headless
 
 ### 能将 PPX 嵌入商业产品吗？
 
-可以。Apache-2.0 允许在专有软件和商业产品中使用 PPX，分发义务相对更轻。
+默认协议下不可以。PPX 对个人 / 研究 / 非商业用途免费；商用请联系 `contact@memect.co`。
 
 ### 如何只解析特定页面？
 
@@ -455,8 +472,8 @@ pdf2x产品网页端体验: <https://pdf2x.cn/>
 
 ## 许可证
 
-PPX 基于 [Apache License 2.0 (Apache-2.0)](LICENSE) 开源。
+PPX 基于 [PolyForm Noncommercial License 1.0.0](LICENSE) 发布。
 
-Apache-2.0 允许商业使用、修改、再分发和内部使用，整体约束较少；同时还包含贡献者授予的明确专利许可。
+个人 / 研究 / 非商业用途免费；商用请联系 `contact@memect.co`。
 
 对于仓库内随附的第三方代码与资源，请同时参阅 [NOTICE](NOTICE) 和 [docs/THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md)。这两个文件用于说明仓库内 vendored 组件、打包资源的归属信息和发布前的再分发核查事项。
