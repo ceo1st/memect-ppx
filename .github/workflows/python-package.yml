@@ -77,6 +77,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -84,11 +86,22 @@ jobs:
           name: dist
           path: dist
 
+      - name: Install git-cliff
+        uses: kenji-miyake/setup-git-cliff@v2
+
+      - name: Generate release notes
+        id: cliff
+        run: |
+          git-cliff --config cliff.toml --latest --strip header > RELEASE_NOTES.md
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          cat RELEASE_NOTES.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Create and Upload Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body: ${{ steps.cliff.outputs.notes }}
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
