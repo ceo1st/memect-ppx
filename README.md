@@ -31,6 +31,8 @@ PPX is a source-available document parsing engine built for high-fidelity extrac
 $uv venv -p 3.12
 $source .venv/bin/activate
 
+# update
+uv pip install --upgrade memect-ppx
 #如果是在已经存在的环境中，建议先删除
 #$uv pip uninstall opencv-python opencv-contrib-python opencv-contrib-headless opencv-contrib-python-headless
 #$uv pip uninstall onnxruntime onnxruntime-gpu
