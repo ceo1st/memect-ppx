@@ -3,6 +3,8 @@ from typing import Callable, Final, Sequence
 
 from memect.base.bbox import BBox
 from memect.pdf.base import KDocument, KPage, TableMode, VObject
+from memect.pdf.default.table.wbk import WBKMode
+from memect.pdf.default.table.ybk import YBKMode
 from memect.pdf.model import ModelManager
 
 
@@ -49,19 +51,11 @@ class TableParser:
             raise ValueError(f"不支持的表格mode={doc.params.table}")
 
     def _parse_as_figures(self, doc: KDocument, *, max_workers: int = 0):
-        def adjust_bbox(page: KPage, vobj: VObject) -> BBox:
-            bbox = vobj.bbox.large
-            return bbox.expand(dx=2, dy=2).intersect(page.bbox) or bbox
-
         def parse_page(page: KPage):
             for vobj in page.vobjects:
                 if vobj.is_table():
-                    figure = page.make_figure(
-                        adjust_bbox(page, vobj).to_quad(), add=True
-                    )
-                    if figure is not None:
-                        figure.vobject = vobj
-                        figure.subtype = str(vobj.type)
+                    figure = vobj.make_figure(dx=2,dy=2)
+                    page.objects.append(figure)
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
@@ -71,22 +65,17 @@ class TableParser:
         Parser(self._manager).parse(doc,max_workers=max_workers)
 
     def _parse_ybk(self, doc: KDocument, *, max_workers: int = 0):
-        """全部按有边框来解析，如果没有线，就是1*1的表格
-        一般来说，这个模式合适在开发中测试ybk的解析，或者需要处理的文档都是有边框表格，使用这个可以获得最好的解析。
-        """
+        """全部按有边框来解析"""
         from .ybk import Parser        
-        Parser().parse(doc,max_workers=max_workers)
+        Parser().parse(doc,max_workers=max_workers,mode=YBKMode.AUTO)
 
     def _parse_wbk(self, doc: KDocument, *, max_workers: int = 0):
         """全部按无边框解析，表格的线仅仅用来参考"""
         from .wbk import Parser        
-        Parser(self._manager).parse(doc,max_workers=max_workers)
+        Parser(self._manager).parse(doc,max_workers=max_workers,mode=WBKMode.ALL)
 
     def _parse_auto(self, doc: KDocument, *, max_workers: int = 0):
-        """先判断是无边框表格还是有边框表格"""
-        #from .auto import Parser
-
-        #赶着提交，就先使用有边框的解析
-        from .ybk import Parser 
-        Parser().parse(doc,max_workers=max_workers)
+        """自动选择最合适的"""
+        from .wbk import Parser
+        Parser(self._manager).parse(doc,max_workers=max_workers,mode=WBKMode.AUTO)
 

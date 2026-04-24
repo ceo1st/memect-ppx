@@ -59,7 +59,7 @@ class Parser:
                     anchors[text]=obj2
             
             vobj.cache['anchors']=anchors
-            img.show()
+            #img.show()
 
         def resolve_anchors(table:KTable,anchors:dict[str,VObject]):
             names:list[str]=list(anchors.keys())
@@ -130,6 +130,7 @@ class Parser:
                 if table.row_num > 0 and table.col_num > 0:
                     if anchors:
                         resolve_anchors(table,anchors)
+                        pass
                     page.objects.append(table)
                 else:
                     # TODO 无法解析，截图？

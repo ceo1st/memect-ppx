@@ -3,6 +3,7 @@
 !/requirements.*
 !/version.txt
 !/app
+!/ppx
 !/setup.py
 !/web/
 !/docker-entrypoint.sh
@@ -26,6 +27,10 @@
 !/NOTICE
 !.github
 !example
+!/skills/
+!/skills/ppx-parse/
+!/skills/ppx-parse/**
+
 
 **/.DS_Store
 **/__pycache__/**

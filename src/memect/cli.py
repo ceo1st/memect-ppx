@@ -2,8 +2,10 @@
 import json
 import os
 from pathlib import Path
+import re
 from typing import Annotated, Any
 
+import httpx
 import typer
 
 from .pdf.base import Backend,OCRMode, ParseMode, TableMode
@@ -41,6 +43,36 @@ def _set_device(cpu:bool,cuda:str|None|None=None,cann:str|None=None):
         os.environ['ASCEND_DEVICE_ID'] = cann
         # 或者对于某些框架：
         # os.environ['NPU_VISIBLE_DEVICES'] = cann
+
+def _parse_llm(s:str)->dict[str,Any]:
+    from memect.base.utils import console
+    s=s.strip()
+    if re.fullmatch(r'http[s]?://.+',s):
+        url=s
+        console.log(f'get {url}/models')
+        result = httpx.get(f'{url}/models').json()
+        console.log(result)
+        #{'data':[{},{}]}
+        info=result['data'][0]
+        id_ = info['id']
+        #max_model_len = info['max_model_len']
+        if 'paddle' in id_:
+            name='paddle'
+        elif 'deepseek' in id_:
+            name='deepseek'
+        elif 'glm' in id_:
+            name='glm'
+        else:
+            raise ValueError(f'不支持的模型:{id_}，id需要包含:deepseek,paddle,glm')
+        return {
+            'name':name,
+            'model':id_,
+            'base_url':url,
+            #'api_key':'',
+            #'max_model_len':max_model_len
+        }
+    else:
+        return json.loads(s)
 
 @app.command()
 def start(
@@ -86,9 +118,10 @@ def parse(
     pages: Annotated[str | None, typer.Option(help="页码范围，如 1-3,5")] = None,
     backend:Annotated[Backend|None,typer.Option()]=None,
 
-    deepseek:Annotated[str|None,typer.Option(help="")]=None,
-    paddle:Annotated[str|None,typer.Option(help="")]=None,
-    glm:Annotated[str|None,typer.Option(help="")]=None,
+    llm:Annotated[str|None,typer.Option(help='使用指定的llm解析，可以为url，或者json格式，如：{"name":"deepseek","base_url":"","api_key":""}')]=None,
+    #deepseek:Annotated[str|None,typer.Option(help="")]=None,
+    #paddle:Annotated[str|None,typer.Option(help="")]=None,
+    #glm:Annotated[str|None,typer.Option(help="")]=None,
 
     mode:Annotated[ParseMode|None,typer.Option(help="")]=None,
 
@@ -129,15 +162,17 @@ def parse(
     """解析 PDF 文件"""
     from .base.config import setup,parse_kvs
     from .base.debug import XDebugger
-    from .base.utils import kill_child_processes
     from .pdf.base import KDocumentFactory,ParseParams
     from .pdf.parser import Parser
     from .base.utils import console
 
-    def set_custom_values(settings:dict[str,Any],text:str|None,prefix:str):
+    def set_custom_values(settings:dict[str,Any],text:str|dict[str,Any]|None,prefix:str):
         if not text:
             return
-        data = json.loads(text)
+        if isinstance(text,str):
+            data = json.loads(text)
+        else:
+            data= text
         for k,v in data.items():
             settings[f"{prefix}.{k}"]=v
     
@@ -148,10 +183,17 @@ def parse(
     if log_kvs:
         log_custom_settings.update(parse_kvs(log_kvs))
     
-    #常用的设置，更加简便
-    set_custom_values(custom_settings,deepseek,'pdf_parser.deepseek.model')
-    set_custom_values(custom_settings,paddle,'pdf_parser.paddle.model')
-    set_custom_values(custom_settings,glm,'pdf_parser.glm.model')
+    if llm:
+        llm_args = _parse_llm(llm)
+        name = llm_args.pop('name')
+        backend = Backend(name)
+        set_custom_values(custom_settings,llm_args,f'pdf_parser.{name}.model')
+    else:
+        #常用的设置，更加简便
+        #set_custom_values(custom_settings,deepseek,'pdf_parser.deepseek.model')
+        #set_custom_values(custom_settings,paddle,'pdf_parser.paddle.model')
+        #set_custom_values(custom_settings,glm,'pdf_parser.glm.model')
+        pass
 
     _set_device(cpu,cuda=cuda)
 

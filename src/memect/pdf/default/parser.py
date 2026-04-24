@@ -371,7 +371,8 @@ class DefaultParser:
                 page.draw(
                     ("vobjects", page.vobjects),
                     ("ocr_image", ocr_image),
-                    ("chars", ocr_chars),
+                    ("ocr_spans",ocr_spans),
+                    ("ocr_chars", ocr_chars),
                     show_type=False,
                     dir="debug/default/ocr",
                 )
@@ -427,6 +428,7 @@ class DefaultParser:
                 if debugger.allow("draw", page=page.number):
                     page.draw(
                         ("ocr_image", ocr_image),
+                        ("ocr_spans",ocr_spans),
                         ("ocr_chars", ocr_chars),
                         show_type=False,
                         file=f"debug/default/ocr/{page.number}-{i + 1}.png",

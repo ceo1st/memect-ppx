@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from typing import Any
 import re
 
 import pymupdf
@@ -430,15 +429,6 @@ class PdfWatermarkRemover:
                 print(e)
         else:
             print("[水印清除] 未检测到水印")
-
-
-# ──────────────────────────────────────────────────────────────────────
-# 命令行入口
-# ──────────────────────────────────────────────────────────────────────
-
-
-
-
 
 class Watermark:
     _logger = logging.getLogger(f'{__module__}.{__qualname__}')
