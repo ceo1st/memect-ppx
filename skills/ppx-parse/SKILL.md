@@ -1,7 +1,8 @@
 ---
 name: ppx-parse
-version: 0.2.1
-title: PPX Parse
+version: 0.2.3
+title: memect-ppx
+user-invocable: true
 description: >
   Parse PDFs and images into Markdown/JSON using the `ppx` CLI.
   Use when the user asks to OCR scanned PDFs or screenshots, extract tables from PDFs,
