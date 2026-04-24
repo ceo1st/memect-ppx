@@ -25,6 +25,8 @@
 !/CONTRIBUTING.md
 !/THIRD_PARTY_LICENSES.md
 !/NOTICE
+!/CHANGELOG.md
+!/cliff.toml
 !.github
 !example
 !/skills/
