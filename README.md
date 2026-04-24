@@ -53,7 +53,7 @@ $ppx parse a.pdf
 #大模型解析，指定url即可，目前仅仅支持deepseek-ocr，paddleocr-vl，glm-ocr等模型
 $ppx parse a.pdf --llm http://127.0.0.1:4000/v1
 #如果使用的模型的名字不包含deepseek，paddle，glm等，需要指定，如下：
-$ppx parse a.pdf --llm {"name":"deepseek","base_url":"http://127.0.0.1:4000/v1","model":"xxxx"}
+$ppx parse a.pdf --llm '{"name":"deepseek","base_url":"http://127.0.0.1:4000/v1","model":"xxxx","api_key":""}'
 
 #如果经常使用，可以写到配置文件中
 $mkdir conf
