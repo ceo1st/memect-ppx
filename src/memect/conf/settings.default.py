@@ -38,12 +38,13 @@ def is_apple_silicon():
 _gpus: Final[dict[str, bool]] = {}
 
 
-def use_gpu(engine: str='onnxruntime', vendor: str = "cuda") -> bool:
+def use_gpu(engine: str = "onnxruntime", vendor: str = "cuda") -> bool:
     key = f"{engine}_{vendor}"
     if key not in _gpus:
         _gpus[key] = _use_gpu(engine, vendor=vendor)
         # from rich import get_console
         from memect.base.utils import console
+
         console.log(f"detect gpu,engine={engine},vendor={vendor},ok={_gpus[key]}")
     return _gpus[key]
 
@@ -63,6 +64,7 @@ def _use_gpu(engine: str, vendor: str = "cuda") -> bool:
     if engine == "onnxruntime":
         try:
             import onnxruntime
+
             if onnxruntime.get_device() != "GPU":
                 return False
             providers = onnxruntime.get_available_providers()
@@ -108,7 +110,10 @@ def get_value(name: str, default: str | int | float | bool | None) -> Any:
         return type_(value)
     except ValueError:
         from memect.base.utils import console
-        console.log(f"环境变量设置的值的无法转换为对应的类型，type={type_},{name}={value}")
+
+        console.log(
+            f"环境变量设置的值的无法转换为对应的类型，type={type_},{name}={value}"
+        )
         return default
 
 
@@ -116,7 +121,7 @@ def get_ocr_engine() -> str:
     if use_gpu("onnxruntime"):
         return "onnxruntime"
     elif is_apple_silicon():
-        #多数模型还是需要CPUExecutionProvider，CoreMLExecutionProvider很多不支持，出错
+        # 多数模型还是需要CPUExecutionProvider，CoreMLExecutionProvider很多不支持，出错
         return "onnxruntime"
     else:
         # amd/intel,cpu下这个更快
@@ -125,7 +130,7 @@ def get_ocr_engine() -> str:
 
 def get_cpu_engine():
     if is_apple_silicon():
-        #多数模型还是需要CPUExecutionProvider，CoreMLExecutionProvider很多不支持，出错
+        # 多数模型还是需要CPUExecutionProvider，CoreMLExecutionProvider很多不支持，出错
         return "onnxruntime"
     else:
         return "openvino"
@@ -134,9 +139,10 @@ def get_cpu_engine():
 def get_engine():
     """简便的方法，如果没有特别的要求的"""
     if use_gpu():
-        return 'onnxruntime'
+        return "onnxruntime"
     else:
         return get_cpu_engine()
+
 
 def get_model_path(file: str | Path) -> str | None:
     file = Path(file).absolute()
@@ -329,7 +335,7 @@ settings: dict[str, Any] = {
                 # paddle or glm
                 "model": "paddle",
             },
-            "text_llm":{
+            "text_llm": {
                 "name": "",
                 "enable": True,
                 # 表示只需要一个即可，不需要通过每一个进程一个或者每个线程一个
@@ -342,7 +348,7 @@ settings: dict[str, Any] = {
                 },
                 # paddle or glm
                 "model": "paddle",
-            }
+            },
         },
         "models": {
             # 这里的设置对应RapidOCR，然后必须使用具体的枚举类型，但是使用了这些，每次就必须载入RapidOCR这个库
@@ -355,6 +361,8 @@ settings: dict[str, Any] = {
                     "Global.text_score": 0.5,
                     # -1表示无论如何都det，否则w/h>width_height_ratio，就不det了，而是直接rec
                     "Global.width_height_ratio": -1,
+                    #容易把正常的文本识别为旋转了180度
+                    "Global.use_cls":False,
                     "Det.engine_type": get_ocr_engine(),
                     "Cls.engine_type": get_ocr_engine(),
                     "Rec.engine_type": get_ocr_engine(),
@@ -368,10 +376,18 @@ settings: dict[str, Any] = {
                     #'Cls.model_path':'',
                     #'Rec.model_path':'',
                     "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
+                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     # 没有v5
                     "Cls.ocr_version": "PP-OCRv4",
-                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "EngineConfig.onnxruntime.use_cuda": use_gpu("onnxruntime"),
+                    # 默认为1.6,[1.6,2]之间.，对于密集的小文本更准确
+                    "Det.unclip_ratio": 1.5,
+                    "Det.box_thresh": 0.5,
+                    #
+                    # 默认为fast，slow，速度上差别不大
+                    "Det.score_mode": "fast",
+                    "Det.limit_side_len": 736,
+                    "Det.limit_type": "min",
                 },
             },
             "ocr_server": {
@@ -394,9 +410,9 @@ settings: dict[str, Any] = {
                     #'Cls.model_path':'',
                     #'Rec.model_path':'',
                     "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
+                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     # 没有v5
                     "Cls.ocr_version": "PP-OCRv4",
-                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "EngineConfig.onnxruntime.use_cuda": use_gpu("onnxruntime"),
                 },
             },
@@ -507,10 +523,10 @@ settings: dict[str, Any] = {
             },
             "table_det": {
                 "name": "TableDetModel",
-                "kwargs":{
-                    'model_path':get_model_path('./models/memect/table_det.onnx'),
-                    'score_threshold':0.5
-                }
+                "kwargs": {
+                    "model_path": get_model_path("./models/memect/table_det.onnx"),
+                    "score_threshold": 0.5,
+                },
             },
             "formula": {"name": "RapidFormulaModel", "kwargs": {}},
         },
@@ -563,18 +579,14 @@ settings: dict[str, Any] = {
             },
         },
         "default": {
-            #pdf解析的配置
+            # pdf解析的配置
             "pdf": {
                 "provider": "pymupdf"
                 # "provider":"pdf_oxide"
             },
-            #图片解析的配置
+            # 图片解析的配置
             "image": {},
-            "table":{
-                "ybk":{},
-                "wbk":{},
-                "llm":{}
-            }
+            "table": {"ybk": {}, "wbk": {}, "llm": {}},
         },
     },
     "pdf_service": {

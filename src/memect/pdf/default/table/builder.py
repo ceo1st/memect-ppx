@@ -24,7 +24,7 @@ def _bbox_to_quad(x0: float, y0: float, x1: float, y1: float) -> Quad:
     return Quad(Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1))
 
 
-class TableCellBuilder:
+class TableBuilder:
     def build(
         self,
         page: KPage,
@@ -35,7 +35,6 @@ class TableCellBuilder:
         if not cells:
             return KTable(page, tq, row_num=1, col_num=1)
 
-        # 1. derive row/col grid lines from cell edges, with tolerance ~ 30% of smallest cell
         heights = [y1 - y0 for _, y0, _, y1 in cells]
         widths  = [x1 - x0 for x0, _, x1, _ in cells]
         tol_y = max(1.0, min(heights) * 0.3)
@@ -44,7 +43,6 @@ class TableCellBuilder:
         y_lines = _cluster_edges([y for _, y0, _, y1 in cells for y in (y0, y1)], tol_y)
         x_lines = _cluster_edges([x for x0, _, x1, _ in cells for x in (x0, x1)], tol_x)
 
-        # ensure table bbox edges are part of the grid
         tx0, ty0, tx1, ty1 = table_bbox
         for v, lines, tol in ((tx0, x_lines, tol_x), (tx1, x_lines, tol_x),
                               (ty0, y_lines, tol_y), (ty1, y_lines, tol_y)):
@@ -53,10 +51,17 @@ class TableCellBuilder:
         x_lines.sort()
         y_lines.sort()
 
-        col_num = len(x_lines) - 1  # cells between adjacent lines
+        # 检测跨行/跨列冲突：如果 cell 边界不在网格线上，插入新线
+        for x0, y0, x1, y1 in cells:
+            for edge, lines, tol in ((x0, x_lines, tol_x), (x1, x_lines, tol_x),
+                                      (y0, y_lines, tol_y), (y1, y_lines, tol_y)):
+                if min(abs(edge - line) for line in lines) > tol:
+                    lines.append(edge)
+        x_lines.sort()
+        y_lines.sort()
+
+        col_num = len(x_lines) - 1
         row_num = len(y_lines) - 1
-        # row centers/col centers = midpoints between grid lines
-        # origin is bottom-left, row 0 is top row → sort y_lines descending for row indexing
         y_lines_desc = list(reversed(y_lines))
 
         # 2. snap each input cell to grid indices and spans
