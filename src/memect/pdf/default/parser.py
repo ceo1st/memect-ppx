@@ -371,7 +371,8 @@ class DefaultParser:
                 page.draw(
                     ("vobjects", page.vobjects),
                     ("ocr_image", ocr_image),
-                    ("chars", ocr_chars),
+                    ("ocr_spans",ocr_spans),
+                    ("ocr_chars", ocr_chars),
                     show_type=False,
                     dir="debug/default/ocr",
                 )
@@ -427,6 +428,7 @@ class DefaultParser:
                 if debugger.allow("draw", page=page.number):
                     page.draw(
                         ("ocr_image", ocr_image),
+                        ("ocr_spans",ocr_spans),
                         ("ocr_chars", ocr_chars),
                         show_type=False,
                         file=f"debug/default/ocr/{page.number}-{i + 1}.png",
@@ -578,11 +580,8 @@ class DefaultParser:
                     pass
 
     def _sort(self, doc: KDocument, max_workers: int = 0):
-
-        def parse_page(page: KPage):
-            page.objects.sort(key=lambda obj: obj.bbox.y1, reverse=True)
-
-        self._do(parse_page, doc.working_pages, max_workers=max_workers)
+        from .order import ReadingOrder
+        ReadingOrder().parse(doc,max_workers=max_workers)
 
     def _sort_ppt(self, doc: KDocument, max_workers: int = 0):
         def parse_page(page: KPage):

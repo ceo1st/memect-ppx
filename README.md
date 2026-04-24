@@ -24,26 +24,73 @@ PPX is a source-available document parsing engine built for high-fidelity extrac
 
 ---
 
-## Get Started in 30 Seconds
+## Install
 
 ```bash
-# python version >= 3.12
-uv venv -p 3.12
-uv pip install memect-ppx 
-uv pip install onnxruntime --no-config
-uv pip install opencv-contrib-python --no-config
+#>=3.12
+$uv venv -p 3.12
+$source .venv/bin/activate
+
 # update
 uv pip install --upgrade memect-ppx
-# or
-python3.12 -m venv .venv
-pip install memect-ppx 
-pip install onnxruntime 
-pip install opencv-contrib-python
-# update
-pip install --upgrade memect-ppx
+#如果是在已经存在的环境中，建议先删除
+#$uv pip uninstall opencv-python opencv-contrib-python opencv-contrib-headless opencv-contrib-python-headless
+#$uv pip uninstall onnxruntime onnxruntime-gpu
 
-# parse pdf
-ppx parse document.pdf -o output/
+#cpu版本
+$uv pip install memect-ppx
+$uv pip install onnxruntime --no-config
+#or opencv-contrib-python-headless
+$uv pip install opencv-contrib-python --no-config
+
+#gpu版本
+#安装依赖的cuda库，如果系统中已经全局安装，可以不安装，需要和onnxruntime-gpu的一致
+#如果是其他版本，请根据onnxruntime-gpu的要求安装几个
+$uv pip install memect-ppx[cuda]
+$uv pip install onnxruntime-gpu --no-config
+#or opencv-contrib-python-headless
+$uv pip install opencv-contrib-python --no-config
+
+
+#安装方法二
+$git clone 
+$cd ppx
+$uv venv -p 3.12
+#如果操作系统比较老<=ubuntu 20.04
+#--no-install-package pdf-oxide
+$uv sync --no-install-project
+#如果需要使用gpu，如果系统中已经全局安装，可以不安装，或者安装另外的版本
+$uv sync --extra cuda --no-install-project
+
+#这两个必须手动安装
+#or opencv-contrib-python-headless
+$uv pip install opencv-contrib-python --no-config
+#or onnxruntime-gpu 
+$uv pip install onnxruntime --no-config
+
+
+#命令说明：
+#安装包的方式，请使用: ppx
+#clone代码的方式，请使用:./ppx
+
+#默认解析
+$ppx parse a.pdf
+
+#大模型解析，指定url即可，目前仅仅支持deepseek-ocr，paddleocr-vl，glm-ocr等模型
+$ppx parse a.pdf --llm http://127.0.0.1:4000/v1
+#如果使用的模型的名字不包含deepseek，paddle，glm等，需要指定，如下：
+$ppx parse a.pdf --llm '{"name":"deepseek","base_url":"http://127.0.0.1:4000/v1","model":"xxxx","api_key":""}'
+
+#如果经常使用，可以写到配置文件中
+$mkdir conf
+#可以为json文件或者py文件: settings={}
+#参考src/memect/conf/settings.custom.py 语法
+$vi conf/settings.py
+$vi conf/log.py
+
+#如果在配置文件中写好了路径和模型等，就不需要在命令行再指定
+$ppx parse a.pdf --backend deepseek
+
 ```
 
 PPX uses the pipeline mode by default. The parsed Markdown is typically written
@@ -255,11 +302,6 @@ Other subcommands:
 ppx start               Launch HTTP API server
 ```
 
-Hosted API trial: apply for a free API key at
-<https://pdf2x.cn/api/apikey/page>, then call the API directly.
-
----
-
 ## Output Format
 
 Each parsed document is written to `<input>.out/`:
@@ -281,56 +323,6 @@ report.pdf.out/
 
 ---
 
-## Installation
-
-### Option A — PyPI (recommended)
-
-```bash
-# Create a virtual environment
-uv venv -p 3.12
-source .venv/bin/activate
-
-# CPU build
-uv pip install memect-ppx
-uv pip install onnxruntime --no-config
-uv pip install opencv-contrib-python --no-config   # or opencv-contrib-python-headless
-
-
-# GPU (CUDA) build
-uv pip install memect-ppx[cuda]
-uv pip install onnxruntime-gpu --no-config
-uv pip install opencv-contrib-python --no-config
-
-ppx --help
-
-ppx parse document.pdf -o output/
-```
-
-> **Why install `onnxruntime` and `opencv` manually?**
-> Third-party packages often pin different variants (`headless` vs `contrib`, `cpu` vs `gpu`).
-> PPX excludes both from its dependency list so you stay in control of which variant is installed.
-
-### Option B — From source
-
-```bash
-git clone https://github.com/memect/memect-ppx.git
-cd ppx
-uv venv -p 3.12
-source .venv/bin/activate
-
-# Install all dependencies (CPU)
-uv sync --no-install-project
-uv pip install onnxruntime --no-config
-uv pip install opencv-contrib-python --no-config
-
-# Or GPU
-uv sync --extra cuda --no-install-project
-uv pip install onnxruntime-gpu --no-config
-uv pip install opencv-contrib-python --no-config
-```
-
----
-
 ## Platform Support
 
 | Platform | Python | CPU | CUDA | Notes |
@@ -348,18 +340,19 @@ CUDA requires NVIDIA driver + CUDA 12.x and `onnxruntime-gpu` built for that CUD
 
 PPX LLM backends are served via [vLLM](https://github.com/vllm-project/vllm).
 
+```bash
+# 常用环境变量，可以附加在命令前面
+export CUDA_VISIBLE_DEVICES=0
+# 国内建议使用 ModelScope，下面的模型 ID 也是相对 ModelScope，HuggingFace 的可能有所不同
+export VLLM_USE_MODELSCOPE=True
+```
+
 ### DeepSeek-OCR-2 (~20 GB VRAM)
 
+[ModelScope](https://modelscope.cn/models/deepseek-ai/DeepSeek-OCR-2) — note: vllm==0.19.1 produces garbled output, use a newer version.
+
 ```bash
-vllm serve ./hub/deepseek-ai/DeepSeek-OCR-2 \
-  --served-model-name deepseek-ocr-2 \
-  --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
-  --mm-processor-cache-gb 0 \
-  --no-enable-prefix-caching \
-  --gpu-memory-utilization 0.8 \
-  --port 4000
-```
-vllm serve ./hub/deepseek-ai/DeepSeek-OCR-2 \
+vllm serve deepseek-ai/DeepSeek-OCR-2 \
   --served-model-name deepseek-ocr-2 \
   --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
   --mm-processor-cache-gb 0 \
@@ -369,31 +362,37 @@ vllm serve ./hub/deepseek-ai/DeepSeek-OCR-2 \
 ```
 
 ### PaddleOCR-VL / PaddleOCR-VL-1.5 (~10 GB VRAM)
-### PaddleOCR-VL / PaddleOCR-VL-1.5 (~10 GB VRAM)
+
+[ModelScope PaddleOCR-VL](https://modelscope.cn/models/PaddlePaddle/PaddleOCR-VL) · [PaddleOCR-VL-1.5](https://modelscope.cn/models/PaddlePaddle/PaddleOCR-VL-1.5)
 
 ```bash
-vllm serve ./hub/PaddlePaddle/PaddleOCR-VL \
-```bash
-vllm serve ./hub/PaddlePaddle/PaddleOCR-VL \
+# PaddleOCR-VL
+vllm serve PaddlePaddle/PaddleOCR-VL \
   --served-model-name paddleocr-vl \
   --trust-remote-code \
   --max-num-batched-tokens 16384 \
   --no-enable-prefix-caching \
   --mm-processor-cache-gb 0 \
   --gpu-memory-utilization 0.5 \
+  --port 4001
+
+# PaddleOCR-VL-1.5 (same model name and port — config unchanged)
+vllm serve PaddlePaddle/PaddleOCR-VL-1.5 \
+  --served-model-name paddleocr-vl \
+  --trust-remote-code \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
   --gpu-memory-utilization 0.5 \
   --port 4001
 ```
 
-> Replace `PaddleOCR-VL` with `PaddleOCR-VL-1.5` to use the newer model; port and `--served-model-name` remain the same.
-
 ### GLM-OCR (~10 GB VRAM)
 
-```bash
-# Requires transformers >= 5.3.0
-uv pip install "transformers>=5.3.0"
+[ModelScope](https://modelscope.cn/models/ZhipuAI/GLM-OCR)
 
-vllm serve ./hub/ZhipuAI/GLM-OCR \
+```bash
+vllm serve ZhipuAI/GLM-OCR \
   --served-model-name glmocr \
   --max-num-batched-tokens 16384 \
   --max-model-len 16384 \
@@ -401,25 +400,6 @@ vllm serve ./hub/ZhipuAI/GLM-OCR \
   --gpu-memory-utilization 0.5 \
   --port 4002
 ```
-
-> Replace `PaddleOCR-VL` with `PaddleOCR-VL-1.5` to use the newer model; port and `--served-model-name` remain the same.
-
-### GLM-OCR (~10 GB VRAM)
-
-```bash
-# Requires transformers >= 5.3.0
-uv pip install "transformers>=5.3.0"
-
-vllm serve ./hub/ZhipuAI/GLM-OCR \
-  --served-model-name glmocr \
-  --max-num-batched-tokens 16384 \
-  --max-model-len 16384 \
-  --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
-  --gpu-memory-utilization 0.5 \
-  --port 4002
-```
-
-Model source: [ModelScope — ZhipuAI/GLM-OCR](https://modelscope.cn/models/ZhipuAI/GLM-OCR)
 
 ## FAQ
 

@@ -3,6 +3,7 @@
 !/requirements.*
 !/version.txt
 !/app
+!/ppx
 !/setup.py
 !/web/
 !/docker-entrypoint.sh
@@ -24,8 +25,14 @@
 !/CONTRIBUTING.md
 !/THIRD_PARTY_LICENSES.md
 !/NOTICE
+!/CHANGELOG.md
+!/cliff.toml
 !.github
 !example
+!/skills/
+!/skills/ppx-parse/
+!/skills/ppx-parse/**
+
 
 **/.DS_Store
 **/__pycache__/**

@@ -21,7 +21,7 @@ from memect.base.config import get_settings
 from memect.base.task import Saver, Task, TaskManager, TaskManagerArgs
 from memect.base.utils import AutoCleaner, MyBaseModel
 from .base import ApiParams, KDocument, ParseParams
-from .parser import Parser, ParserArgs
+from .parser import Parser
 
 
 def parse_params(params: Annotated[str | None, Query()] = None) -> ParseParams:

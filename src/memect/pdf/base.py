@@ -18,6 +18,7 @@ from typing import (
     NotRequired,
     Self,
     TextIO,
+    TypeGuard,
     TypedDict,
     cast,
     override,
@@ -36,6 +37,7 @@ from memect.base.matrix import Matrix
 from memect.base.utils import AutoCleaner, MyBaseModel, safe_write
 from memect.pdf.grid import Grid
 from memect.base.zip import Archiver
+from memect.pdf.sort import Sorter
 
 class PageParams(MyBaseModel):
     number: int = 1
@@ -274,9 +276,15 @@ class VObject:
     def is_footnote(self) -> bool:
         return self.type == VObjectType.FOOTNOTE
     
-    def make_figure(self)->"KFigure":
-        figure = self.page.make_figure(self.quad)
+    def make_figure(self,*,dx:float=0,dy:float=0)->"KFigure":
+        if dx!=0 or dy!=0:
+            quad = self.bbox.expand(dx=dx,dy=dy).intersect(self.page.bbox).to_quad()
+        else:
+            quad = self.quad
+        figure = self.page.make_figure(quad)
         assert figure is not None
+        figure.vobject=self
+        figure.subtype=str(self.type)
         return figure
 
 
@@ -979,6 +987,7 @@ class KPage:
         use_bbox: bool = False,
         show_type: bool = True,
         index: int | None = None,
+        line_width:int|None=None,
     ) -> PIL.Image.Image:
         """
         columns: 需要显示的多列内容，None表示输出原图，或者list，或者PIL.Image.Image
@@ -1028,7 +1037,7 @@ class KPage:
             else:
                 raise ValueError(f"不支持的对象:{obj}")
 
-        def draw_objects(objects: Sequence[Any], font: Any):
+        def draw_objects(objects: Sequence[Any], font: Any,op:str|None=None):
             image = self.image.copy()
             overlay_image = PIL.Image.new("RGBA", image.size, (0, 0, 0, 0))
 
@@ -1037,14 +1046,25 @@ class KPage:
 
             # 把相对页面的坐标转换为相对图片的，原点从左下角到左上角，然后再缩放
             m = Matrix.lb_to_lt(self.size, image.size)
-            for obj in objects:
+            for k,obj in enumerate(objects):
                 # TODO 为页面坐标，还需要转换为相对图片的，因为可能缩放了，但是旋转方向等是一致的
                 quad, type_ = get_quad_and_type(obj)
+                if op=='number':
+                    #显示序号
+                    if type_:
+                        type_=f'{k}-{type_}'
+                    else:
+                        type_=str(k)
+                
                 quad = quad.transform(m)
                 bbox = quad.bbox
                 x0, y0, x1, y1 = bbox
                 if isinstance(obj, KLine):
-                    draw.line((x0, y0, x1, y1), fill=(255, 255, 0) if obj.is_h() else (0,0,255), width=math.ceil(obj.width))
+                    if line_width is None:
+                        w = math.ceil(obj.width)
+                    else:
+                        w = line_width
+                    draw.line((x0, y0, x1, y1), fill=(255, 255, 0) if obj.is_h() else (0,0,255), width=w)
                     #draw.rectangle(obj.rect_bbox.transform(m),fill=(255,255,0))
                 elif isinstance(obj, KRect):
                     #这个是覆盖原图
@@ -1074,7 +1094,7 @@ class KPage:
                             quad.points, fill=color_a, outline=(0, 0, 0, 0), width=1
                         )
 
-                    if type_ and show_type:
+                    if type_ and op in ('type','number'):
                         text_x = x0
                         text_y = max(0, y0 - 15)
 
@@ -1112,20 +1132,32 @@ class KPage:
         type_font = get_font()
 
         images: list[tuple[str, PIL.Image.Image]] = []
-        for title, obj in columns:
+        new_columns:list[Any] = []
+        for column in columns:
+            if len(column)==2:
+                column = [*column,'type' if show_type else None]
+            elif len(column)==3 and isinstance(column[2],bool):
+                #('xx',[],True) => 表示显示类型
+                column = [column[0],column[1],'type']
+            else:
+                pass
+            assert len(column)==3
+            new_columns.append(column)
+        
+        for title, obj,op in new_columns:
             if obj is None:
                 image = self.image
             elif isinstance(obj, PIL.Image.Image):
                 image = obj
             else:
-                image = draw_objects(obj, type_font)
+                image = draw_objects(obj, type_font,op)
 
             images.append((title, image))
 
         title_font = get_font(30)
         gap_width = 2
         title_height = 40
-        new_width = sum(img[1].width for img in images) + gap_width * (len(columns) - 1)
+        new_width = sum(img[1].width for img in images) + gap_width * (len(new_columns) - 1)
         new_height = max(img[1].height for img in images) + title_height
         # 创建新画布（模式为RGB，背景白色）
         image = PIL.Image.new("RGB", (new_width, new_height), (255, 255, 255))
@@ -2086,6 +2118,13 @@ class KTable(KObject):
 
         buf: list[str] = []
         buf.append("<table>")
+        if True:
+            #如果存在错位的跨列，如果该列没有内容，会导致width=0，显示上看不出来错位
+            #所以这里简单的设置一个宽度
+            buf.append("<colgroup>")
+            for i in range(self.col_num):
+                buf.append('<col colspan=1 style="width:100px;"></col>')
+            buf.append("</colgroup>")
         i = -1
         tr: list[str] = []
         for cell in self.cells:
@@ -2208,6 +2247,87 @@ class KTable(KObject):
             )
             self.cells.append(kcell)
 
+    def fill_objects(self,objs:list[KObject|VObject]):
+        """已经创建表格结构，把对象填充到单元格，会消耗使用的对象，目的是为了更好的测试"""
+        def remove_spaces(objs:Sequence[KObject])->list[KObject]:
+            new_objs:list[KObject]=[]
+            for obj in objs:
+                if isinstance(obj,KChar) and obj.text.isspace():
+                    pass
+                else:
+                    new_objs.append(obj)
+            return new_objs
+        
+        #>=3.13才能够使用TypeIs
+        def is_chars(objs:Sequence[Any])->TypeGuard[Sequence[KChar]]:
+            return all(isinstance(obj,KChar) for obj in objs)
+        
+        def is_figures(objs:Sequence[Any])->TypeGuard[Sequence[KFigure]]:
+            return all(isinstance(obj,KFigure) for obj in objs)
+        
+        def is_vobjects(objs:Sequence[Any])->TypeGuard[Sequence[VObject]]:
+            return all(isinstance(obj,VObject) for obj in objs)
+        
+        for cell in self.cells:
+            if not objs:
+                break
+            assert cell.bbox is not None
+            #TODO 单元格也可以存在复杂的布局，如果是这样，又需要进行一个单元格的版面分析
+            #目前仅仅支持简单的格式，要么为纯文本，要么为图片
+            #如果是文本和图片混合，如
+            #--text1----
+            #--figure1--
+            #--figure2--
+            #--text2----
+            cell_objs = cell.bbox.get(objs,ratio=0.7,remove=True)
+            if not cell_objs:
+                continue
+
+            new_cell_objs:list[KObject]=[]
+            for obj in cell_objs:
+                if isinstance(obj,KPDFFigure|VObject):
+                    #都使用图片即可，如果是vobject的，可以再考虑公式等？
+                    obj=obj.make_figure()
+                new_cell_objs.append(obj)
+
+            #空格先暂时去掉，混合在图片中，没有意义
+            valid_objs=remove_spaces(new_cell_objs)
+            if is_chars(new_cell_objs):
+                #全部都是字符
+                tb = KTextbox.from_objects(new_cell_objs)
+                cell.objects.append(tb)
+                cell.text = tb.text
+            elif is_figures(valid_objs):
+                #都是图片
+                for obj in valid_objs:
+                    cell.objects.append(obj)
+            else:
+                #图文并茂，简单的从上到下分行即可
+                groups:list[tuple[str,list[KObject]]]=[]
+                for line in Sorter.get_lines(new_cell_objs):
+                    #先去掉前后的空格字符
+                    valid_line=remove_spaces(line)
+                    if is_figures(valid_line):
+                        groups.append(('figure',list(valid_line)))
+                    else:
+                        if not groups or groups[-1][0]!='char':
+                            groups.append(('char',list(line)))
+                        else:
+                            groups[-1][1].extend(line)
+                
+                for group in groups:
+                    if group[0]=='figure':
+                        cell.objects.extend(group[1])
+                    else:
+                        tb = KTextbox.from_objects(group[1])
+                        cell.objects.append(tb)
+                        cell.text+=tb.text
+        
+        if len(objs)>0:
+            #有对象剩余？
+            pass
+        
+
     @classmethod
     def from_text(cls, page: KPage, quad: Quad, text: str) -> "KTable":
         """根据html或者otsl构造"""
@@ -2223,18 +2343,14 @@ class KTable(KObject):
         return table
     
     @classmethod
-    def from_grid(cls,page:KPage,grid:Grid):
+    def from_grid(cls,page:KPage,grid:Grid)->"KTable":
         table = KTable(page,grid.bbox.to_quad())
         table.row_num = grid.row_num
         table.col_num = grid.col_num
         for cell in grid.cells:
-            #TODO 将来支持表中表？
-            #可能包含图片，字符（需要转换为Textbox）
-            #TODO 这里需要获得text
-            #如果有图片，需要先分开
             buf:list[str]=[]
             for obj in cell.objects:
-                if isinstance(obj,KChar):
+                if isinstance(obj,KTextbox):
                     buf.append(obj.text)
                 else:
                     pass
@@ -2243,6 +2359,22 @@ class KTable(KObject):
             kcell.objects.extend(cell.objects)
 
             table.cells.append(kcell)
+        return table
+    
+    @classmethod
+    def from_lines(cls,page:KPage,lines:Sequence["KLine|BBox|Sequence[float]"],objects:list[KObject|VObject]|None=None)->"KTable":
+        """
+        objects: 会删除使用过的对象，目的是为了方便测试
+        """
+        def to_line(line:Any)->Any:
+            if isinstance(line,KLine):
+                return line.bbox
+            else:
+                return line
+        grid = Grid([to_line(line) for line in lines ])
+        table = cls.from_grid(page,grid)
+        if objects:
+            table.fill_objects(objects)
         return table
 
     @classmethod
@@ -2518,8 +2650,8 @@ class KOther(KObject):
 
 
 class KBlock(KObject):
+    """表示一个局部的内容块，把一些关联或者没有关联的，影响阅读顺序的内容放在一起"""
     type = "block"
-
     def __init__(self, page: KPage, quad: Quad):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
@@ -2536,6 +2668,7 @@ class KPageHeader(KObject):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
 
+    @property
     def content_bbox(self) -> BBox | None:
         return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
 
@@ -2547,6 +2680,7 @@ class KPageFooter(KObject):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
 
+    @property
     def content_bbox(self) -> BBox | None:
         return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
 
@@ -2558,6 +2692,7 @@ class KPageFootnote(KObject):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
 
+    @property
     def content_bbox(self) -> BBox | None:
         return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
 
