@@ -495,7 +495,12 @@ class Parser:
         #保留pdf图片的目的，只是为了通过ocr补充需要，所以，如果可能为文字的，就保留
         kpage.pdf_figures.clear()
         kpage.pdf_figures.extend(figures)
-        kpage.pdf_figures.extend(no_chars_images)
+        for image in no_chars_images:
+            kpage.pdf_figures.append(KPDFFigure(
+                    kpage,
+                    BBox.from_list(image["bbox"], matrix=m).to_quad(),
+                    transparent=True,
+                ))
         self._logger.warning('第%s页，图片=%s,没有文字遮挡的透明图片=%s',kpage.number,len(figures),len(no_chars_images))
         return False
 
