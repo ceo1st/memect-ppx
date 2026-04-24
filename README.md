@@ -79,6 +79,7 @@ $export VLLM_USE_MODELSCOPE=True
 
 #需要大概20G
 #https://modelscope.cn/models/deepseek-ai/DeepSeek-OCR-2
+#不能够使用vllm==0.19.1执行，生成乱码
 $vllm serve deepseek-ai/DeepSeek-OCR-2 --served-model-name deepseek-ocr-2 \
 --logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
 --mm-processor-cache-gb 0 \
