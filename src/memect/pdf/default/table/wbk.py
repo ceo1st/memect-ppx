@@ -164,7 +164,8 @@ class Parser:
         self._expand_cells(cells, result.chars, [0.7, 0.5])
         self._expand_cells(cells, result.pdf_figures, [0.7, 0.5])
         self._expand_cells(cells, result.vobjects, [0.7, 0.5])
-        bbox = bbox.union(BBox.join(cells))
+        if cells:
+            bbox = bbox.union(BBox.join(cells))
         table = TableBuilder().build(page, bbox, cells)
         table.vobject = vobj
         table.subtype = "wbk"
