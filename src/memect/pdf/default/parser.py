@@ -580,11 +580,8 @@ class DefaultParser:
                     pass
 
     def _sort(self, doc: KDocument, max_workers: int = 0):
-
-        def parse_page(page: KPage):
-            page.objects.sort(key=lambda obj: obj.bbox.y1, reverse=True)
-
-        self._do(parse_page, doc.working_pages, max_workers=max_workers)
+        from .order import ReadingOrder
+        ReadingOrder().parse(doc,max_workers=max_workers)
 
     def _sort_ppt(self, doc: KDocument, max_workers: int = 0):
         def parse_page(page: KPage):

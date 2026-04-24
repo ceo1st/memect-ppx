@@ -1037,7 +1037,7 @@ class KPage:
             else:
                 raise ValueError(f"不支持的对象:{obj}")
 
-        def draw_objects(objects: Sequence[Any], font: Any,show_type:bool=False):
+        def draw_objects(objects: Sequence[Any], font: Any,op:str|None=None):
             image = self.image.copy()
             overlay_image = PIL.Image.new("RGBA", image.size, (0, 0, 0, 0))
 
@@ -1046,9 +1046,16 @@ class KPage:
 
             # 把相对页面的坐标转换为相对图片的，原点从左下角到左上角，然后再缩放
             m = Matrix.lb_to_lt(self.size, image.size)
-            for obj in objects:
+            for k,obj in enumerate(objects):
                 # TODO 为页面坐标，还需要转换为相对图片的，因为可能缩放了，但是旋转方向等是一致的
                 quad, type_ = get_quad_and_type(obj)
+                if op=='number':
+                    #显示序号
+                    if type_:
+                        type_=f'{k}-{type_}'
+                    else:
+                        type_=str(k)
+                
                 quad = quad.transform(m)
                 bbox = quad.bbox
                 x0, y0, x1, y1 = bbox
@@ -1087,7 +1094,7 @@ class KPage:
                             quad.points, fill=color_a, outline=(0, 0, 0, 0), width=1
                         )
 
-                    if type_ and show_type:
+                    if type_ and op in ('type','number'):
                         text_x = x0
                         text_y = max(0, y0 - 15)
 
@@ -1128,17 +1135,22 @@ class KPage:
         new_columns:list[Any] = []
         for column in columns:
             if len(column)==2:
-                column = [*column,show_type]
+                column = [*column,'type' if show_type else None]
+            elif len(column)==3 and isinstance(column[2],bool):
+                #('xx',[],True) => 表示显示类型
+                column = [column[0],column[1],'type']
+            else:
+                pass
             assert len(column)==3
             new_columns.append(column)
         
-        for title, obj,show_type2 in new_columns:
+        for title, obj,op in new_columns:
             if obj is None:
                 image = self.image
             elif isinstance(obj, PIL.Image.Image):
                 image = obj
             else:
-                image = draw_objects(obj, type_font,show_type2)
+                image = draw_objects(obj, type_font,op)
 
             images.append((title, image))
 
@@ -2638,8 +2650,8 @@ class KOther(KObject):
 
 
 class KBlock(KObject):
+    """表示一个局部的内容块，把一些关联或者没有关联的，影响阅读顺序的内容放在一起"""
     type = "block"
-
     def __init__(self, page: KPage, quad: Quad):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
