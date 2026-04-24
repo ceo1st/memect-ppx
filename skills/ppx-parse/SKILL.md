@@ -1,8 +1,13 @@
 ---
 name: ppx-parse
-version: 0.1
+version: 0.2.0
 title: PPX Parse
-description: Parse local PDFs and images with the `ppx` CLI into Markdown and JSON. Use when the user asks to OCR scanned PDFs, extract tables, preserve document layout, convert PDFs or images to Markdown, or inspect PPX parsing output.
+description: >
+  Parse PDFs and images into Markdown/JSON using the `ppx` CLI.
+  Use when the user asks to OCR scanned PDFs or screenshots, extract tables from PDFs,
+  convert PDF/image to Markdown, preserve document layout, inspect parsing output.
+  Also triggers on: 解析PDF、图片转文字、扫描件识别、扫描件转文字、提取表格、
+  PDF转Markdown、文档解析、OCR识别、识别图片文字、解析图片、提取文档内容。
 metadata:
   openclaw:
     requires:
