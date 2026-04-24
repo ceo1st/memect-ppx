@@ -1,6 +1,6 @@
 ---
 name: ppx-parse
-version: 0.2.0
+version: 0.2.1
 title: PPX Parse
 description: >
   Parse PDFs and images into Markdown/JSON using the `ppx` CLI.
