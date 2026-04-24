@@ -180,7 +180,7 @@ class Api:
             #请求成功/失败，返回json格式:{error:{},data:''}
             result:_Result = res.json()
             error = result.get('error')
-            print(result,error)
+            #print(result,error)
             if error:
                 raise ApiError(ApiError.ANY,f'api调用失败:{error}')
             if self._async:

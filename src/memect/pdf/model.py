@@ -1,6 +1,6 @@
 import logging
+import math
 import multiprocessing as mp
-import os
 import threading
 import time
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
@@ -636,6 +636,7 @@ class RapidOCRModel(Model):
 
         kwargs = self._normalize_kwargs(kwargs)
         self._model: Final = RapidOCR(params=kwargs)
+        self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
 
     def _normalize_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         from rapidocr import (
@@ -674,14 +675,85 @@ class RapidOCRModel(Model):
         def to_quad(box: Any) -> Any:
             p1, p2, p3, p4 = box
             return (to_point(p1), to_point(p2), to_point(p3), to_point(p4))
+        
+        def to_quad2(box:Any,shrink_factor:float=0.9):
+            # item=[(lt,rt,rb,lb),'xxx',0.9]
+            if shrink_factor != 1:
+                center = np.mean(box, axis=0)
+                # 仅仅调整y区域
+                box = center + (box - center) * (1, shrink_factor)
 
+            x0, y0 = box[0]
+            x1, y1 = box[1]
+            x2, y2 = box[2]
+            x3, y3 = box[3]
+            # 为了能够json，需要从np.float => float
+            x0 = float(x0)
+            y0 = float(y0)
+            x1 = float(x1)
+            y1 = float(y1)
+            x2 = float(x2)
+            y2 = float(y2)
+            x3 = float(x3)
+            y3 = float(y3)
+
+            # 即使为书写准确的文字，也就是来自标准的pdf生成的图片，识别的box也经常有轻微的倾斜，这里稍微调整
+            # 也就是如果倾斜的度数很小，就调整为水平的矩形
+            if True and x1-x0 != 0 and x3-x2 != 0:
+                angle1 = math.degrees(math.atan((y1-y0)/(x1-x0)))
+                angle2 = math.degrees(math.atan((y3-y2)/(x3-x2)))
+                angle = max(abs(angle1), abs(angle2))
+                method = 1
+                if angle <= 4:
+                    if method == 1:
+                        y0 = y1 = max(y0, y1)
+                        y2 = y3 = max(y2, y3)
+                    elif method == 2:
+                        y0 = y1 = min(y0, y1)
+                        y2 = y3 = min(y2, y3)
+                    else:
+                        pass
+            # bbox:tuple[float,float,float,float]=(min(x0,x1,x2,x3),min(y0,y1,y2,y3),max(x0,x1,x2,x3),max(y0,y1,y2,y3))
+            # TODO 如果text的前后为全角字符串，需要增加一点空间，如：
+            # “（”，“）”，返回的bbox是不包含前后的空间的，这里就需要调整一下
+            # text = item[1]
+            return ((x0,y0),(x1,y1),(x2,y2),(x3,y3))
+
+        def adjust_boxes(boxes: Any,texts:list[str], x_overlap_ratio: float = 0.7,min_overlap_y:float=1) -> Any:
+            if boxes is None or len(boxes) < 2:
+                return boxes
+            result = [b.copy() for b in boxes]
+            for i in range(len(result)):
+                for j in range(i + 1, len(result)):
+                    a, b = result[i], result[j]
+                    # 确定上下关系
+                    if a[:, 1].mean() > b[:, 1].mean():
+                        a, b = b, a
+                    # x 相交比例
+                    x_inter = min(a[:, 0].max(), b[:, 0].max()) - max(a[:, 0].min(), b[:, 0].min())
+                    min_w = min(a[:, 0].max() - a[:, 0].min(), b[:, 0].max() - b[:, 0].min())
+                    if min_w <= 0 or x_inter / min_w < x_overlap_ratio:
+                        continue
+                    # y 方向相交
+                    a_bottom, b_top = a[:, 1].max(), b[:, 1].min()
+                    if a_bottom-b_top<min_overlap_y:
+                        continue
+                    mid = (a_bottom + b_top) / 2
+                    if mid-1 <= a[:, 1].min() or mid+1 >= b[:, 1].max():
+                        continue
+                    a[np.argsort(a[:, 1])[-2:], 1] = mid-1
+                    b[np.argsort(b[:, 1])[:2], 1] = mid+1
+            return result
+
+        use_preferred_bbox=True
         results: list[Any] = []
         for file in files:
             # 这个模型的其他参数，None表示不设置，使用配置的值
             # 但是，如果设置了一次，就会直接改变配置的值，所以，要么都不设置，要么每次都设置
 
             # 代码是支持PIL.Image.Image，但是接口的类型注释没有
-            output: RapidOCROutput = self._model(file.file)
+            cv2_img = file.cv2_image
+            output: RapidOCROutput = self._model(cv2_img)
             objs: list[Any] = []
             size = file.size
             # height = size[1]
@@ -690,7 +762,21 @@ class RapidOCRModel(Model):
                 and output.scores is not None
                 and output.txts is not None
             ):
-                for box, score, text in zip(output.boxes, output.scores, output.txts):
+                if use_preferred_bbox:
+                    boxes = adjust_boxes(output.boxes,output.txts)
+                else:
+                    boxes = output.boxes
+                for box, score, text in zip(boxes, output.scores, output.txts):
+                    #返回的box是unclip后的结果，扩大了一些
+                    #to_quad(box)
+                    #to_quad2(box) 稍微内收了一点
+                    if use_preferred_bbox:
+                        box = self._shrink_bbox_any_bg(cv2_img,box)
+                    
+                    #TODO 有些情况，会把2行文字识别为一个box，而且没有识别全部字
+                    #这种情况下，如下：被识别为一个box，而且仅仅返回“AB”，或者“ABC”，或者“ABCD”，导致字符的宽度/高度计算错误
+                    #AB
+                    #CD
                     obj = {
                         "text": text,
                         # 原点为左上角
@@ -703,15 +789,45 @@ class RapidOCRModel(Model):
             results.append({"spans": objs, "width": size[0], "height": size[1]})
         return results
 
-    def unclip(self, box: np.ndarray) -> np.ndarray:
-        # 标准的实现是
-        # det(识别文本区域，然后unclip_ratio扩展quad，截图为长方形（通过透视的方式），如果height/width>1.5，旋转90度，变成水平)
-        # cls(识别文本方向，通过det可以知道，垂直的变成了水平，但是可能倒过来，这个主要识别0，180度，然后变成正确的方向)
-        # rec（识别出文本）
-        # 现在这里，跳过det/cls，只需要rec，所以只需要正确的截图即可，可以应该unclip+截图
-        # 代码可以参考
-        #
-        pass
+
+    def _shrink_bbox_any_bg(
+        self,
+        image: np.ndarray,
+        bbox: np.ndarray,
+        padding: int = 1,
+    ) -> np.ndarray:
+        x, y, w, h = cv2.boundingRect(bbox.astype(np.float32))
+        roi = image[y:y+h, x:x+w]
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
+
+        # ── 用梯度检测文字边缘，不依赖背景颜色 ──────────────────
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad   = cv2.magnitude(grad_x, grad_y)
+        grad   = cv2.normalize(grad, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        # 自动阈值保留强边缘
+        _, binary = cv2.threshold(grad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # 连接断开的笔画
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+        coords = cv2.findNonZero(binary)
+        if coords is None:
+            return bbox
+
+        rx, ry, rw, rh = cv2.boundingRect(coords)
+        rx = max(rx - padding, 0)
+        ry = max(ry - padding, 0)
+        rw = min(rw + 2 * padding, w - rx)
+        rh = min(rh + 2 * padding, h - ry)
+
+        x1, y1 = x + rx,      y + ry
+        x2, y2 = x + rx + rw, y + ry + rh
+
+        return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], dtype=np.float32)
 
 
 class RapidFormulaModel(Model):

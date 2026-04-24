@@ -224,7 +224,7 @@ class SafeExecutor(Executor):
                 except BrokenExecutor:
                     self._impl = None
                     self._logger.exception("进程池/线程池坏了")
-                    self._shutown_executor(impl, "破损")
+                    self._shutdown_executor(impl, "破损")
                     if n >= max_times:
                         raise
 
@@ -460,4 +460,5 @@ class AutoCleaner:
 def is_free_threaded() -> bool:
     # -Xgil=0
     # return not sys._is_gil_enabled()
-    return sys.flags.gil == 0
+    #return sys.flags.gil == 0
+    return getattr(sys.flags,'gil',1)==0

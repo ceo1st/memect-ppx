@@ -3,6 +3,7 @@
 !/requirements.*
 !/version.txt
 !/app
+!/ppx
 !/setup.py
 !/web/
 !/docker-entrypoint.sh

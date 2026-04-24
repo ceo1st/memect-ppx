@@ -151,7 +151,7 @@ class GLM:
             buf.append(text)
 
     def _parse_layout(self, doc: KDocument):
-        debugger = self._debugger.bind()
+        #debugger = self._debugger.bind()
         name = self._layout_key
         self._layout_model.parse(doc,name)
         for page in doc.working_pages:
@@ -159,7 +159,7 @@ class GLM:
             
 
     def _parse_page(self, page: KPage) -> str:
-        doc: Final = page.doc
+        #doc: Final = page.doc
         debugger: Final = self._debugger.bind(page=page.number)
         # 必须存在，如果不存在，不应该执行到这里
         result: dict[str, str] = page.cache.pop(self._llm_key)

@@ -192,35 +192,6 @@ class Model:
             task.add_result(item, resp)
         return task.post_process()
 
-class LLMArgs(MyBaseModel):
-    default: str = ""
-    models: dict[str, dict[str, Any]] = Field(default_factory=dict)
-
-
-class LLM:
-    def __init__(self, args: LLMArgs|Mapping[str,Any]):
-        super().__init__()
-        args = LLMArgs.create(args)
-        self._models: dict[str, Model] = {}
-        for k, v in args.models.items():
-            self._models[k] = Model.from_dict(k, v)
-
-        if args.default:
-            self._models["default"] = self._models[args.default]
-        elif self._models:
-            default = next(iter(self._models.keys()))
-            self._models["default"] = self._models[default]
-        else:
-            pass
-
-    def submit(self, items: Sequence[RequestArgs], *, name: str = "default"):
-        return self.get_model(name).submit(items)
-
-    def execute(self, args: RequestArgs, *, name: str = "default"):
-        return self.get_model(name).execute(args)
-
-    def get_model(self, name: str) -> Model:
-        return self._models[name]
 
 
 
