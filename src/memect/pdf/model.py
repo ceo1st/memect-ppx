@@ -872,7 +872,7 @@ class TableClsModel(Model):
 
 
 class TableDetModel(Model):
-    def __init__(self,*,model_path: str|Path|None=None, score_threshold: float = 0.5):
+    def __init__(self,*,model_path: str|Path|None=None,**kwargs:Any):
         super().__init__()
         from .table_det import RTDETRTableCellDet
         from memect.models import get_model_path
@@ -880,7 +880,7 @@ class TableDetModel(Model):
             model_path=get_model_path('table_det.onnx')
         else:
             model_path = Path(model_path)
-        self._model = RTDETRTableCellDet(model_path, score_threshold)
+        self._model = RTDETRTableCellDet(model_path,**kwargs)
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
