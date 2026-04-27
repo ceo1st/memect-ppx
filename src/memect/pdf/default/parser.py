@@ -561,15 +561,15 @@ class DefaultParser:
             # TODO 如果包含有ocr chars，全部或者部分，可以调整一下ocr chars的bbox，对齐和美观（因为ocr识别
             # 即使在同一行，同样的字体，大小等，识别出来的bbox还是不一定一致）
             tb = KTextbox.from_objects(objs)
-            tb.vobject = vobj
+            if tb is not None:
+                tb.vobject = vobj
+                parse_underline(tb)
+                page.objects.append(tb)
 
-            parse_underline(tb)
-            page.objects.append(tb)
-
-            if verbose and debugger.allow("info", page=page.number):
-                with debugger.group("textbox"):
-                    for tl in tb.lines:
-                        print(tl.text)
+                if verbose and debugger.allow("info", page=page.number):
+                    with debugger.group("textbox"):
+                        for tl in tb.lines:
+                            print(tl.text)
 
         def parse_page(page: KPage):
             for vobj in page.vobjects:

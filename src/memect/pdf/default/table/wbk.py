@@ -251,8 +251,9 @@ class Parser:
             if is_chars(new_cell_objs):
                 # 全部都是字符
                 tb = KTextbox.from_objects(new_cell_objs)
-                cell.objects.append(tb)
-                cell.text = tb.text
+                if tb is not None:
+                    cell.objects.append(tb)
+                    cell.text = tb.text
             elif is_figures(valid_objs):
                 # 都是图片
                 for obj in valid_objs:
@@ -276,8 +277,9 @@ class Parser:
                         cell.objects.extend(group[1])
                     else:
                         tb = KTextbox.from_objects(group[1])
-                        cell.objects.append(tb)
-                        cell.text += tb.text
+                        if tb is not None:
+                            cell.objects.append(tb)
+                            cell.text += tb.text
 
     def _get_cells(self, page: KPage, index: int, vobj: VObject) -> list[BBox]:
         if not vobj.ocr_chars:

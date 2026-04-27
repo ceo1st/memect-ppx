@@ -2167,12 +2167,16 @@ class KTextbox(KObject):
         return cls(page, quad, lines=[line for tb in tbs for line in tb.lines])
 
     @classmethod
-    def from_objects(cls, objects: Sequence[KObject]) -> Self:
+    def from_objects(cls, objects: Sequence[KObject],*,strip:bool=True) -> Self|None:
         assert len(objects) > 0
         quad = Quad.join([c.quad for c in objects])
         page = objects[0].page
-        lines = KTextline.parse(objects)
-        return cls(page, quad, lines=lines)
+        #可能存在空白的行，然后被去掉了，这个时候就没有KTextbox了
+        lines = KTextline.parse(objects,strip=strip)
+        if len(lines)==0:
+            return None
+        else:
+            return cls(page, quad, lines=lines)
 
 
 class KFigure(KObject):
@@ -2459,13 +2463,13 @@ class KTable(KObject):
         
         #>=3.13才能够使用TypeIs
         def is_chars(objs:Sequence[Any])->TypeGuard[Sequence[KChar]]:
-            return all(isinstance(obj,KChar) for obj in objs)
+            return len(objs)> 0 and all(isinstance(obj,KChar) for obj in objs)
         
         def is_figures(objs:Sequence[Any])->TypeGuard[Sequence[KFigure]]:
-            return all(isinstance(obj,KFigure) for obj in objs)
+            return len(objs)>0 and all(isinstance(obj,KFigure) for obj in objs)
         
         def is_vobjects(objs:Sequence[Any])->TypeGuard[Sequence[VObject]]:
-            return all(isinstance(obj,VObject) for obj in objs)
+            return len(objs)>0 and all(isinstance(obj,VObject) for obj in objs)
         
         for cell in self.cells:
             if not objs:
@@ -2494,8 +2498,9 @@ class KTable(KObject):
             if is_chars(new_cell_objs):
                 #全部都是字符
                 tb = KTextbox.from_objects(new_cell_objs)
-                cell.objects.append(tb)
-                cell.text = tb.text
+                if tb is not None:
+                    cell.objects.append(tb)
+                    cell.text = tb.text
             elif is_figures(valid_objs):
                 #都是图片
                 for obj in valid_objs:
@@ -2519,8 +2524,9 @@ class KTable(KObject):
                         cell.objects.extend(group[1])
                     else:
                         tb = KTextbox.from_objects(group[1])
-                        cell.objects.append(tb)
-                        cell.text+=tb.text
+                        if tb is not None:
+                            cell.objects.append(tb)
+                            cell.text+=tb.text
         
         if len(objs)>0:
             #有对象剩余？

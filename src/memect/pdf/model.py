@@ -774,10 +774,7 @@ class RapidOCRModel(Model):
                     #to_quad(box)
                     #to_quad2(box) 稍微内收了一点
                     if use_preferred_bbox:
-                        timer.reset()
-                        box = self._shrink_bbox_any_bg(cv2_img,box)
-                        print('==>box',timer.elapsed())
-                    
+                        box = self._shrink_bbox_any_bg(cv2_img,box)                    
                     #TODO 有些情况，会把2行文字识别为一个box，而且没有识别全部字
                     #这种情况下，如下：被识别为一个box，而且仅仅返回“AB”，或者“ABC”，或者“ABCD”，导致字符的宽度/高度计算错误
                     #AB
