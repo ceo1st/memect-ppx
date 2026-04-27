@@ -636,7 +636,7 @@ class RapidOCRModel(Model):
 
         kwargs = self._normalize_kwargs(kwargs)
         self._model: Final = RapidOCR(params=kwargs)
-        self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
+        #self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
 
     def _normalize_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         from rapidocr import (

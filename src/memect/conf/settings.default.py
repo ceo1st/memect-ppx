@@ -526,6 +526,7 @@ settings: dict[str, Any] = {
                 "kwargs": {
                     "model_path": get_model_path("./models/memect/table_det.onnx"),
                     "score_threshold": 0.5,
+                    "use_cuda": use_gpu("onnxruntime")
                 },
             },
             "formula": {"name": "RapidFormulaModel", "kwargs": {
