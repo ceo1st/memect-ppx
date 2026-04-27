@@ -29,7 +29,6 @@ import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 from pydantic import ConfigDict
-from sympy import true
 
 from memect.base import images, lists, pdfs
 from memect.base.api import ApiError
