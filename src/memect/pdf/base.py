@@ -29,11 +29,13 @@ import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 from pydantic import ConfigDict
+from sympy import true
 
 from memect.base import images, lists, pdfs
 from memect.base.api import ApiError
 from memect.base.bbox import BBox, Quad
 from memect.base.matrix import Matrix
+from memect.base.strs import NText
 from memect.base.utils import AutoCleaner, MyBaseModel, safe_write
 from memect.pdf.grid import Grid
 from memect.base.zip import Archiver
@@ -268,13 +270,25 @@ class VObject:
         return self.type == VObjectType.CODE
 
     def is_header(self) -> bool:
-        return self.type == VObjectType.HEADER
+        #TODO 如果换了模型，raw_type需要重新映射？
+        return self.type == VObjectType.HEADER or self.raw_type=='header_image'
 
     def is_footer(self) -> bool:
-        return self.type == VObjectType.FOOTER
+        #TODO 如果换了模型，raw_type需要使用其他名字?
+        return self.type == VObjectType.FOOTER or self.raw_type=='footer_image'
 
     def is_footnote(self) -> bool:
         return self.type == VObjectType.FOOTNOTE
+    
+    def is_table_title(self)->bool:
+        return self.raw_type=='table_title'
+    
+    def is_figure_title(self)->bool:
+        return self.raw_type=='figure_title'
+    
+    def is_source(self)->bool:
+        """判断是否来源等？"""
+        return self.raw_type=='vision_footnote'
     
     def make_figure(self,*,dx:float=0,dy:float=0)->"KFigure":
         if dx!=0 or dy!=0:
@@ -657,7 +671,7 @@ class _LayoutResult(TypedDict):
 
 def _md_escape(text: str) -> str:
     # 在实际使用中"()"不需要转义
-    return re.sub(r"[`*_+\-!{}#.\\]", lambda m: rf"\{m.group()}", text)
+    return re.sub(r"[`~*_+\-!{}#.\\]", lambda m: rf"\{m.group()}", text)
 
 
 class KPage:
@@ -754,6 +768,9 @@ class KPage:
         # 2.或者需要分页，插入一个分页符，可以共享相同的页眉页脚设置
         #  如：竖向，横向页面的切换
         #  如果只是简单的添加一个空白页，添加一个换行（分页）即可
+
+        self.columns:Sequence[BBox]|None=None
+        """记录当前页面的分栏，生成docx的时候需要"""
 
     def __del__(self):
         self._logger.debug("gc %s", self)
@@ -1465,6 +1482,7 @@ class KChar(KObject):
         # self.page:Final=page
         # self.quad:Final=quad
         # self.bbox:Final=quad.bbox
+
         self.text: Final = text
         self.font: Final = font
         self.color: Final = color
@@ -1473,9 +1491,9 @@ class KChar(KObject):
         """粗体"""
         self.italic: Final = italic
         """斜体"""
-        self.underline: Final = underline
+        self.underline = underline
         """下划线"""
-        self.strikeout: Final = strikeout
+        self.strikeout = strikeout
         """删除线"""
 
         # self.subtype:str|None=None
@@ -1489,6 +1507,16 @@ class KChar(KObject):
         """如果是wingdings的字符，可以获得pua区域的文本，方便在生成docx的时候直接使用"""
         self.subtype = subtype
 
+        
+    @cached_property
+    def min_bbox(self)->BBox:
+        if self.text in '》】）｝］？；。：，！、':
+            return self.bbox.adjust(x1=self.bbox.cx)
+        elif self.text in '《【（｛［':
+            return self.bbox.adjust(x0=self.bbox.cx)
+        else:
+            return self.bbox
+        
     def markdown(self) -> str:
         return _md_escape(self.text)
 
@@ -1638,12 +1666,119 @@ class KTextline(KObject):
     def to_textbox(self) -> "KTextbox":
         return KTextbox(self.page, self.quad, lines=[self])
 
+    @override
+    def markdown(self)->str:
+        return self.render_markdown(self.objects)
+        
     def __add__(self, other: Self):
         quad = Quad.join([self.quad, other.quad])
         return KTextline(self.page, quad, objects=[*self.objects, *other.objects])
 
+    def set_underline(self,bbox:BBox,*,dx:float=2):
+        """设置指定范围内的字符串有下划线"""
+        found=False
+        for char in self.chars:
+            b=char.min_bbox
+            if b.x0>=bbox.x0-dx and b.x1<=bbox.x1+dx:
+                char.underline=True
+                found=True
+            elif found:
+                break
+            
+    
+    def set_strikeout(self,bbox:BBox,*,dx:float=2):
+        """设置指定范围内的字符串有删除线"""
+        found=False
+        for char in self.chars:
+            b = char.min_bbox
+            if b.x0>=bbox.x0-dx and b.x1<=bbox.x1+dx:
+                char.strikeout=True
+                found=True
+            elif found:
+                break
+
+
+
     @classmethod
-    def parse(cls, objects: Sequence[KObject]) -> list[Self]:
+    def render_markdown(cls,objects:Sequence[KObject],use_style:bool=True)->str:
+        def alike(c1:KChar,c2:KChar)->bool:
+            return c1.bold==c2.bold and c1.italic==c2.italic and c1.underline==c2.underline and c1.strikeout==c2.strikeout
+        
+        def split_groups(objs:Sequence[KObject]):
+            groups:list[list[KObject]]=[]
+            group=[objs[0]]
+            groups.append(group)
+            for obj in objs[1:]:
+                if isinstance(obj,KChar) and isinstance(group[-1],KChar) and alike(group[-1],obj):
+                    group.append(obj)
+                else:
+                    group=[obj]
+                    groups.append(group)
+            return groups
+
+
+        def is_punctuation(s:str)->bool:
+            from memect.base import strs
+            import string
+            a,b = strs.to_bq(s)
+            return a in string.punctuation
+    
+        buf:list[str]=[]
+        if use_style:
+            for group in split_groups(objects):
+                if isinstance(group[0],KChar):
+                    s=''.join(c.text for c in cast(Sequence[KChar],group))
+                    #前后的空格无法显示粗体，所以就先去掉空格
+                    m=re.search(r'^(\s*)(.*?)(\s*)$',s)
+                    if m:
+                        #去掉前后空格
+                        prefix=m.group(1)
+                        suffix=m.group(3)
+                        s=m.group(2)
+                    else:
+                        prefix=''
+                        suffix=''
+                    
+                    buf.append(prefix)
+                    has_style=False
+                    c = group[0]
+                    if c.underline:
+                        buf.append('<u>')
+                        has_style=True
+                    if c.strikeout:
+                        buf.append('~~')
+                        has_style=True
+                    if c.italic:
+                        buf.append('*')
+                        has_style=True
+                    if c.bold:
+                        buf.append('**')
+                        has_style=True
+
+                    buf.append(_md_escape(s))
+                    if c.italic:
+                        buf.append('*')
+                    if c.bold:
+                        buf.append('**')
+                    if c.strikeout:
+                        buf.append('~~')
+                    if c.underline:
+                        buf.append('</u>')
+                    
+                    buf.append(suffix)
+                    if has_style and len(s)>0 and buf[-1]!=' ' and is_punctuation(s[-1]):
+                        #如果最后为标点，需要添加一个空格才能够表示为加粗
+                        #如：**abc:** => 不会被渲染为粗体，后面需要添加一个空格
+                        buf.append(' ')
+                else:
+                    for obj in group:
+                        buf.append(obj.markdown())
+        else:
+            for obj in objects:
+                buf.append(obj.markdown())
+        return ''.join(buf)
+    @classmethod
+    def parse(cls, objects: Sequence[KObject],*,strip:bool=True) -> list[Self]:
         if not objects:
             return []
 
@@ -1798,6 +1933,19 @@ class KTextline(KObject):
 
             return columns
 
+        def strip_line(line:Group[KObject]):
+            while line:
+                obj = line[0]
+                if isinstance(obj,KChar) and obj.text.isspace():
+                    del line[0]
+                else:
+                    break
+            while line:
+                obj=line[-1]
+                if isinstance(obj,KChar) and obj.text.isspace():
+                    del line[-1]
+                else:
+                    break
         groups = split_groups(objects)
         use_columns = False
         if use_columns:
@@ -1810,7 +1958,16 @@ class KTextline(KObject):
             column.sort(key=lambda group: group.bbox.y1, reverse=True)
             while column:
                 lines.append(parse_line(column))
-
+        
+        if strip:
+            i=0
+            while i<len(lines):
+                line = lines[i]
+                strip_line(line)
+                if not line:
+                    del lines[i]
+                else:
+                    i+=1
         page = objects[0].page
         return [
             cls(
@@ -1955,6 +2112,11 @@ class KTextbox(KObject):
         return "".join(line.text for line in self.lines)
 
     @cached_property
+    def text2(self)->str:
+        """去掉了空格，全角变成了半角，合适正则表达式使用"""
+        return NText.get(self.text,mode='q2b',space='remove').text
+
+    @cached_property
     def chars(self) -> Sequence[KChar]:
         return tuple(lists.join(line.chars for line in self.lines))
 
@@ -1973,7 +2135,25 @@ class KTextbox(KObject):
     @override
     def markdown(self) -> str:
         """需要按原文换行吗？"""
-        return _md_escape(self.text)
+        #对于markdown，可以直接输出为一段长文本即可，不需要添加换行符
+        keep_lr=False
+        buf:list[str]=[]
+        if keep_lr:
+            for tl in self.lines:
+                buf.append(tl.markdown())
+            return '\n'.join(buf)
+        else:
+            objs:list[KObject]=[]
+
+            for i,tl in enumerate(self.lines):
+                #TODO 如果是英文的，可能在换行后，需要添加一个空格，如：
+                #hello
+                #world  => hello world
+                #if padding_space(i,self.lines):
+                    #objs.append(KText(self.page,None,text=' '))
+                    #pass
+                objs.extend(tl.objects)
+            return KTextline.render_markdown(objs)
 
     def __add__(self, other: Self) -> Self:
         lines = [*self.lines, *other.lines]
@@ -2016,7 +2196,7 @@ class KFigure(KObject):
 class KTable(KObject):
     type: str = "table"
 
-    def __init__(self, page: KPage, quad: Quad, *, row_num: int = 0, col_num: int = 0):
+    def __init__(self, page: KPage, quad: Quad|BBox, *, row_num: int = 0, col_num: int = 0):
         super().__init__(page, quad)
         self.row_num = row_num
         self.col_num = col_num
@@ -2032,6 +2212,24 @@ class KTable(KObject):
         assert self.filename
         return self.doc.out_dir / self.filename
 
+    def get_row(self,index:int)->list["KCell"]:
+        if index<0:
+            index+=self.row_num
+        row:list[KCell]=[]
+        for cell in self.cells:
+            if cell.row_index<=index<cell.row_index+cell.row_span:
+                row.append(cell)
+        return row
+    
+    def get_column(self,index:int)->list["KCell"]:
+        if index<0:
+            index+=self.col_num
+        column:list[KCell]=[]
+        for cell in self.cells:
+            if cell.col_index<=index<cell.col_index+cell.col_span:
+                column.append(cell)
+        return column
+    
     def __getitem__(self, key: tuple[int, int]) -> "KCell":
         row_index, col_index = key
         for cell in self.cells:
@@ -2112,6 +2310,8 @@ class KTable(KObject):
                     buf.append(escape(obj.text))
                 elif isinstance(obj,KMarkdown):
                     buf.append(escape(obj.plaintext()))
+                elif isinstance(obj,KTable):
+                    buf.append(obj.html())
                 else:
                     pass
             return ''.join(buf)
@@ -2123,7 +2323,7 @@ class KTable(KObject):
             #所以这里简单的设置一个宽度
             buf.append("<colgroup>")
             for i in range(self.col_num):
-                buf.append('<col colspan=1 style="width:100px;"></col>')
+                buf.append('<col colspan=1 style="min-width:20px;"></col>')
             buf.append("</colgroup>")
         i = -1
         tr: list[str] = []
@@ -2328,6 +2528,71 @@ class KTable(KObject):
             pass
         
 
+    def adjust(self):
+        """表示调整一下cell的bbox，以便对齐，如果是来自有边框解析，不需要调用这个方法。这个方法合适构造了逻辑表格然后为了美观，调整一下"""
+
+        def adjust_y():
+            y1=self.bbox.y1
+            for i in range(self.row_num):
+                #获得行
+                row = self.get_row(i)
+                if i+1<self.row_num:
+                    #[--row1--]
+                    #[--row2--]
+                    row2 = self.get_row(i+1)
+                    #需要的是y0
+                    a = BBox.join2([cell for cell in row if cell.row_index+cell.row_span==i+1])
+                    #需要的是y1
+                    b = BBox.join2([cell for cell in row2 if cell.row_index==i+1])
+                    #取中间
+                    y0=(a.y0+b.y1)/2
+                else:
+                    y0=self.bbox.y0
+
+                for cell in row:
+                    #设置y1
+                    if cell.row_index==i:
+                        assert cell.bbox is not None
+                        cell.bbox = cell.bbox.adjust(y1=y1)
+                    
+                    if cell.row_index+cell.row_span==i+1:
+                        assert cell.bbox is not None
+                        cell.bbox = cell.bbox.adjust(y0=y0)
+                
+                y1=y0
+            
+        def adjust_x():
+            x0=self.bbox.x0
+            for i in range(self.col_num):
+                #
+                column = self.get_column(i)
+                if i+1<self.col_num:
+                    #col1|col2
+                    column2 = self.get_column(i+1)
+                    #a需要的是x1
+                    a = BBox.join2([cell.bbox for cell in column if cell.col_index+cell.col_span==i+1])
+                    #b需要的是x0
+                    b = BBox.join2([cell.bbox for cell in column2 if cell.col_index==i+1])
+                    #取中间
+                    x1=(a.x1+b.x0)/2
+                else:
+                    x1=self.bbox.x1
+
+                for cell in column:
+                    #设置x
+                    if cell.col_index==i:
+                        assert cell.bbox is not None
+                        cell.bbox = cell.bbox.adjust(x0=x0)
+                    
+                    if cell.col_index+cell.col_span==i+1:
+                        assert cell.bbox is not None
+                        cell.bbox = cell.bbox.adjust(x1=x1)
+                
+                x0=x1
+
+        adjust_y()
+        adjust_x()
+
     @classmethod
     def from_text(cls, page: KPage, quad: Quad, text: str) -> "KTable":
         """根据html或者otsl构造"""
@@ -2485,20 +2750,29 @@ class KCell:
     def __init__(
         self,
         page: KPage,
-        quad: Quad | None,
+        quad: Quad |BBox| None,
         *,
         row_index: int,
         col_index: int,
         row_span: int = 1,
         col_span: int = 1,
         text: str = "",
+        objects:Sequence[KObject]|None=None
     ):
         # super().__init__(page,quad)
         self.page: Final = page
         # 如果是来自大模型的结果，目前单元格不一定有bbox，或者也不需要
         # 另外一个是为了支持逻辑表格，也就是需要理解为表格，但是并没有严格行列对齐的
+        if isinstance(quad,BBox):
+            bbox=quad
+            quad=bbox.to_quad()
+        elif isinstance(quad,Quad):
+            bbox=quad.bbox
+        else:
+            quad=None
+            bbox=None
         self.quad: Final = quad
-        self.bbox: Final = quad.bbox if quad else None
+        self.bbox: Final = bbox
         self.text: str = text
         self.row_index = row_index
         self.col_index = col_index
@@ -2508,6 +2782,8 @@ class KCell:
         self.working_state: Any = None
 
         self.objects: Final[list[KObject]] = []
+        if objects:
+            self.objects.extend(objects)
 
     @property
     def content_bbox(self) -> BBox | None:
@@ -2652,13 +2928,14 @@ class KOther(KObject):
 class KBlock(KObject):
     """表示一个局部的内容块，把一些关联或者没有关联的，影响阅读顺序的内容放在一起"""
     type = "block"
-    def __init__(self, page: KPage, quad: Quad):
+    def __init__(self, page: KPage, quad: Quad|BBox,*,objects:Sequence[KObject]|None=None):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
-
+        if objects:
+            self.objects.extend(objects)
     @property
     def content_bbox(self) -> BBox | None:
-        return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
+        return BBox.join([obj.content_bbox for obj in self.objects],strict=False) if self.objects else None
 
 
 class KPageHeader(KObject):

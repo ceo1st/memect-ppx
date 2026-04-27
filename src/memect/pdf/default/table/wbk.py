@@ -180,6 +180,7 @@ class Parser:
                     (f"ocr_chars={len(result.ocr_chars)}", result.ocr_chars),
                     (f"removed_chars={len(result.removed_chars)}",result.removed_chars),
                     (f"pdf_figures={len(result.pdf_figures)}", result.pdf_figures),
+                    (f"removed_pdf_figures={len(result.removed_pdf_figures)}", result.removed_pdf_figures),
                     (f"vobjects={len(result.vobjects)}", result.vobjects, True),
                     (f"raw_cells={len(raw_cells)}", raw_cells),
                     (f"cells={len(cells)}", cells),

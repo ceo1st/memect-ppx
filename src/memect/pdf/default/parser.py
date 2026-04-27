@@ -17,6 +17,7 @@ from memect.pdf.base import (
     KChar,
     KColor,
     KDocument,
+    KFigure,
     KFont,
     KFormula,
     KObject,
@@ -29,6 +30,8 @@ from memect.pdf.base import (
     VObject,
 )
 from memect.pdf.commons import FileInfo
+from memect.pdf.default.block import BlockParser
+from memect.pdf.default.other import OtherParser
 from memect.pdf.model import ModelExecutor, ModelManager
 from memect.pdf.sort import Sorter
 
@@ -85,9 +88,11 @@ class DefaultParser:
         self._pdf_parser: Final = PdfParser(self._args.pdf)
         self._table_parser: Final = TableParser(manager)
 
+        self._other_parser:Final = OtherParser()
         self._header_parser: Final = PageHeaderParser()
         self._footer_parser: Final = PageFooterParser()
         self._footnote_parser: Final = PageFootnoteParser()
+        self._block_parser:Final = BlockParser()
 
         self._tree_parser: Final = TreeParser()
 
@@ -108,14 +113,19 @@ class DefaultParser:
             self._sort_ppt(doc)
         else:
             # 按页解析即可
+            self._other_parser.parse(doc)
             self._header_parser.parse(doc)
             self._footer_parser.parse(doc)
             self._footnote_parser.parse(doc)
+            self._block_parser.parse(doc)
             self._sort(doc)
             # TODO 如果有些排版是使用大表格的，这里也尝试还原？
             if doc.params.mode == ParseMode.TREE:
                 # 按页然后再解析章节树
                 self._tree_parser.parse(doc)
+            else:
+                #
+                pass
 
     def _parse_layout(self, doc: KDocument):
         """版面分析"""
@@ -381,17 +391,18 @@ class DefaultParser:
             for vobj in ocr_objects:
                 vobj.ocr_chars.clear()
                 if ocr_chars:
-                    chars = vobj.bbox.get(ocr_chars, ratio=0.7)
+                    chars = vobj.bbox.get(ocr_chars, ratio=0.7,remove=True)
                     vobj.ocr_chars.extend(chars)
-                    lists.remove(ocr_chars, chars)
 
             # 对于少部分在区域内的
             for vobj in ocr_objects:
                 if not ocr_chars:
                     break
-                chars = vobj.bbox.get(ocr_chars, ratio=0.4)
+                chars = vobj.bbox.get(ocr_chars, ratio=0.4,remove=True)
                 vobj.ocr_chars.extend(chars)
-                lists.remove(ocr_chars, chars)
+            
+            for vobj in ocr_objects:
+                pass
 
             if len(ocr_chars) > 0:
                 # 识别的字符无法分配？不应该的
@@ -475,21 +486,53 @@ class DefaultParser:
         debugger = self._debugger.bind()
         verbose = True
 
-        def make_textbox(page: KPage, vobj: VObject):
+        def parse_underline(tb:KTextbox):
+            lines = tb.bbox.adjust(y0=tb.bbox.y0-3).get(tb.page.pdf_lines,ratio=0.9)
+            tls = tb.lines
+            for i,tl in enumerate(tls):
+                y1 = tl.bbox.y0
+                if i+1<len(tls):
+                    y0=tls[i+1].bbox.y1
+                else:
+                    y0=tl.bbox.y0
+                bbox = tl.bbox.adjust(y0=y0-2,y1=y1+2)
+                underlines = bbox.get(lines,ratio=0.8,remove=True)
+                for line in underlines:
+                    tl.set_underline(line.bbox)
+                #在底部的为下划线，在中间的为删除线
+
+
+        def make_textbox(page: KPage, vobj: VObject,use_figures:bool=False):
             if not vobj.is_any_text():
                 return
             # TODO 补充行内公式/行内图片
-            pdf_chars = vobj.bbox.get(page.pdf_chars, ratio=0.6)
+            #TODO 对于一些全角字符，只需要一半空间
+            pdf_chars = vobj.bbox.get(page.pdf_chars, ratio=0.6,get_bbox=lambda char:char.min_bbox)
             ocr_chars = vobj.ocr_chars
-            chars = pdf_chars + ocr_chars
-            if not chars:
+            objs = pdf_chars + ocr_chars
+            if use_figures:
+                #如果有图片且被识别为字，就去掉这个图片
+                #小图片，可能被识别在一个文本框中，而且没有被ocr识别为文字，如：logo
+                pdf_figures = vobj.bbox.get(page.pdf_figures,ratio=0.8)
+                figures:list[KFigure]=[]
+                for f in pdf_figures:
+                    ok=True
+                    for c in ocr_chars:
+                        if c.bbox.intersect(f.bbox):
+                            ok=False
+                            break
+                    if ok:
+                        #这种小图，可能使用原图更好？但是使用原图，又需要pdf解析了
+                        figures.append(f.make_figure())                
+                objs=objs+figures
+            if not objs:
                 return
             # TODO 如果包含有ocr chars，全部或者部分，可以调整一下ocr chars的bbox，对齐和美观（因为ocr识别
             # 即使在同一行，同样的字体，大小等，识别出来的bbox还是不一定一致）
-            tb = KTextbox.from_objects(chars)
+            tb = KTextbox.from_objects(objs)
             tb.vobject = vobj
-            # TODO 更新吗？
-            tb.bbox = BBox.join([c.bbox for c in chars])
+
+            parse_underline(tb)
             page.objects.append(tb)
 
             if verbose and debugger.allow("info", page=page.number):

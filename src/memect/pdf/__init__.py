@@ -1,0 +1,1 @@
+from . import patch_rapid_latex_ocr

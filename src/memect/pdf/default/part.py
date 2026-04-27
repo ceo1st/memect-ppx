@@ -2,13 +2,15 @@ import re
 from dataclasses import dataclass, field
 
 from memect.base.bbox import BBox
-from memect.pdf.base import KFigure, KObject, KPage, KTextbox
+from memect.pdf.base import KFigure, KObject, KPage, KTable, KTextbox
+
+_KContent = KFigure | KTable
 
 
 @dataclass
 class FigureBlock:
     title: KTextbox | None = None
-    figures: list[KFigure] = field(default_factory=list[KFigure])
+    figures: list[_KContent] = field(default_factory=list[_KContent])
     source: KTextbox | None = None
 
     @property
@@ -28,11 +30,12 @@ class FigureBlock:
 
 class FigureParser:
     _title_re = re.compile(
-        r'^(图表|图|插图|示意图|流程图|Figure|Fig\.?)\s*[\d一二三四五六七八九十]',
+        r'^(图表|图|插图|示意图|流程图|表|Figure|Fig\.?|Table|Tab\.?)\s*[\d一二三四五六七八九十]',
         re.IGNORECASE,
     )
     _source_re = re.compile(
-        r'^(资料来源|数据来源|信息来源|来源|出处|引自|Data\s*source|Source)\s*[：:]?',
+        r'^((?:资料来源|数据来源|信息来源|来源|出处|引自|备注|注释|Data\s*source|Source|Notes?)\s*[：:]?'
+        r'|(?:注)\s*[：:])',
         re.IGNORECASE,
     )
 
@@ -41,7 +44,7 @@ class FigureParser:
 
     def parse(self, page: KPage) -> list[FigureBlock]:
         objs = list(page.objects)
-        figures = [o for o in objs if isinstance(o, KFigure)]
+        figures = [o for o in objs if isinstance(o, (KFigure, KTable))]
         if not figures:
             return []
 
@@ -68,7 +71,7 @@ class FigureParser:
                 validated.append(block)
         return validated
 
-    def _find_title(self, fig: KFigure, objs: list[KObject], used: set[int]) -> KTextbox | None:
+    def _find_title(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KTextbox | None:
         """在figure上方找title候选：y0>=fig.y1，x方向有重叠，且最近。"""
         candidates: list[tuple[float, KTextbox]] = []
         for o in objs:
@@ -87,7 +90,7 @@ class FigureParser:
         candidates.sort(key=lambda x: x[0])
         return candidates[0][1]
 
-    def _find_source(self, fig: KFigure, objs: list[KObject], used: set[int]) -> KTextbox | None:
+    def _find_source(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KTextbox | None:
         """在figure下方找source候选：y1<=fig.y0，x方向有重叠，且最近。"""
         candidates: list[tuple[float, KTextbox]] = []
         for o in objs:

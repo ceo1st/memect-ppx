@@ -259,6 +259,8 @@ def parse(
         console.log(f'共需要解析:{len(docs)}')
 
     else:
+        #如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
+        #如果是远程，和正常一样调用
         try:
             Parser.batch(list(get_docs(file)),max_workers=max_workers)
         finally:

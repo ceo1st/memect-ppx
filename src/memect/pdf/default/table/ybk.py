@@ -142,8 +142,34 @@ class Parser:
     def _parse_pdf_lines(
         self, page: KPage, bbox: BBox
     ) -> tuple[list[KLine], list[KLine]]:
+        def clean_lines(h_lines:list[KLine],v_lines:list[KLine]):
+            v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+            if len(h_lines)>=2 and page.bbox.y1-bbox.y1<=100:
+                #可能和页眉线相邻
+                h_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+                line1=h_lines[0]
+                line2=h_lines[1]
+                if line1.bbox.y0-line2.bbox.y0<=5:
+                    #--------line1---
+                    #--------line2---
+                    del h_lines[0]
+                    self._logger.warning('第%s页，删除和表格粘连的页眉线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
+
+            if len(h_lines)>=2 and bbox.y0<=100:
+                h_lines.sort(key=lambda line:line.bbox.y0,reverse=False)
+                line1=h_lines[0]
+                line2=h_lines[1]
+                if line2.bbox.y0-line1.bbox.y0<=5:
+                    #--------line2----
+                    #--------line1----
+                    del h_lines[0]
+                    self._logger.warning('第%页，删除和表格粘连的页脚线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
+
         lines = bbox.get(page.pdf_lines, ratio=0.5)
-        return KLine.split(lines)
+        h_lines,v_lines=KLine.split(lines)
+        #TODO 如果有页眉线页脚线，可能会重叠或者相邻，需要先去掉，避免多识别一列
+        clean_lines(h_lines,v_lines)
+        return h_lines,v_lines
 
     def _parse_image_lines(
         self, page: KPage, bbox: BBox

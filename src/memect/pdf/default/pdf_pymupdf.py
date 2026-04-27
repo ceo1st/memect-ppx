@@ -457,7 +457,7 @@ class Parser:
             transparent = image["has-mask"]
             #bbox = image["bbox"]
             bbox=BBox.from_list(image["bbox"], matrix=m)
-            if bbox.width <= 2 and bbox.height <= 2:
+            if bbox.width <= 2 or bbox.height <= 2:
                 small_images.append(image)
             elif transparent:
                 # TODO 不去掉也可以的
