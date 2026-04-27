@@ -308,12 +308,12 @@ def test(
     tester.run(dir)
 
 
-@app.command(help='提前下载好需要的模型，方便docker制作')
+@app.command(help='提前下载好需要的模型')
 def download():
-    #ocr
-    #layout
-
-    pass
+    from memect.base.config import setup
+    from memect.models import download_all
+    setup()
+    download_all()
 
 def main() -> None:
     from .nvidia_path import set_to_env

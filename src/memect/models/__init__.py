@@ -8,6 +8,7 @@ import httpx
 from filelock import FileLock
 
 
+
 # 这个只是支持多线程下
 _lock: Final = threading.Lock()
 
@@ -74,3 +75,55 @@ def download(url: str, file: Path):
                 for chunk in r.iter_bytes(chunk_size=1024 * 64):
                     f.write(chunk)
                     progress.advance(task, len(chunk))
+
+
+def download_all():
+    #因为第三方库需要的下载模型，但是下载并不支持多进程也不执行多线程，也就是如果同时启动多个进程或者多个线程
+    #执行就会冲突，所以先下载好
+
+    #rapid_ocr
+    download_ocr()
+    #rapid_latex_ocr
+    download_latex()
+    #rapid_layout
+    download_layout()
+    #table_det
+    download_table_cls()
+    get_model_path('table_det.onnx')
+
+
+def download_latex():
+    from rapid_latex_ocr import LatexOCR
+    LatexOCR()
+
+def download_ocr():
+    from rapidocr import RapidOCR, OCRVersion, ModelType
+    for version in [OCRVersion.PPOCRV5, OCRVersion.PPOCRV4]:
+        for model_type in [ModelType.MOBILE, ModelType.SERVER]:
+            params = {
+                'Det.ocr_version': version,
+                'Rec.ocr_version': version,
+                # 目前没有配置v5的，必须使用v4的
+                'Cls.ocr_version': version,#OCRVersion.PPOCRV4,
+                # server or mobile
+                'Det.model_type': model_type,
+                'Rec.model_type': model_type,
+                #v4仅仅有mobile
+                'Cls.model_type': ModelType.MOBILE if version==OCRVersion.PPOCRV4 else model_type,
+            }
+            RapidOCR(params=params)
+
+def download_layout():
+    from rapid_layout import ModelType
+    from rapid_layout.model_handler import ModelProcessor
+    ModelProcessor.get_model_path(ModelType.PP_DOC_LAYOUTV2)
+    ModelProcessor.get_model_path(ModelType.PP_DOC_LAYOUTV3)
+
+def download_table_cls():
+    from table_cls import TableCls
+    from table_cls.main import ModelType
+
+    TableCls.get_model_path(ModelType.YOLO_CLS_X.value,None)
+    TableCls.get_model_path(ModelType.PADDLE_CLS.value,None)
+    TableCls.get_model_path(ModelType.YOLO_CLS.value,None)
+    TableCls.get_model_path(ModelType.Q_CLS.value,None)

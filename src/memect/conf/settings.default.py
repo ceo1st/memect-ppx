@@ -378,7 +378,7 @@ settings: dict[str, Any] = {
                     "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     # 没有v5
-                    "Cls.ocr_version": "PP-OCRv4",
+                    "Cls.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "EngineConfig.onnxruntime.use_cuda": use_gpu("onnxruntime"),
                     # 默认为1.6,[1.6,2]之间.，对于密集的小文本更准确
                     "Det.unclip_ratio": 1.5,
@@ -401,7 +401,7 @@ settings: dict[str, Any] = {
                     "Cls.engine_type": get_ocr_engine(),
                     "Rec.engine_type": get_ocr_engine(),
                     "Det.model_type": "server",
-                    "Cls.model_type": "server",
+                    "Cls.model_type": "server" if get_value('ocr_version', 'v5') else 'mobile',
                     "Rec.model_type": "server",
                     # 表示下载目录
                     #'Det.model_dir':'./models/ocr',
@@ -412,7 +412,7 @@ settings: dict[str, Any] = {
                     "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     # 没有v5
-                    "Cls.ocr_version": "PP-OCRv4",
+                    "Cls.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
                     "EngineConfig.onnxruntime.use_cuda": use_gpu("onnxruntime"),
                 },
             },
@@ -528,7 +528,12 @@ settings: dict[str, Any] = {
                     "score_threshold": 0.5,
                 },
             },
-            "formula": {"name": "RapidFormulaModel", "kwargs": {}},
+            "formula": {"name": "RapidFormulaModel", "kwargs": {
+                "image_resizer_path":get_model_path('./models/rapid_latex_ocr/image_resizer.onnx'),
+                "encoder_path":get_model_path("./models/rapid_latex_ocr/encoder.onnx"),
+                "decoder_path":get_model_path("./models/rapid_latex_ocr/decoder.onnx"),
+                "tokenizer_json":get_model_path("./models/rapid_latex_ocr/tokenizer.json")
+            }},
         },
     },
     "pdf_parser": {
