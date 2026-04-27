@@ -23,7 +23,7 @@ from memect.base.debug import XDebugger
 from memect.base.job import Scheduler, SchedulerArgs
 from memect.base.sdk import Api
 from memect.base.task import Runner, Task
-from memect.base.utils import MyBaseModel, SafeExecutor
+from memect.base.utils import MyBaseModel, SafeExecutor, Timer
 
 from .base import KDocument, KPage, KTable
 from .commons import FileInfo
@@ -753,7 +753,10 @@ class RapidOCRModel(Model):
 
             # 代码是支持PIL.Image.Image，但是接口的类型注释没有
             cv2_img = file.cv2_image
+            timer=Timer.start()
             output: RapidOCROutput = self._model(cv2_img)
+            print('=====>ocr=',timer.elapsed())
+            
             objs: list[Any] = []
             size = file.size
             # height = size[1]
@@ -771,7 +774,9 @@ class RapidOCRModel(Model):
                     #to_quad(box)
                     #to_quad2(box) 稍微内收了一点
                     if use_preferred_bbox:
+                        timer.reset()
                         box = self._shrink_bbox_any_bg(cv2_img,box)
+                        print('==>box',timer.elapsed())
                     
                     #TODO 有些情况，会把2行文字识别为一个box，而且没有识别全部字
                     #这种情况下，如下：被识别为一个box，而且仅仅返回“AB”，或者“ABC”，或者“ABCD”，导致字符的宽度/高度计算错误
