@@ -8,6 +8,7 @@ import PIL.ImageDraw
 from pydantic import Field
 
 from memect.base import images, lists
+from memect.base import utils
 from memect.base.bbox import BBox, Quad
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
@@ -97,16 +98,46 @@ class DefaultParser:
         self._tree_parser: Final = TreeParser()
 
     def parse(self, doc: KDocument):
+        timer = utils.Timer.start()
+
+        self._logger.info('start layout')
+        timer.reset()
         self._parse_layout(doc)
+        self._logger.info('end layout,elapsed=%.3f',timer.elapsed())
+
+        timer.reset()
         # pdf：解析pdf的指令，获得chars/lines/rects/figures，主要是chars
+        self._logger.info('start pdf')
         self._parse_pdf(doc)
+        self._logger.info('end pdf,elapsed=%.3f',timer.elapsed())
+
+        
+        self._logger.info('start ocr')
+        timer.reset()
         # ocr：使用传统的模型或者llm模型，获得spans，以后可以辅助线？
         self._parse_ocr(doc, method=1)
+        self._logger.info('end ocr,elapsed=%.3f',timer.elapsed())
+
+        self._logger.info('start texts')
         # 得到了chars/lines/rects/figures，就开始填充对象
+        timer.reset()
         self._parse_texts(doc)
+        self._logger.info('end text,elapsed=%.3f',timer.elapsed())
+
+        self._logger.info('start figures')
+        timer.reset()
         self._parse_figures(doc)
+        self._logger.info('end figures,elapsed=%.3f',timer.elapsed())
+
+        self._logger.info('start formulas')
+        timer.reset()
         self._parse_formulas(doc)
+        self._logger.info('end formulas,elapsed=%.3f',timer.elapsed())
+
+        self._logger.info('start tables')
+        timer.reset()
         self._parse_tables(doc)
+        self._logger.info('end tables,elapsed=%.3f',timer.elapsed())
 
         if doc.params.mode == ParseMode.PPT:
             # 如果是按ppt，就不需要解析页面页脚等了
@@ -117,7 +148,7 @@ class DefaultParser:
             self._header_parser.parse(doc)
             self._footer_parser.parse(doc)
             self._footnote_parser.parse(doc)
-            self._block_parser.parse(doc)
+            #self._block_parser.parse(doc)
             self._sort(doc)
             # TODO 如果有些排版是使用大表格的，这里也尝试还原？
             if doc.params.mode == ParseMode.TREE:
