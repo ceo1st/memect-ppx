@@ -3,6 +3,7 @@ from dataclasses import KW_ONLY, dataclass, field
 import logging
 from typing import Sequence
 
+from memect.base import lists
 from memect.base.debug import XDebugger
 from memect.pdf.base import KChar, KObject, KPDFFigure, KTable, VObject
 
@@ -18,6 +19,7 @@ class Result:
     """pdf+ocr识别的字符，且去掉ocr图片上的字符"""
     removed_chars:Sequence[KChar]=field(default_factory=tuple)
     pdf_figures:Sequence[KPDFFigure]=field(default_factory=tuple)
+    removed_pdf_figures:Sequence[KPDFFigure]=field(default_factory=tuple)
     vobjects:Sequence[VObject]=field(default_factory=tuple)
     objects:Sequence[KObject]=field(default_factory=tuple)
     remain_objects:Sequence[KObject|VObject]=field(default_factory=tuple)
@@ -41,6 +43,8 @@ class TableFiller:
         vobjects = [v for v in vobj.vobjects if v.is_figure() or v.is_formula() or v.is_chart() or v.is_code()]
         chars = pdf_chars+ocr_chars
         #有些图片有文字，可能被ocr识别为文字，去掉
+        #但如果图片是一张大图，如：整个表格就是一个图片
+        removed_pdf_figures:list[KPDFFigure]=lists.remove2(pdf_figures,lambda i,objs:objs[i].bbox.area/vobj.bbox.area>0.7)
         removed_chars:list[KChar]=[]
         for objs in [pdf_figures,vobjects]:
             for obj in objs:
@@ -52,7 +56,8 @@ class TableFiller:
             pdf_figures=pdf_figures,
             chars=chars,
             vobjects=vobjects,
-            removed_chars=removed_chars
+            removed_chars=removed_chars,
+            removed_pdf_figures=removed_pdf_figures
         )
 
     def fill(self,table:KTable,result:Result|None=None)->Result:

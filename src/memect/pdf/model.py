@@ -1,9 +1,10 @@
+from enum import StrEnum, auto
 import logging
 import math
 import multiprocessing as mp
 import threading
 import time
-from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Final, Mapping, Sequence, final, override
 import weakref
@@ -23,7 +24,7 @@ from memect.base.debug import XDebugger
 from memect.base.job import Scheduler, SchedulerArgs
 from memect.base.sdk import Api
 from memect.base.task import Runner, Task
-from memect.base.utils import MyBaseModel, SafeExecutor
+from memect.base.utils import MyBaseModel, SafeExecutor, Timer
 
 from .base import KDocument, KPage, KTable
 from .commons import FileInfo
@@ -127,9 +128,9 @@ class ModelArgs(BaseModel):
 class ModelExecutorArgs(MyBaseModel):
     enable: bool = True
     name: str
-    chunk_size: int = 1
+    chunk_size: int = 10
     """在submit的时候，多少个一批，如：有些模型的批处理为5，一次性输入5个可以获得最好的性能，就可以设置为5"""
-    max_workers: int = 2
+    max_workers: int = 0
     """表示创建多少个模型，0表示仅仅创建1个，且不使用多线程和多进程，方便测试"""
     use_process: bool = False
     """True表示使用多进程，False表示使用多线程"""
@@ -139,7 +140,8 @@ class ModelExecutorArgs(MyBaseModel):
     model: ModelArgs | str
     """如果为字符串，表示使用settings中的设置"""
     #settings: Mapping[str, ModelArgs] = Field(default_factory=dict)
-    use_api: bool = False
+    use_scheduler: bool = False
+    """True表示使用scheduler"""
     port: int = 9527
 
 
@@ -160,7 +162,8 @@ class ModelExecutor:
         args = ModelExecutorArgs.create(args)
         assert not isinstance(args.model,str)
         # self._args:Final = args
-        self._use_api: Final = args.use_api
+        self._name:Final = args.name
+        self._use_scheduler: Final = args.use_scheduler
         self._chunk_size: Final = args.chunk_size
         self._use_process: Final = args.use_process
         self._model_cfg: Final = args.model
@@ -170,12 +173,7 @@ class ModelExecutor:
         self._executor: Executor | None = None
         self._thread_local: Final = threading.local()
 
-        # 如果是简单的调度模式，直接使用进程或者线程Executor即可
-        # 但是现在需要更大的调度算法，所以，如果是线程
-        if self._use_api:
-            # 表示通过api的方式调用，也就是先独立启动了服务，如：./app start --xxx --
-            self._model = ApiModel()
-        elif self._max_workers > 0:
+        if self._max_workers > 0:
             self._executor = SafeExecutor(
                 self._new_executor, max_idle_timeout=args.max_idle_timeout
             )
@@ -185,7 +183,7 @@ class ModelExecutor:
             self._model = self._create_model(self._model_cfg)
 
         self._scheduler = Scheduler(
-            args.name, self.execute, **args.scheduler.model_dump()
+            args.name, self._execute, **args.scheduler.model_dump()
         )
 
         self._finalizer=weakref.finalize(self,self._close,self._executor,self._scheduler)
@@ -242,8 +240,14 @@ class ModelExecutor:
                 timeout = end_clock - time.monotonic()
             else:
                 timeout = None
-            job = self.submit([item[0] for item in items])
-            for item, result in zip(items, lists.flat(job.wait(timeout=timeout))):
+            #TODO 如果不考虑timeout，现在使用execute更好
+            if self._use_scheduler:
+                job = self.submit([item[0] for item in items])
+                results = lists.flat(job.wait(timeout=timeout))
+            else:
+                results = self.execute([item[0] for item in items])
+            
+            for item, result in zip(items,results):
                 item[1][cache_name] = result
                 if doc.is_dev():
                     doc.write(item[2], result)
@@ -296,9 +300,25 @@ class ModelExecutor:
         for i in range(0, len(files), chunk_size):
             items.append(files[i : i + chunk_size])
         return self._scheduler.submit(items)
+    
+    def execute(self,files:Sequence[_Image]):
+        if self._executor:
+            if self._use_process:
+                fn=self._execute_on_process
+            else:
+                fn=self._execute_on_thread
+            futures:list[Future]=[]
+            for i in range(0,len(files),self._chunk_size):
+                futures.append(self._executor.submit(fn,files[i:i+self._chunk_size]))
+            return lists.flat([f.result() for f in futures])
+        elif self._model:
+            # 轻量级且支持多线程的
+            return self._model.execute(files)
+        else:
+            raise RuntimeError("不可能执行到这里")
 
-    def execute(self, files: Sequence[_Image]) -> list[Any]:
-        """直接执行，不需要调度，通过api提供服务，应该使用这个方法"""
+    def _execute(self, files: Sequence[_Image]) -> list[Any]:
+        """直接执行"""
         if self._executor:
             # 如果是启动快，计算耗时的，每次都使用一个新的进程（或者命令行）执行，也是可以
             # 因为现在是启动慢，执行快，所以使用进程池
@@ -323,13 +343,13 @@ class ModelExecutor:
                 initializer=mp_init,
             )
         else:
-            return ThreadPoolExecutor(self._max_workers,thread_name_prefix=f'{self._model_cfg.name}_', initializer=self._init_thread)
+            return ThreadPoolExecutor(self._max_workers,thread_name_prefix=f'{self._model_cfg.name}', initializer=self._init_thread,initargs=(self._model_cfg,))
 
-    def _init_thread(self):
+    def _init_thread(self,cfg:ModelArgs):
         if hasattr(self._thread_local, "model"):
             # 出现这个错误，是线程池重复初始化同一个线程了
             raise RuntimeError("编程错误，该线程已经初始化了")
-        self._thread_local.model = self._create_model(self._model_cfg)
+        self._thread_local.model = self._create_model(cfg)
         # 如果需要释放
         # weakref.ref(model)
 
@@ -357,6 +377,11 @@ class ModelExecutor:
         return Model.create(cfg.name, *cfg.args, **cfg.kwargs)
 
 
+class ModelMode(StrEnum):
+    SERVER=auto()
+    """表示在服务模式，模型通常在独立的进程"""
+    COMMAND=auto()
+    
 class ModelManagerArgs(MyBaseModel):
     executors: dict[str, ModelExecutorArgs] = Field(default_factory=dict)
     models: dict[str,ModelArgs] = Field(default_factory=dict)
@@ -636,7 +661,7 @@ class RapidOCRModel(Model):
 
         kwargs = self._normalize_kwargs(kwargs)
         self._model: Final = RapidOCR(params=kwargs)
-        self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
+        #self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
 
     def _normalize_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         from rapidocr import (
@@ -753,7 +778,7 @@ class RapidOCRModel(Model):
 
             # 代码是支持PIL.Image.Image，但是接口的类型注释没有
             cv2_img = file.cv2_image
-            output: RapidOCROutput = self._model(cv2_img)
+            output: RapidOCROutput = self._model(cv2_img)            
             objs: list[Any] = []
             size = file.size
             # height = size[1]
@@ -771,8 +796,7 @@ class RapidOCRModel(Model):
                     #to_quad(box)
                     #to_quad2(box) 稍微内收了一点
                     if use_preferred_bbox:
-                        box = self._shrink_bbox_any_bg(cv2_img,box)
-                    
+                        box = self._shrink_bbox_any_bg(cv2_img,box)                    
                     #TODO 有些情况，会把2行文字识别为一个box，而且没有识别全部字
                     #这种情况下，如下：被识别为一个box，而且仅仅返回“AB”，或者“ABC”，或者“ABCD”，导致字符的宽度/高度计算错误
                     #AB
@@ -872,7 +896,7 @@ class TableClsModel(Model):
 
 
 class TableDetModel(Model):
-    def __init__(self,*,model_path: str|Path|None=None, score_threshold: float = 0.5):
+    def __init__(self,*,model_path: str|Path|None=None,**kwargs:Any):
         super().__init__()
         from .table_det import RTDETRTableCellDet
         from memect.models import get_model_path
@@ -880,7 +904,7 @@ class TableDetModel(Model):
             model_path=get_model_path('table_det.onnx')
         else:
             model_path = Path(model_path)
-        self._model = RTDETRTableCellDet(model_path, score_threshold)
+        self._model = RTDETRTableCellDet(model_path,**kwargs)
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
@@ -924,8 +948,8 @@ class LLMModel(Model):
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
+        #TODO 因为这里没有并行执行，所以，ModelExecutor的max_workers可以设置为n个
         results: list[Any] = []
-        # 目前不支持一次性提交多个文件
         for file in files:
             messages = self._build_messages(file)
             resp = self._client.chat.completions.create(

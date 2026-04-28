@@ -734,7 +734,7 @@ class WingdingsRecognizer:
         cmap = font.getBestCmap([(3,0)])
         results:list[int] = []
         for codepoint, glyph_name in cmap.items():
-            print((hex(codepoint),glyph_name))
+            #print((hex(codepoint),glyph_name))
             results.append(codepoint)
         results.sort()
         return results
@@ -814,7 +814,7 @@ class WingdingsRecognizer:
         t_result = self._match_template(patch)
         p_result = self._match_phash(patch)
 
-        verbose=1
+        verbose=False
 
         if verbose:
             print('=============>>>')
