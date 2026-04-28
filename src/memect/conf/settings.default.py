@@ -638,11 +638,6 @@ settings: dict[str, Any] = {
                 2: 2,
             },
         },
-        # True表示启用新的进程执行parser
-        # 如果使用进程的方式，可以确保每个任务解析的时间基本固定，即使系统空闲，也不会使用更多的资源
-        # 对于满载的情况，True和False没有什么区别
-        # 如果设置为True，scheduler.max_task_size*task_manager.max_runnning_size<=系统能力
-        # 如果设置为False，scheduler.max_task_size=系统能力，当只有一个任务，可以并发，最快速完成
-        "use_process": False,
+        
     },
 }

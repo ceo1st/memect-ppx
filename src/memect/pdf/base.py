@@ -40,6 +40,7 @@ from memect.pdf.grid import Grid
 from memect.base.zip import Archiver
 from memect.pdf.sort import Sorter
 
+
 class PageParams(MyBaseModel):
     number: int = 1
     """表示页码，1为第一页"""
@@ -193,9 +194,11 @@ class VObjectType(StrEnum):
 
 
 class VObject:
-    def __init__(self,page:"KPage",type: str, quad: Quad, score: float = 1, raw_type: str = ""):
+    def __init__(
+        self, page: "KPage", type: str, quad: Quad, score: float = 1, raw_type: str = ""
+    ):
         super().__init__()
-        self.page:Final=page
+        self.page: Final = page
         self.type: Final = VObjectType(type)
         self.bbox: Final = quad.bbox
         self.quad: Final = quad
@@ -205,7 +208,7 @@ class VObject:
         self.debug: Final[dict[str, Any]] = {}
         self.ocr_chars: Final[list[KChar]] = []
         """该对象区域试验ocr识别的字符串"""
-        self.vobjects:Final[list[VObject]]=[]
+        self.vobjects: Final[list[VObject]] = []
         """如果是表格，可以继续包含对象，如：图片等"""
         # self.pdf_chars:Final[list[KChar]]=[]
         # self.ocr_spans:Final[list[KSpan]]=[]
@@ -269,35 +272,35 @@ class VObject:
         return self.type == VObjectType.CODE
 
     def is_header(self) -> bool:
-        #TODO 如果换了模型，raw_type需要重新映射？
-        return self.type == VObjectType.HEADER or self.raw_type=='header_image'
+        # TODO 如果换了模型，raw_type需要重新映射？
+        return self.type == VObjectType.HEADER or self.raw_type == "header_image"
 
     def is_footer(self) -> bool:
-        #TODO 如果换了模型，raw_type需要使用其他名字?
-        return self.type == VObjectType.FOOTER or self.raw_type=='footer_image'
+        # TODO 如果换了模型，raw_type需要使用其他名字?
+        return self.type == VObjectType.FOOTER or self.raw_type == "footer_image"
 
     def is_footnote(self) -> bool:
         return self.type == VObjectType.FOOTNOTE
-    
-    def is_table_title(self)->bool:
-        return self.raw_type=='table_title'
-    
-    def is_figure_title(self)->bool:
-        return self.raw_type=='figure_title'
-    
-    def is_source(self)->bool:
+
+    def is_table_title(self) -> bool:
+        return self.raw_type == "table_title"
+
+    def is_figure_title(self) -> bool:
+        return self.raw_type == "figure_title"
+
+    def is_source(self) -> bool:
         """判断是否来源等？"""
-        return self.raw_type=='vision_footnote'
-    
-    def make_figure(self,*,dx:float=0,dy:float=0)->"KFigure":
-        if dx!=0 or dy!=0:
-            quad = self.bbox.expand(dx=dx,dy=dy).intersect(self.page.bbox).to_quad()
+        return self.raw_type == "vision_footnote"
+
+    def make_figure(self, *, dx: float = 0, dy: float = 0) -> "KFigure":
+        if dx != 0 or dy != 0:
+            quad = self.bbox.expand(dx=dx, dy=dy).intersect(self.page.bbox).to_quad()
         else:
             quad = self.quad
         figure = self.page.make_figure(quad)
         assert figure is not None
-        figure.vobject=self
-        figure.subtype=str(self.type)
+        figure.vobject = self
+        figure.subtype = str(self.type)
         return figure
 
 
@@ -356,11 +359,11 @@ class KDocument:
         self._lock: Final = threading.RLock()
         self._auto_cleaner: AutoCleaner | None = None
 
-        self.state:dict[str,Any]={}
+        self.state: dict[str, Any] = {}
         """执行统计"""
 
     def __del__(self):
-        #self._logger.debug("gc %s", self)
+        # self._logger.debug("gc %s", self)
         pass
 
     def get_auto_cleaner(self) -> AutoCleaner:
@@ -647,16 +650,18 @@ class KDocument:
             buf.append(page.markdown())
         return "\n\n".join(buf)
 
+
 class KDocumentFactory:
-    def __init__(self,file:str|Path,params:Any,out_dir:Path|None=None):
+    def __init__(self, file: str | Path, params: Any, out_dir: Path | None = None):
         super().__init__()
-        self.file:Final=file
-        self.params:Final=params
-        self.out_dir:Final=out_dir
-    
-    def __call__(self)->KDocument:
-        return KDocument(self.file,params=self.params,out_dir=self.out_dir)
-    
+        self.file: Final = file
+        self.params: Final = params
+        self.out_dir: Final = out_dir
+
+    def __call__(self) -> KDocument:
+        return KDocument(self.file, params=self.params, out_dir=self.out_dir)
+
+
 class _LayoutObject(TypedDict):
     type: str
     bbox: NotRequired[Sequence[float]]
@@ -726,8 +731,8 @@ class KPage:
         """页面上所有的原始pdf矩形"""
         self.pdf_figures: Final[list[KPDFFigure]] = []
         """页面上所有的原始的pdf图片"""
-        #self.pdf_paths: Final[list[Any]] = []
-        #"""页面上所有的原始的路径"""
+        # self.pdf_paths: Final[list[Any]] = []
+        # """页面上所有的原始的路径"""
 
         # self.ocr_spans:Final[list[KSpan]]=[]
         # """ocr识别的字符串，目的是用来去掉和pdf识别的且重叠的"""
@@ -772,7 +777,7 @@ class KPage:
         #  如：竖向，横向页面的切换
         #  如果只是简单的添加一个空白页，添加一个换行（分页）即可
 
-        self.columns:Sequence[BBox]|None=None
+        self.columns: Sequence[BBox] | None = None
         """记录当前页面的分栏，生成docx的时候需要"""
 
     def __del__(self):
@@ -967,7 +972,7 @@ class KPage:
         # 2.面积排序，大的留下，小的去掉
         # 3.相互重叠的情况就不考虑了
         vobjects.sort(key=lambda vobj: vobj.bbox.area, reverse=True)
-        removed_objects:list[VObject]=[]
+        removed_objects: list[VObject] = []
         i = 0
         while i < len(vobjects):
             vobj = vobjects[i]
@@ -992,11 +997,13 @@ class KPage:
                     continue
                 # 如果仅仅部分区域重叠，合并为一个？
             i += 1
-        
+
         for vobj in vobjects:
             if vobj.is_table():
-                #如果是表格，内部可能还包含有图片或者其他
-                vobj.vobjects.extend(vobj.bbox.get(removed_objects,ratio=0.7,remove=True))
+                # 如果是表格，内部可能还包含有图片或者其他
+                vobj.vobjects.extend(
+                    vobj.bbox.get(removed_objects, ratio=0.7, remove=True)
+                )
         return vobjects
 
     def draw(
@@ -1007,7 +1014,7 @@ class KPage:
         use_bbox: bool = False,
         show_type: bool = True,
         index: int | None = None,
-        line_width:int|None=None,
+        line_width: int | None = None,
     ) -> PIL.Image.Image:
         """
         columns: 需要显示的多列内容，None表示输出原图，或者list，或者PIL.Image.Image
@@ -1057,7 +1064,7 @@ class KPage:
             else:
                 raise ValueError(f"不支持的对象:{obj}")
 
-        def draw_objects(objects: Sequence[Any], font: Any,op:str|None=None):
+        def draw_objects(objects: Sequence[Any], font: Any, op: str | None = None):
             image = self.image.copy()
             overlay_image = PIL.Image.new("RGBA", image.size, (0, 0, 0, 0))
 
@@ -1066,16 +1073,16 @@ class KPage:
 
             # 把相对页面的坐标转换为相对图片的，原点从左下角到左上角，然后再缩放
             m = Matrix.lb_to_lt(self.size, image.size)
-            for k,obj in enumerate(objects):
+            for k, obj in enumerate(objects):
                 # TODO 为页面坐标，还需要转换为相对图片的，因为可能缩放了，但是旋转方向等是一致的
                 quad, type_ = get_quad_and_type(obj)
-                if op=='number':
-                    #显示序号
+                if op == "number":
+                    # 显示序号
                     if type_:
-                        type_=f'{k}-{type_}'
+                        type_ = f"{k}-{type_}"
                     else:
-                        type_=str(k)
-                
+                        type_ = str(k)
+
                 quad = quad.transform(m)
                 bbox = quad.bbox
                 x0, y0, x1, y1 = bbox
@@ -1084,11 +1091,15 @@ class KPage:
                         w = math.ceil(obj.width)
                     else:
                         w = line_width
-                    draw.line((x0, y0, x1, y1), fill=(255, 255, 0) if obj.is_h() else (0,0,255), width=w)
-                    #draw.rectangle(obj.rect_bbox.transform(m),fill=(255,255,0))
+                    draw.line(
+                        (x0, y0, x1, y1),
+                        fill=(255, 255, 0) if obj.is_h() else (0, 0, 255),
+                        width=w,
+                    )
+                    # draw.rectangle(obj.rect_bbox.transform(m),fill=(255,255,0))
                 elif isinstance(obj, KRect):
-                    #这个是覆盖原图
-                    #draw.rectangle((x0, y0, x1, y1), fill=(255, 0, 0, 20))
+                    # 这个是覆盖原图
+                    # draw.rectangle((x0, y0, x1, y1), fill=(255, 0, 0, 20))
                     overlay_draw.rectangle((x0, y0, x1, y1), fill=(255, 0, 0, 20))
                 else:
                     # quad = obj.quad.transform(m)
@@ -1114,7 +1125,7 @@ class KPage:
                             quad.points, fill=color_a, outline=(0, 0, 0, 0), width=1
                         )
 
-                    if type_ and op in ('type','number'):
+                    if type_ and op in ("type", "number"):
                         text_x = x0
                         text_y = max(0, y0 - 15)
 
@@ -1152,32 +1163,34 @@ class KPage:
         type_font = get_font()
 
         images: list[tuple[str, PIL.Image.Image]] = []
-        new_columns:list[Any] = []
+        new_columns: list[Any] = []
         for column in columns:
-            if len(column)==2:
-                column = [*column,'type' if show_type else None]
-            elif len(column)==3 and isinstance(column[2],bool):
-                #('xx',[],True) => 表示显示类型
-                column = [column[0],column[1],'type']
+            if len(column) == 2:
+                column = [*column, "type" if show_type else None]
+            elif len(column) == 3 and isinstance(column[2], bool):
+                # ('xx',[],True) => 表示显示类型
+                column = [column[0], column[1], "type"]
             else:
                 pass
-            assert len(column)==3
+            assert len(column) == 3
             new_columns.append(column)
-        
-        for title, obj,op in new_columns:
+
+        for title, obj, op in new_columns:
             if obj is None:
                 image = self.image
             elif isinstance(obj, PIL.Image.Image):
                 image = obj
             else:
-                image = draw_objects(obj, type_font,op)
+                image = draw_objects(obj, type_font, op)
 
             images.append((title, image))
 
         title_font = get_font(30)
         gap_width = 2
         title_height = 40
-        new_width = sum(img[1].width for img in images) + gap_width * (len(new_columns) - 1)
+        new_width = sum(img[1].width for img in images) + gap_width * (
+            len(new_columns) - 1
+        )
         new_height = max(img[1].height for img in images) + title_height
         # 创建新画布（模式为RGB，背景白色）
         image = PIL.Image.new("RGB", (new_width, new_height), (255, 255, 255))
@@ -1338,15 +1351,15 @@ class KColor:
     def __init__(self, rgba: Sequence[int], *, alpha: float = 1):
         pass
 
-    def is_black(self)->bool:
+    def is_black(self) -> bool:
         return self is self.BLACK
-    
-    def is_white(self)->bool:
+
+    def is_white(self) -> bool:
         return self is self.WHITE
-    
-    def jsonify(self)->Any:
+
+    def jsonify(self) -> Any:
         return self.rgba[0:3]
-    
+
     @classmethod
     def from_list(
         cls,
@@ -1519,46 +1532,41 @@ class KChar(KObject):
         """如果是wingdings的字符，可以获得pua区域的文本，方便在生成docx的时候直接使用"""
         self.subtype = subtype
 
-        
     @cached_property
-    def min_bbox(self)->BBox:
-        if self.text in '》】）｝］？；。：，！、':
+    def min_bbox(self) -> BBox:
+        if self.text in "》】）｝］？；。：，！、":
             return self.bbox.adjust(x1=self.bbox.cx)
-        elif self.text in '《【（｛［':
+        elif self.text in "《【（｛［":
             return self.bbox.adjust(x0=self.bbox.cx)
         else:
             return self.bbox
-        
+
     def markdown(self) -> str:
         return _md_escape(self.text)
-    
+
     def jsonify(self):
-        data={
-            "bbox":self.bbox.jsonify(),
-            "text":self.text
-        }
+        data = {"bbox": self.bbox.jsonify(), "text": self.text}
         if self.bold:
-            data['bold']=True
+            data["bold"] = True
         if self.italic:
-            data['italic']=True
+            data["italic"] = True
         if self.underline:
-            data['underline']=True
+            data["underline"] = True
         if self.strikeout:
-            data['strikeout']=True
-        #默认为黑色
+            data["strikeout"] = True
+        # 默认为黑色
         if not self.color.is_black():
-            data['color']=self.color.jsonify()
-        
+            data["color"] = self.color.jsonify()
+
         if self.font.monospace:
-            data['monospace']=True
+            data["monospace"] = True
         elif self.font.serif:
-            data['serif']=True
+            data["serif"] = True
         elif self.font.sans_serif:
-            data['sans_serif']=True
+            data["sans_serif"] = True
         else:
             pass
         return data
-        
 
     def is_valid(self) -> bool:
         """判断是否为有效的字符"""
@@ -1596,13 +1604,9 @@ class KText(KObject):
 
     def markdown(self) -> str:
         return _md_escape(self.text)
-    
+
     def jsonify(self):
-        return {
-            'type':'text',
-            'bbox':self.bbox.jsonify(),
-            'text':self.text
-        }
+        return {"type": "text", "bbox": self.bbox.jsonify(), "text": self.text}
 
 
 class KMarkdown(KObject):
@@ -1624,13 +1628,9 @@ class KMarkdown(KObject):
     def plaintext(self) -> str:
         """纯文本"""
         return self.unescape(self.text)
-    
+
     def jsonify(self):
-        return {
-            "type":'markdown',
-            'bbox':self.bbox,
-            'text':self.text
-        }
+        return {"type": "markdown", "bbox": self.bbox, "text": self.text}
 
     @classmethod
     def escape(cls, text: str) -> str:
@@ -1721,124 +1721,137 @@ class KTextline(KObject):
         return KTextbox(self.page, self.quad, lines=[self])
 
     @override
-    def markdown(self)->str:
+    def markdown(self) -> str:
         return self.render_markdown(self.objects)
-        
+
     def __add__(self, other: Self):
         quad = Quad.join([self.quad, other.quad])
         return KTextline(self.page, quad, objects=[*self.objects, *other.objects])
 
-    def set_underline(self,bbox:BBox,*,dx:float=2):
+    def set_underline(self, bbox: BBox, *, dx: float = 2):
         """设置指定范围内的字符串有下划线"""
-        found=False
-        for char in self.chars:
-            b=char.min_bbox
-            if b.x0>=bbox.x0-dx and b.x1<=bbox.x1+dx:
-                char.underline=True
-                found=True
-            elif found:
-                break
-            
-    
-    def set_strikeout(self,bbox:BBox,*,dx:float=2):
-        """设置指定范围内的字符串有删除线"""
-        found=False
+        found = False
         for char in self.chars:
             b = char.min_bbox
-            if b.x0>=bbox.x0-dx and b.x1<=bbox.x1+dx:
-                char.strikeout=True
-                found=True
+            if b.x0 >= bbox.x0 - dx and b.x1 <= bbox.x1 + dx:
+                char.underline = True
+                found = True
             elif found:
                 break
 
- 
-    def jsoniyf(self)->Any:
+    def set_strikeout(self, bbox: BBox, *, dx: float = 2):
+        """设置指定范围内的字符串有删除线"""
+        found = False
+        for char in self.chars:
+            b = char.min_bbox
+            if b.x0 >= bbox.x0 - dx and b.x1 <= bbox.x1 + dx:
+                char.strikeout = True
+                found = True
+            elif found:
+                break
+
+    def jsonify(self) -> Any:
         return {
-            "bbox":self.bbox.jsonify(),
-            "text":self.text,
-            "objects":[obj.jsonify() for obj in self.objects]
+            "bbox": self.bbox.jsonify(),
+            "text": self.text,
+            "objects": [obj.jsonify() for obj in self.objects],
         }
 
     @classmethod
-    def render_markdown(cls,objects:Sequence[KObject],use_style:bool=True)->str:
-        def alike(c1:KChar,c2:KChar)->bool:
-            return c1.bold==c2.bold and c1.italic==c2.italic and c1.underline==c2.underline and c1.strikeout==c2.strikeout
-        
-        def split_groups(objs:Sequence[KObject]):
-            groups:list[list[KObject]]=[]
-            group=[objs[0]]
+    def render_markdown(cls, objects: Sequence[KObject], use_style: bool = True) -> str:
+        def alike(c1: KChar, c2: KChar) -> bool:
+            return (
+                c1.bold == c2.bold
+                and c1.italic == c2.italic
+                and c1.underline == c2.underline
+                and c1.strikeout == c2.strikeout
+            )
+
+        def split_groups(objs: Sequence[KObject]):
+            groups: list[list[KObject]] = []
+            group = [objs[0]]
             groups.append(group)
             for obj in objs[1:]:
-                if isinstance(obj,KChar) and isinstance(group[-1],KChar) and alike(group[-1],obj):
+                if (
+                    isinstance(obj, KChar)
+                    and isinstance(group[-1], KChar)
+                    and alike(group[-1], obj)
+                ):
                     group.append(obj)
                 else:
-                    group=[obj]
+                    group = [obj]
                     groups.append(group)
             return groups
 
-
-        def is_punctuation(s:str)->bool:
+        def is_punctuation(s: str) -> bool:
             from memect.base import strs
             import string
-            a,b = strs.to_bq(s)
+
+            a, b = strs.to_bq(s)
             return a in string.punctuation
-    
-        buf:list[str]=[]
+
+        buf: list[str] = []
         if use_style:
             for group in split_groups(objects):
-                if isinstance(group[0],KChar):
-                    s=''.join(c.text for c in cast(Sequence[KChar],group))
-                    #前后的空格无法显示粗体，所以就先去掉空格
-                    m=re.search(r'^(\s*)(.*?)(\s*)$',s)
+                if isinstance(group[0], KChar):
+                    s = "".join(c.text for c in cast(Sequence[KChar], group))
+                    # 前后的空格无法显示粗体，所以就先去掉空格
+                    m = re.search(r"^(\s*)(.*?)(\s*)$", s)
                     if m:
-                        #去掉前后空格
-                        prefix=m.group(1)
-                        suffix=m.group(3)
-                        s=m.group(2)
+                        # 去掉前后空格
+                        prefix = m.group(1)
+                        suffix = m.group(3)
+                        s = m.group(2)
                     else:
-                        prefix=''
-                        suffix=''
-                    
+                        prefix = ""
+                        suffix = ""
+
                     buf.append(prefix)
-                    has_style=False
+                    has_style = False
                     c = group[0]
                     if c.underline:
-                        buf.append('<u>')
-                        has_style=True
+                        buf.append("<u>")
+                        has_style = True
                     if c.strikeout:
-                        buf.append('~~')
-                        has_style=True
+                        buf.append("~~")
+                        has_style = True
                     if c.italic:
-                        buf.append('*')
-                        has_style=True
+                        buf.append("*")
+                        has_style = True
                     if c.bold:
-                        buf.append('**')
-                        has_style=True
+                        buf.append("**")
+                        has_style = True
 
                     buf.append(_md_escape(s))
                     if c.italic:
-                        buf.append('*')
+                        buf.append("*")
                     if c.bold:
-                        buf.append('**')
+                        buf.append("**")
                     if c.strikeout:
-                        buf.append('~~')
+                        buf.append("~~")
                     if c.underline:
-                        buf.append('</u>')
-                    
+                        buf.append("</u>")
+
                     buf.append(suffix)
-                    if has_style and len(s)>0 and buf[-1]!=' ' and is_punctuation(s[-1]):
-                        #如果最后为标点，需要添加一个空格才能够表示为加粗
-                        #如：**abc:** => 不会被渲染为粗体，后面需要添加一个空格
-                        buf.append(' ')
+                    if (
+                        has_style
+                        and len(s) > 0
+                        and buf[-1] != " "
+                        and is_punctuation(s[-1])
+                    ):
+                        # 如果最后为标点，需要添加一个空格才能够表示为加粗
+                        # 如：**abc:** => 不会被渲染为粗体，后面需要添加一个空格
+                        buf.append(" ")
                 else:
                     for obj in group:
                         buf.append(obj.markdown())
         else:
             for obj in objects:
                 buf.append(obj.markdown())
-        return ''.join(buf)
+        return "".join(buf)
+
     @classmethod
-    def parse(cls, objects: Sequence[KObject],*,strip:bool=True) -> list[Self]:
+    def parse(cls, objects: Sequence[KObject], *, strip: bool = True) -> list[Self]:
         if not objects:
             return []
 
@@ -1993,19 +2006,20 @@ class KTextline(KObject):
 
             return columns
 
-        def strip_line(line:Group[KObject]):
+        def strip_line(line: Group[KObject]):
             while line:
                 obj = line[0]
-                if isinstance(obj,KChar) and obj.text.isspace():
+                if isinstance(obj, KChar) and obj.text.isspace():
                     del line[0]
                 else:
                     break
             while line:
-                obj=line[-1]
-                if isinstance(obj,KChar) and obj.text.isspace():
+                obj = line[-1]
+                if isinstance(obj, KChar) and obj.text.isspace():
                     del line[-1]
                 else:
                     break
+
         groups = split_groups(objects)
         use_columns = False
         if use_columns:
@@ -2018,16 +2032,16 @@ class KTextline(KObject):
             column.sort(key=lambda group: group.bbox.y1, reverse=True)
             while column:
                 lines.append(parse_line(column))
-        
+
         if strip:
-            i=0
-            while i<len(lines):
+            i = 0
+            while i < len(lines):
                 line = lines[i]
                 strip_line(line)
                 if not line:
                     del lines[i]
                 else:
-                    i+=1
+                    i += 1
         page = objects[0].page
         return [
             cls(
@@ -2172,9 +2186,9 @@ class KTextbox(KObject):
         return "".join(line.text for line in self.lines)
 
     @cached_property
-    def text2(self)->str:
+    def text2(self) -> str:
         """去掉了空格，全角变成了半角，合适正则表达式使用"""
-        return NText.get(self.text,mode='q2b',space='remove').text
+        return NText.get(self.text, mode="q2b", space="remove").text
 
     @cached_property
     def chars(self) -> Sequence[KChar]:
@@ -2195,23 +2209,23 @@ class KTextbox(KObject):
     @override
     def markdown(self) -> str:
         """需要按原文换行吗？"""
-        #对于markdown，可以直接输出为一段长文本即可，不需要添加换行符
-        keep_lr=False
-        buf:list[str]=[]
+        # 对于markdown，可以直接输出为一段长文本即可，不需要添加换行符
+        keep_lr = False
+        buf: list[str] = []
         if keep_lr:
             for tl in self.lines:
                 buf.append(tl.markdown())
-            return '\n'.join(buf)
+            return "\n".join(buf)
         else:
-            objs:list[KObject]=[]
+            objs: list[KObject] = []
 
-            for i,tl in enumerate(self.lines):
-                #TODO 如果是英文的，可能在换行后，需要添加一个空格，如：
-                #hello
-                #world  => hello world
-                #if padding_space(i,self.lines):
-                    #objs.append(KText(self.page,None,text=' '))
-                    #pass
+            for i, tl in enumerate(self.lines):
+                # TODO 如果是英文的，可能在换行后，需要添加一个空格，如：
+                # hello
+                # world  => hello world
+                # if padding_space(i,self.lines):
+                # objs.append(KText(self.page,None,text=' '))
+                # pass
                 objs.extend(tl.objects)
             return KTextline.render_markdown(objs)
 
@@ -2222,11 +2236,12 @@ class KTextbox(KObject):
 
     def jsonify(self):
         return {
-            "type":"textbox",
-            "bbox":self.bbox.jsonify(),
-            "text":self.text,
-            "lines":[line.jsonify() for line in self.lines]
+            "type": "textbox",
+            "bbox": self.bbox.jsonify(),
+            "text": self.text,
+            "lines": [line.jsonify() for line in self.lines],
         }
+
     @classmethod
     def join(cls, tbs: Sequence[Self]) -> Self:
         assert len(tbs) > 0
@@ -2235,13 +2250,15 @@ class KTextbox(KObject):
         return cls(page, quad, lines=[line for tb in tbs for line in tb.lines])
 
     @classmethod
-    def from_objects(cls, objects: Sequence[KObject],*,strip:bool=True) -> Self|None:
+    def from_objects(
+        cls, objects: Sequence[KObject], *, strip: bool = True
+    ) -> Self | None:
         assert len(objects) > 0
         quad = Quad.join([c.quad for c in objects])
         page = objects[0].page
-        #可能存在空白的行，然后被去掉了，这个时候就没有KTextbox了
-        lines = KTextline.parse(objects,strip=strip)
-        if len(lines)==0:
+        # 可能存在空白的行，然后被去掉了，这个时候就没有KTextbox了
+        lines = KTextline.parse(objects, strip=strip)
+        if len(lines) == 0:
             return None
         else:
             return cls(page, quad, lines=lines)
@@ -2262,19 +2279,21 @@ class KFigure(KObject):
     def markdown(self) -> str:
         name = self.fullpath.name
         return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
-    
+
     def jsonify(self):
         return {
-        "type":"figure",
-            "bbox":self.bbox.jsonify(),
-            "filename":self.filename
-            }
+            "type": "figure",
+            "bbox": self.bbox.jsonify(),
+            "filename": self.filename,
+        }
 
 
 class KTable(KObject):
     type: str = "table"
 
-    def __init__(self, page: KPage, quad: Quad|BBox, *, row_num: int = 0, col_num: int = 0):
+    def __init__(
+        self, page: KPage, quad: Quad | BBox, *, row_num: int = 0, col_num: int = 0
+    ):
         super().__init__(page, quad)
         self.row_num = row_num
         self.col_num = col_num
@@ -2290,24 +2309,24 @@ class KTable(KObject):
         assert self.filename
         return self.doc.out_dir / self.filename
 
-    def get_row(self,index:int)->list["KCell"]:
-        if index<0:
-            index+=self.row_num
-        row:list[KCell]=[]
+    def get_row(self, index: int) -> list["KCell"]:
+        if index < 0:
+            index += self.row_num
+        row: list[KCell] = []
         for cell in self.cells:
-            if cell.row_index<=index<cell.row_index+cell.row_span:
+            if cell.row_index <= index < cell.row_index + cell.row_span:
                 row.append(cell)
         return row
-    
-    def get_column(self,index:int)->list["KCell"]:
-        if index<0:
-            index+=self.col_num
-        column:list[KCell]=[]
+
+    def get_column(self, index: int) -> list["KCell"]:
+        if index < 0:
+            index += self.col_num
+        column: list[KCell] = []
         for cell in self.cells:
-            if cell.col_index<=index<cell.col_index+cell.col_span:
+            if cell.col_index <= index < cell.col_index + cell.col_span:
                 column.append(cell)
         return column
-    
+
     def __getitem__(self, key: tuple[int, int]) -> "KCell":
         row_index, col_index = key
         for cell in self.cells:
@@ -2321,7 +2340,7 @@ class KTable(KObject):
     def get_lines(self) -> list["KLine"]:
         """根据当前cells的bbox，构造水平线和垂直线（合并共线重叠段）。"""
         horiz: list[tuple[float, float, float]] = []  # (y, x0, x1)
-        vert:  list[tuple[float, float, float]] = []  # (x, y0, y1)
+        vert: list[tuple[float, float, float]] = []  # (x, y0, y1)
         for cell in self.cells:
             if cell.bbox is None:
                 continue
@@ -2331,13 +2350,19 @@ class KTable(KObject):
             vert.append((x0, y0, y1))
             vert.append((x1, y0, y1))
 
-        def _merge(segs: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:
+        def _merge(
+            segs: list[tuple[float, float, float]],
+        ) -> list[tuple[float, float, float]]:
             if not segs:
                 return []
             segs = sorted(segs, key=lambda s: (round(s[0], 2), s[1]))
             merged: list[tuple[float, float, float]] = []
             for coord, a, b in segs:
-                if merged and abs(merged[-1][0] - coord) < 0.5 and a <= merged[-1][2] + 0.5:
+                if (
+                    merged
+                    and abs(merged[-1][0] - coord) < 0.5
+                    and a <= merged[-1][2] + 0.5
+                ):
                     pc, pa, pb = merged[-1]
                     merged[-1] = (pc, pa, max(pb, b))
                 else:
@@ -2369,36 +2394,36 @@ class KTable(KObject):
         # table.html()
         from html import escape
 
-        def render_objects(objs:Sequence[KObject])->str:
-            buf:list[str]=[]
+        def render_objects(objs: Sequence[KObject]) -> str:
+            buf: list[str] = []
             for obj in objs:
-                if isinstance(obj,KTextbox):
-                    #TODO 如果全部是文字，如果包含有图片
+                if isinstance(obj, KTextbox):
+                    # TODO 如果全部是文字，如果包含有图片
                     for tl in obj.lines:
-                        buf.append('<div>')
+                        buf.append("<div>")
                         buf.append(render_objects(tl.objects))
-                        buf.append('</div>')
-                elif isinstance(obj,KFigure):
+                        buf.append("</div>")
+                elif isinstance(obj, KFigure):
                     buf.append(f'<img src="{obj.filename}">')
-                elif isinstance(obj,KFormula):
+                elif isinstance(obj, KFormula):
                     buf.append(f'<img src="{obj.filename}">')
-                elif isinstance(obj,KChar):
+                elif isinstance(obj, KChar):
                     buf.append(escape(obj.text))
-                elif isinstance(obj,KText):
+                elif isinstance(obj, KText):
                     buf.append(escape(obj.text))
-                elif isinstance(obj,KMarkdown):
+                elif isinstance(obj, KMarkdown):
                     buf.append(escape(obj.plaintext()))
-                elif isinstance(obj,KTable):
+                elif isinstance(obj, KTable):
                     buf.append(obj.html())
                 else:
                     pass
-            return ''.join(buf)
+            return "".join(buf)
 
         buf: list[str] = []
         buf.append("<table>")
         if True:
-            #如果存在错位的跨列，如果该列没有内容，会导致width=0，显示上看不出来错位
-            #所以这里简单的设置一个宽度
+            # 如果存在错位的跨列，如果该列没有内容，会导致width=0，显示上看不出来错位
+            # 所以这里简单的设置一个宽度
             buf.append("<colgroup>")
             for i in range(self.col_num):
                 buf.append('<col colspan=1 style="min-width:20px;"></col>')
@@ -2436,7 +2461,7 @@ class KTable(KObject):
         self, fp: str | Path | TextIO | None = None, full: bool = True
     ) -> str:
         import html
-        
+
         buf: list[str] = []
         if full:
             buf.append("<html><head></head><body>")
@@ -2527,150 +2552,164 @@ class KTable(KObject):
             )
             self.cells.append(kcell)
 
-    def fill_objects(self,objs:list[KObject|VObject]):
+    def fill_objects(self, objs: list[KObject | VObject]):
         """已经创建表格结构，把对象填充到单元格，会消耗使用的对象，目的是为了更好的测试"""
-        def remove_spaces(objs:Sequence[KObject])->list[KObject]:
-            new_objs:list[KObject]=[]
+
+        def remove_spaces(objs: Sequence[KObject]) -> list[KObject]:
+            new_objs: list[KObject] = []
             for obj in objs:
-                if isinstance(obj,KChar) and obj.text.isspace():
+                if isinstance(obj, KChar) and obj.text.isspace():
                     pass
                 else:
                     new_objs.append(obj)
             return new_objs
-        
-        #>=3.13才能够使用TypeIs
-        def is_chars(objs:Sequence[Any])->TypeGuard[Sequence[KChar]]:
-            return len(objs)> 0 and all(isinstance(obj,KChar) for obj in objs)
-        
-        def is_figures(objs:Sequence[Any])->TypeGuard[Sequence[KFigure]]:
-            return len(objs)>0 and all(isinstance(obj,KFigure) for obj in objs)
-        
-        def is_vobjects(objs:Sequence[Any])->TypeGuard[Sequence[VObject]]:
-            return len(objs)>0 and all(isinstance(obj,VObject) for obj in objs)
-        
+
+        # >=3.13才能够使用TypeIs
+        def is_chars(objs: Sequence[Any]) -> TypeGuard[Sequence[KChar]]:
+            return len(objs) > 0 and all(isinstance(obj, KChar) for obj in objs)
+
+        def is_figures(objs: Sequence[Any]) -> TypeGuard[Sequence[KFigure]]:
+            return len(objs) > 0 and all(isinstance(obj, KFigure) for obj in objs)
+
+        def is_vobjects(objs: Sequence[Any]) -> TypeGuard[Sequence[VObject]]:
+            return len(objs) > 0 and all(isinstance(obj, VObject) for obj in objs)
+
         for cell in self.cells:
             if not objs:
                 break
             assert cell.bbox is not None
-            #TODO 单元格也可以存在复杂的布局，如果是这样，又需要进行一个单元格的版面分析
-            #目前仅仅支持简单的格式，要么为纯文本，要么为图片
-            #如果是文本和图片混合，如
-            #--text1----
-            #--figure1--
-            #--figure2--
-            #--text2----
-            cell_objs = cell.bbox.get(objs,ratio=0.7,remove=True)
+            # TODO 单元格也可以存在复杂的布局，如果是这样，又需要进行一个单元格的版面分析
+            # 目前仅仅支持简单的格式，要么为纯文本，要么为图片
+            # 如果是文本和图片混合，如
+            # --text1----
+            # --figure1--
+            # --figure2--
+            # --text2----
+            cell_objs = cell.bbox.get(objs, ratio=0.7, remove=True)
             if not cell_objs:
                 continue
 
-            new_cell_objs:list[KObject]=[]
+            new_cell_objs: list[KObject] = []
             for obj in cell_objs:
-                if isinstance(obj,KPDFFigure|VObject):
-                    #都使用图片即可，如果是vobject的，可以再考虑公式等？
-                    obj=obj.make_figure()
+                if isinstance(obj, KPDFFigure | VObject):
+                    # 都使用图片即可，如果是vobject的，可以再考虑公式等？
+                    obj = obj.make_figure()
                 new_cell_objs.append(obj)
 
-            #空格先暂时去掉，混合在图片中，没有意义
-            valid_objs=remove_spaces(new_cell_objs)
+            # 空格先暂时去掉，混合在图片中，没有意义
+            valid_objs = remove_spaces(new_cell_objs)
             if is_chars(new_cell_objs):
-                #全部都是字符
+                # 全部都是字符
                 tb = KTextbox.from_objects(new_cell_objs)
                 if tb is not None:
                     cell.objects.append(tb)
                     cell.text = tb.text
             elif is_figures(valid_objs):
-                #都是图片
+                # 都是图片
                 for obj in valid_objs:
                     cell.objects.append(obj)
             else:
-                #图文并茂，简单的从上到下分行即可
-                groups:list[tuple[str,list[KObject]]]=[]
+                # 图文并茂，简单的从上到下分行即可
+                groups: list[tuple[str, list[KObject]]] = []
                 for line in Sorter.get_lines(new_cell_objs):
-                    #先去掉前后的空格字符
-                    valid_line=remove_spaces(line)
+                    # 先去掉前后的空格字符
+                    valid_line = remove_spaces(line)
                     if is_figures(valid_line):
-                        groups.append(('figure',list(valid_line)))
+                        groups.append(("figure", list(valid_line)))
                     else:
-                        if not groups or groups[-1][0]!='char':
-                            groups.append(('char',list(line)))
+                        if not groups or groups[-1][0] != "char":
+                            groups.append(("char", list(line)))
                         else:
                             groups[-1][1].extend(line)
-                
+
                 for group in groups:
-                    if group[0]=='figure':
+                    if group[0] == "figure":
                         cell.objects.extend(group[1])
                     else:
                         tb = KTextbox.from_objects(group[1])
                         if tb is not None:
                             cell.objects.append(tb)
-                            cell.text+=tb.text
-        
-        if len(objs)>0:
-            #有对象剩余？
+                            cell.text += tb.text
+
+        if len(objs) > 0:
+            # 有对象剩余？
             pass
-        
 
     def adjust(self):
         """表示调整一下cell的bbox，以便对齐，如果是来自有边框解析，不需要调用这个方法。这个方法合适构造了逻辑表格然后为了美观，调整一下"""
 
         def adjust_y():
-            y1=self.bbox.y1
+            y1 = self.bbox.y1
             for i in range(self.row_num):
-                #获得行
+                # 获得行
                 row = self.get_row(i)
-                if i+1<self.row_num:
-                    #[--row1--]
-                    #[--row2--]
-                    row2 = self.get_row(i+1)
-                    #需要的是y0
-                    a = BBox.join2([cell for cell in row if cell.row_index+cell.row_span==i+1])
-                    #需要的是y1
-                    b = BBox.join2([cell for cell in row2 if cell.row_index==i+1])
-                    #取中间
-                    y0=(a.y0+b.y1)/2
+                if i + 1 < self.row_num:
+                    # [--row1--]
+                    # [--row2--]
+                    row2 = self.get_row(i + 1)
+                    # 需要的是y0
+                    a = BBox.join2(
+                        [
+                            cell
+                            for cell in row
+                            if cell.row_index + cell.row_span == i + 1
+                        ]
+                    )
+                    # 需要的是y1
+                    b = BBox.join2([cell for cell in row2 if cell.row_index == i + 1])
+                    # 取中间
+                    y0 = (a.y0 + b.y1) / 2
                 else:
-                    y0=self.bbox.y0
+                    y0 = self.bbox.y0
 
                 for cell in row:
-                    #设置y1
-                    if cell.row_index==i:
+                    # 设置y1
+                    if cell.row_index == i:
                         assert cell.bbox is not None
                         cell.bbox = cell.bbox.adjust(y1=y1)
-                    
-                    if cell.row_index+cell.row_span==i+1:
+
+                    if cell.row_index + cell.row_span == i + 1:
                         assert cell.bbox is not None
                         cell.bbox = cell.bbox.adjust(y0=y0)
-                
-                y1=y0
-            
+
+                y1 = y0
+
         def adjust_x():
-            x0=self.bbox.x0
+            x0 = self.bbox.x0
             for i in range(self.col_num):
                 #
                 column = self.get_column(i)
-                if i+1<self.col_num:
-                    #col1|col2
-                    column2 = self.get_column(i+1)
-                    #a需要的是x1
-                    a = BBox.join2([cell.bbox for cell in column if cell.col_index+cell.col_span==i+1])
-                    #b需要的是x0
-                    b = BBox.join2([cell.bbox for cell in column2 if cell.col_index==i+1])
-                    #取中间
-                    x1=(a.x1+b.x0)/2
+                if i + 1 < self.col_num:
+                    # col1|col2
+                    column2 = self.get_column(i + 1)
+                    # a需要的是x1
+                    a = BBox.join2(
+                        [
+                            cell.bbox
+                            for cell in column
+                            if cell.col_index + cell.col_span == i + 1
+                        ]
+                    )
+                    # b需要的是x0
+                    b = BBox.join2(
+                        [cell.bbox for cell in column2 if cell.col_index == i + 1]
+                    )
+                    # 取中间
+                    x1 = (a.x1 + b.x0) / 2
                 else:
-                    x1=self.bbox.x1
+                    x1 = self.bbox.x1
 
                 for cell in column:
-                    #设置x
-                    if cell.col_index==i:
+                    # 设置x
+                    if cell.col_index == i:
                         assert cell.bbox is not None
                         cell.bbox = cell.bbox.adjust(x0=x0)
-                    
-                    if cell.col_index+cell.col_span==i+1:
+
+                    if cell.col_index + cell.col_span == i + 1:
                         assert cell.bbox is not None
                         cell.bbox = cell.bbox.adjust(x1=x1)
-                
-                x0=x1
+
+                x0 = x1
 
         adjust_y()
         adjust_x()
@@ -2688,38 +2727,53 @@ class KTable(KObject):
         table = KTable(page, quad)
         table.fill(data)
         return table
-    
+
     @classmethod
-    def from_grid(cls,page:KPage,grid:Grid)->"KTable":
-        table = KTable(page,grid.bbox.to_quad())
+    def from_grid(cls, page: KPage, grid: Grid) -> "KTable":
+        table = KTable(page, grid.bbox.to_quad())
         table.row_num = grid.row_num
         table.col_num = grid.col_num
         for cell in grid.cells:
-            buf:list[str]=[]
+            buf: list[str] = []
             for obj in cell.objects:
-                if isinstance(obj,KTextbox):
+                if isinstance(obj, KTextbox):
                     buf.append(obj.text)
                 else:
                     pass
-            text=''.join(buf)
-            kcell = KCell(page,cell.bbox.to_quad(),text=text,row_index=cell.row_index,col_index=cell.col_index,row_span=cell.row_span,col_span=cell.col_span)
+            text = "".join(buf)
+            kcell = KCell(
+                page,
+                cell.bbox.to_quad(),
+                text=text,
+                row_index=cell.row_index,
+                col_index=cell.col_index,
+                row_span=cell.row_span,
+                col_span=cell.col_span,
+            )
             kcell.objects.extend(cell.objects)
 
             table.cells.append(kcell)
         return table
-    
+
     @classmethod
-    def from_lines(cls,page:KPage,lines:Sequence["KLine|BBox|Sequence[float]"],objects:list[KObject|VObject]|None=None)->"KTable":
+    def from_lines(
+        cls,
+        page: KPage,
+        lines: Sequence["KLine|BBox|Sequence[float]"],
+        objects: list[KObject | VObject] | None = None,
+    ) -> "KTable":
         """
         objects: 会删除使用过的对象，目的是为了方便测试
         """
-        def to_line(line:Any)->Any:
-            if isinstance(line,KLine):
+
+        def to_line(line: Any) -> Any:
+            if isinstance(line, KLine):
                 return line.bbox
             else:
                 return line
-        grid = Grid([to_line(line) for line in lines ])
-        table = cls.from_grid(page,grid)
+
+        grid = Grid([to_line(line) for line in lines])
+        table = cls.from_grid(page, grid)
         if objects:
             table.fill_objects(objects)
         return table
@@ -2832,27 +2886,27 @@ class KCell:
     def __init__(
         self,
         page: KPage,
-        quad: Quad |BBox| None,
+        quad: Quad | BBox | None,
         *,
         row_index: int,
         col_index: int,
         row_span: int = 1,
         col_span: int = 1,
         text: str = "",
-        objects:Sequence[KObject]|None=None
+        objects: Sequence[KObject] | None = None,
     ):
         # super().__init__(page,quad)
         self.page: Final = page
         # 如果是来自大模型的结果，目前单元格不一定有bbox，或者也不需要
         # 另外一个是为了支持逻辑表格，也就是需要理解为表格，但是并没有严格行列对齐的
-        if isinstance(quad,BBox):
-            bbox=quad
-            quad=bbox.to_quad()
-        elif isinstance(quad,Quad):
-            bbox=quad.bbox
+        if isinstance(quad, BBox):
+            bbox = quad
+            quad = bbox.to_quad()
+        elif isinstance(quad, Quad):
+            bbox = quad.bbox
         else:
-            quad=None
-            bbox=None
+            quad = None
+            bbox = None
         self.quad: Final = quad
         self.bbox: Final = bbox
         self.text: str = text
@@ -2883,7 +2937,7 @@ class KCell:
         if self.bbox is not None:
             obj["bbox"] = self.bbox.jsonify()
         if self.objects:
-            obj['objects']=[obj.jsonify() for obj in self.objects]
+            obj["objects"] = [obj.jsonify() for obj in self.objects]
         return obj
 
 
@@ -2922,13 +2976,13 @@ class KFormula(KObject):
         else:
             name = self.fullpath.name
             return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
-    
+
     def jsonify(self):
-        data={
-        "type":"formula",
-        "bbox":self.bbox.jsonify(),
-        "filename":self.filename,
-        "latex":self.latex
+        data = {
+            "type": "formula",
+            "bbox": self.bbox.jsonify(),
+            "filename": self.filename,
+            "latex": self.latex,
         }
         return data
 
@@ -2964,52 +3018,52 @@ class KLine(KObject):
         super().__init__(page, bbox)
         self.color = color
         self.width = width
-    
+
     @property
-    def length(self)->float:
+    def length(self) -> float:
         """线的长度"""
         if self.bbox.is_h():
             return self.bbox.width
         else:
             return self.bbox.height
-        
-    def is_h(self)->bool:
+
+    def is_h(self) -> bool:
         return self.bbox.is_h()
-    
-    def is_v(self)->bool:
+
+    def is_v(self) -> bool:
         return self.bbox.is_v()
-    
+
     @property
-    def content_bbox(self)->BBox:
+    def content_bbox(self) -> BBox:
         """线作为矩形，包括了线的宽度"""
         if self.bbox.is_h():
             return self.bbox.expand(dy=self.width)
         else:
             return self.bbox.expand(dx=self.width)
-    
+
     @classmethod
-    def split(cls,lines:Sequence[Self])->tuple[list[Self],list[Self]]:
-        h_lines:list[Self]=[]
-        v_lines:list[Self]=[]
+    def split(cls, lines: Sequence[Self]) -> tuple[list[Self], list[Self]]:
+        h_lines: list[Self] = []
+        v_lines: list[Self] = []
         for line in lines:
             if line.is_h():
                 h_lines.append(line)
             else:
                 v_lines.append(line)
-        return h_lines,v_lines
+        return h_lines, v_lines
 
 
 class KRect(KObject):
     type = "rect"
-    def __init__(self,page:KPage,bbox:BBox,*,color:KColor=KColor.WHITE):
-        super().__init__(page,bbox)
+
+    def __init__(self, page: KPage, bbox: BBox, *, color: KColor = KColor.WHITE):
+        super().__init__(page, bbox)
         self.color = color
         """填充颜色"""
 
-        #为边框，目前不打算支持
-        self.stroke_width:float|None=None
-        self.stroke_color:KColor|None=None
-
+        # 为边框，目前不打算支持
+        self.stroke_width: float | None = None
+        self.stroke_color: KColor | None = None
 
 
 class KOther(KObject):
@@ -3020,15 +3074,28 @@ class KOther(KObject):
 
 class KBlock(KObject):
     """表示一个局部的内容块，把一些关联或者没有关联的，影响阅读顺序的内容放在一起"""
+
     type = "block"
-    def __init__(self, page: KPage, quad: Quad|BBox,*,objects:Sequence[KObject]|None=None):
+
+    def __init__(
+        self,
+        page: KPage,
+        quad: Quad | BBox,
+        *,
+        objects: Sequence[KObject] | None = None,
+    ):
         super().__init__(page, quad)
         self.objects: Final[list[KObject]] = []
         if objects:
             self.objects.extend(objects)
+
     @property
     def content_bbox(self) -> BBox | None:
-        return BBox.join([obj.content_bbox for obj in self.objects],strict=False) if self.objects else None
+        return (
+            BBox.join([obj.content_bbox for obj in self.objects], strict=False)
+            if self.objects
+            else None
+        )
 
 
 class KPageHeader(KObject):
@@ -3077,10 +3144,10 @@ class KPDFFigure(KObject):
     def __init__(self, page: KPage, quad: Quad, *, transparent: bool = False):
         super().__init__(page, quad)
         self.transparent = transparent
-    
-    def make_figure(self)->KFigure:
-        #TODO 可以使用截图，也可以直接使用原图，但是需要补充flip+旋转等信息
-        figure = self.page.make_figure(self.quad,add=False)
+
+    def make_figure(self) -> KFigure:
+        # TODO 可以使用截图，也可以直接使用原图，但是需要补充flip+旋转等信息
+        figure = self.page.make_figure(self.quad, add=False)
         assert figure is not None
         return figure
 

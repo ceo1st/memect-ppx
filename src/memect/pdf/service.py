@@ -132,7 +132,8 @@ class PdfService:
         self._files_dir:Final=self._data_dir/'files'
         self._keep_file_policy:Final=args.keep_file_policy
 
-        #TODO 为了简便，使用默认的设置，否则就需要再传递参数
+        #TODO 直接使用和运行最大任务数一致
+        args.mp_parser.max_workers = args.task_manager.max_running_size
         self._parser:Final=MPParser(args.mp_parser)
 
         def ensure_dir(dir:Path,clean:bool=False):
@@ -343,13 +344,14 @@ class PdfService:
         saver:Saver|None=None
         if self._keep_file_policy!=KeepFilePolicy.no:
             save_dir = self._files_dir/task_id
-            save_dir.mkdir(parents=True,exist_ok=True)
+
             if self._keep_file_policy==KeepFilePolicy.all:
                 #如果不管成功还是失败都要保存，就先保存，然后通过saver保存错误信息
                 saver = Saver(save_dir)
+                save_dir.mkdir(parents=True,exist_ok=True)
                 shutil.copyfile(doc.file,saver.dir/doc.file.name)
             elif self._keep_file_policy==KeepFilePolicy.error:
-                #如果仅仅需要保存错误的文件，就先不报错文件，等有错误的时候再保存
+                #如果仅仅需要保存错误的文件，就先不保存文件，等有错误的时候再保存
                 saver = Saver(save_dir,[doc.file])
             else:
                 pass

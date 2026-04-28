@@ -3,6 +3,7 @@ import gc
 import logging
 import os
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -128,7 +129,8 @@ class Saver:
         self.files:Final=files or ()
     
     def __del__(self):
-        self._logger.debug('gc %s',self)
+        #self._logger.debug('gc %s',self)
+        pass
 
     def save(self,msg:str):
         self.dir.mkdir(parents=True,exist_ok=True)
@@ -272,7 +274,7 @@ class Task:
     async def _run_task(self, timeout: float | None = None):
         runner = self._runner
         saver = self._saver
-        ok=False
+        ok=True
         try:
             self._start_clock = time.monotonic()
             self._start_time = time.time()
@@ -296,7 +298,7 @@ class Task:
             #如果是正常完成，设置不影响操作了
             #如果是异常，如：超时，runner可以检查是否被stop，然后停止操作，释放资源
             #释放引用，避免循环引用，可以快速回收对象
-            if saver and not ok:
+            if saver and sys.exc_info()[1] is not None:
                 saver.save(traceback.format_exc())
             runner=None
             saver = None
