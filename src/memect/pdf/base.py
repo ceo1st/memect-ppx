@@ -360,7 +360,8 @@ class KDocument:
         """执行统计"""
 
     def __del__(self):
-        self._logger.debug("gc %s", self)
+        #self._logger.debug("gc %s", self)
+        pass
 
     def get_auto_cleaner(self) -> AutoCleaner:
         """在api请求的时候调用，在其他时候不应该调用，否则会自动清除目录"""

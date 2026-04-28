@@ -6,16 +6,17 @@ import subprocess
 import sys
 from threading import Thread
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Executor, ProcessPoolExecutor
 from types import TracebackType
-from typing import Any, ClassVar, Iterable, Mapping, Self, Sequence, Sized, override
+from typing import Any, ClassVar, Final, Iterable, Mapping, Self, Sequence, Sized, override
+import weakref
 
 from pydantic import Field
 
 from memect.base import utils
 from memect.base.config import MPInit, get_settings
 from memect.base.task import Runner, StoppedError, Task
-from memect.base.utils import MyBaseModel, safe_shutdown
+from memect.base.utils import MyBaseModel, SafeExecutor, safe_shutdown
 
 from .base import Backend, KDocument, KDocumentFactory
 from .default.parser import DefaultParser, DefaultParserArgs
@@ -136,9 +137,6 @@ class Parser:
         finally:
             del doc
 
-    def new_runner(self, doc: KDocument) -> Runner:
-        return _ParseRunner(self, doc)
-
     def __enter__(self):
         return self
 
@@ -172,17 +170,17 @@ class Parser:
     @classmethod
     def _mp_init(cls,manager:Any,parser:Any,stopped:Any):
         assert cls._mp_instance is None
-        def check():
-            while True:
-                if stopped.value:
-                    if cls._mp_instance is not None:
-                        cls._mp_instance.__exit__(None,None,None)
-                        cls._mp_instance=None
-                    break
-                else:
-                    time.sleep(0.01)
-                
-        Thread(target=check,daemon=True).start()
+        if stopped is not None:  
+            def check():
+                while True:
+                    if stopped.value:
+                        if cls._mp_instance is not None:
+                            cls._mp_instance.__exit__(None,None,None)
+                            cls._mp_instance=None
+                        break
+                    else:
+                        time.sleep(0.01)
+            Thread(target=check,daemon=True).start()
         cls._mp_instance = cls(manager=manager,args=parser)
         
     @classmethod
@@ -222,12 +220,9 @@ class Parser:
             #   启动的进程可以使用进程池
             #方案2.当前使用进程池，但是启动的子进程就不能够再使用进程池
 
-            mp_context = mp.get_context('spawn')
-            stopped = mp_context.Value('b')
-            mp_init = MPInit()
-            mp_init.set_fn(cls._mp_init,manager_args,parser_args,stopped)
             try:
-                with ProcessPoolExecutor(max_workers=max_workers,mp_context=mp_context,initializer=mp_init) as executor:
+                executor,stopped = cls._new_executor(manager_args,parser_args)
+                with executor:
                     for _ in executor.map(cls._mp_parse,docs):
                         n+=1
                         cls._logger.info('第[%s/%s]个解析成功',n,total)
@@ -269,22 +264,68 @@ class Parser:
         
         cls._logger.info('end %s processes,size=%s','kill' if kill else 'terminate',len(mp_context.active_children()))
     
+    
 
-class _ParseRunner(Runner):
-    def __init__(self, parser: Parser, doc: KDocument):
+
+    @classmethod
+    def _new_executor(cls,manager_args:Any,parser_args:Any)->tuple[Executor,Any]:
+        mp_context = mp.get_context('spawn')
+        stopped = mp_context.Value('b')
+        mp_init = MPInit()
+        mp_init.set_fn(cls._mp_init,manager_args,parser_args,stopped)
+        return ProcessPoolExecutor(max_workers=1,mp_context=mp_context,initializer=mp_init),stopped
+
+
+class MPParserArgs(MyBaseModel):
+    retry_times:int=1
+    max_idle_timeout:float|None=None
+
+class MPParser:
+    def __init__(self,args:MPParserArgs|Mapping[str,Any]|None=None):
         super().__init__()
-        self._parser = parser
+        args = MPParserArgs.create(args)
+        self._stopped:Any=None
+        self._executor:Final = SafeExecutor(self._new_executor,retry_times=args.retry_times,max_idle_timeout=args.max_idle_timeout)
+        self._finalizer = weakref.finalize(self,self._close,self._executor)
+    
+    @classmethod
+    def _close(cls,executor:Executor):
+        executor.shutdown()
+
+    def _new_executor(self):
+        parser_args = get_settings('pdf_parser')
+        manager_args = get_settings('model_manager')
+        if self._stopped is not None:
+            self._stopped.value=True
+        executor,stopped = Parser._new_executor(manager_args,parser_args)
+        self._stopped=stopped
+        return executor
+    
+    def new_runner(self,doc:KDocument):
+        return _ParseRunner(self._executor,doc)
+    
+    def close(self):
+        if self._stopped is not None:
+            self._stopped.value=True
+        self._executor.shutdown()
+
+    
+class _ParseRunner(Runner):
+    def __init__(self, executor:Executor, doc: KDocument):
+        super().__init__()
         self._doc = doc
+        self._executor=executor
 
     @override
     def _run(self, task: Task):
         assert self._doc is not None
-        assert self._parser is not None
         try:
-            self._parser.parse(self._doc, runner=self)
+            factory=KDocumentFactory(self._doc.file,self._doc.params,out_dir=self._doc.out_dir)
+            future = self._executor.submit(Parser._mp_parse,factory)
+            #可以指定一个timeout
+            future.result(timeout=None)
             return self._doc.zip_file
         finally:
             # 解除引用
             self._doc = None
-            self._parser = None
 

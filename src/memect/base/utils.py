@@ -193,9 +193,9 @@ class SafeExecutor(Executor):
         self._shutdown_count += 1
         self._logger.info("第%s次关闭Executor，原因:%s", self._shutdown_count, reason)
         #关闭，不取消，等待，所以不影响正在运行的
-        #有些情况下关闭不了，特别是ProcessPoolExecutor，一致在等子进程的退出
-        #executor.shutdown()
-        safe_shutdown(executor)
+        #有些情况下关闭不了，特别是ProcessPoolExecutor，在等子进程的退出
+        executor.shutdown()
+        #safe_shutdown(executor)
     
     def _new_executor(self) -> Executor:
         with self._lock:
