@@ -1,10 +1,10 @@
+import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Final, Mapping, NotRequired, Sequence, TypedDict
+from typing import Any, Callable, Concatenate, Final, Mapping, NotRequired, Sequence, TypedDict
 
 import PIL
 import PIL.Image
-import PIL.ImageDraw
 from pydantic import Field
 
 from memect.base import images, lists
@@ -33,7 +33,7 @@ from memect.pdf.base import (
 from memect.pdf.commons import FileInfo
 from memect.pdf.default.block import BlockParser
 from memect.pdf.default.other import OtherParser
-from memect.pdf.model import ModelExecutor, ModelManager
+from memect.pdf.model import ModelManager
 from memect.pdf.sort import Sorter
 
 from .footer import PageFooterParser
@@ -68,6 +68,23 @@ class DefaultParserArgs(MyBaseModel):
     pdf: PdfParserArgs = Field(default_factory=PdfParserArgs)
 
 
+def log[**P,T](fn:Callable[Concatenate[Any,KDocument,P],T]):
+
+    @functools.wraps(fn)
+    def wrapper(self,doc:KDocument,*args:P.args,**kwargs:P.kwargs)->T:
+        name = fn.__name__
+        timer = utils.Timer.start()
+        try:
+            self._logger.info(f'start {name}',stacklevel=2)
+            return fn(self,doc,*args,**kwargs)
+        finally:
+            self._logger.info(f'end {name},elapsed=%.3f',timer.elapsed(),stacklevel=2)
+            doc.state[name]={
+                'elapsed':timer.elapsed()
+            }
+            
+    return wrapper
+
 class DefaultParser:
     """使用layout+pdf+ocr+llm的方式解析文档"""
 
@@ -100,45 +117,16 @@ class DefaultParser:
     def parse(self, doc: KDocument):
         timer = utils.Timer.start()
 
-        self._logger.info('start layout')
-        timer.reset()
         self._parse_layout(doc)
-        self._logger.info('end layout,elapsed=%.3f',timer.elapsed())
-
-        timer.reset()
         # pdf：解析pdf的指令，获得chars/lines/rects/figures，主要是chars
-        self._logger.info('start pdf')
         self._parse_pdf(doc)
-        self._logger.info('end pdf,elapsed=%.3f',timer.elapsed())
-
-        
-        self._logger.info('start ocr')
-        timer.reset()
         # ocr：使用传统的模型或者llm模型，获得spans，以后可以辅助线？
         self._parse_ocr(doc, method=1)
-        self._logger.info('end ocr,elapsed=%.3f',timer.elapsed())
-
-        self._logger.info('start texts')
         # 得到了chars/lines/rects/figures，就开始填充对象
-        timer.reset()
         self._parse_texts(doc)
-        self._logger.info('end text,elapsed=%.3f',timer.elapsed())
-
-        self._logger.info('start figures')
-        timer.reset()
         self._parse_figures(doc)
-        self._logger.info('end figures,elapsed=%.3f',timer.elapsed())
-
-        self._logger.info('start formulas')
-        timer.reset()
         self._parse_formulas(doc)
-        self._logger.info('end formulas,elapsed=%.3f',timer.elapsed())
-
-        self._logger.info('start tables')
-        timer.reset()
         self._parse_tables(doc)
-        self._logger.info('end tables,elapsed=%.3f',timer.elapsed())
-
         if doc.params.mode == ParseMode.PPT:
             # 如果是按ppt，就不需要解析页面页脚等了
             self._sort_ppt(doc)
@@ -148,7 +136,7 @@ class DefaultParser:
             self._header_parser.parse(doc)
             self._footer_parser.parse(doc)
             self._footnote_parser.parse(doc)
-            #self._block_parser.parse(doc)
+            self._block_parser.parse(doc)
             self._sort(doc)
             # TODO 如果有些排版是使用大表格的，这里也尝试还原？
             if doc.params.mode == ParseMode.TREE:
@@ -157,7 +145,8 @@ class DefaultParser:
             else:
                 #
                 pass
-
+    
+    @log
     def _parse_layout(self, doc: KDocument):
         """版面分析"""
         debugger = self._debugger.bind()
@@ -171,7 +160,8 @@ class DefaultParser:
                     ("vobjects", page.vobjects),
                     dir="debug/default/layout",
                 )
-
+    
+    @log
     def _parse_pdf(self, doc: KDocument):
         # 如果是pdf文件，先使用pdf获得
         # chars,figures,lines,rects
@@ -197,6 +187,7 @@ class DefaultParser:
                     show_type=False,
                 )
 
+    @log
     def _parse_ocr(self, doc: KDocument, *, max_workers: int = 0, method: int = 1):
         debugger = self._debugger.bind()
 
@@ -513,6 +504,7 @@ class DefaultParser:
             # 解析为对象
             self._do(parse_page2, doc.working_pages, max_workers)
 
+    @log
     def _parse_texts(self, doc: KDocument, max_workers: int = 0):
         debugger = self._debugger.bind()
         verbose = True
@@ -577,6 +569,7 @@ class DefaultParser:
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
+    @log
     def _parse_figures(self, doc: KDocument, max_workers: int = 0):
         def parse_page(page: KPage):
             for vobj in page.vobjects:
@@ -593,6 +586,7 @@ class DefaultParser:
 
         self._do(parse_page, doc.working_pages, max_workers)
 
+    @log
     def _parse_formulas(self, doc: KDocument, max_workers: int = 0):
 
         def parse_page(page: KPage):
@@ -636,6 +630,7 @@ class DefaultParser:
         # 获得latex
         parse_latexs()
 
+    @log
     def _parse_tables(self, doc: KDocument, max_workers: int = 0):
         self._table_parser.parse(doc, max_workers=max_workers)
 
@@ -653,10 +648,12 @@ class DefaultParser:
                 for _ in executor.map(fn, pages):
                     pass
 
+    @log
     def _sort(self, doc: KDocument, max_workers: int = 0):
         from .order import ReadingOrder
         ReadingOrder().parse(doc,max_workers=max_workers)
 
+    @log
     def _sort_ppt(self, doc: KDocument, max_workers: int = 0):
         def parse_page(page: KPage):
             Sorter.sort(page.objects)
@@ -664,9 +661,4 @@ class DefaultParser:
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
 
-class ReadOrder:
-    def __init__(self):
-        super().__init__()
 
-    def sort(self, doc: KDocument):
-        pass

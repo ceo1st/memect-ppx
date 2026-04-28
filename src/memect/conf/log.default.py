@@ -1,5 +1,6 @@
 # coding=utf-8
 
+import logging
 import multiprocessing
 import os
 import re
@@ -145,10 +146,40 @@ settings:Final[dict[str,Any]] = {
         },
         'memect':{
             'level': get_log_level()
+        },
+        'RapidOCR':{
+            "handlers":["rich"]
+        },
+        'RapidLayout':{
+            #from rapid_layout.utils.logger import logger
+            "handlers":["rich"]
+        },
+        "DownloadModel":{
+            #现在没有使用到这个库，如果使用到，需要先执行这一句，先加载logger
+            #from table_cls.utils.download_model import logger 
+            "handlers":["rich"]
         }
     }
 }
 
+def patch1():
+    from rapid_layout.utils.logger import Logger
+    def new__init__(self, log_level=logging.INFO, logger_name=None):
+        self.logger = logging.getLogger(logger_name)
+        self.logger.setLevel(log_level)
+    Logger.__init__=new__init__
 
+def patch2():
+    from rapidocr.utils.log import Logger
+    def new__init__(self, log_level=logging.INFO, logger_name=None):
+        self.logger = logging.getLogger(logger_name)
+        self.logger.setLevel(log_level)
+    Logger.__init__=new__init__
+
+def patch3():
+    from table_cls.utils.download_model import logger 
+patch1()
+patch2()
+patch3()
 
     

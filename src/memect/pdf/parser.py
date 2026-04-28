@@ -1,9 +1,14 @@
+import atexit
 import logging
 import multiprocessing as mp
+import os
+import subprocess
+import sys
+from threading import Thread
 import time
 from concurrent.futures import ProcessPoolExecutor
 from types import TracebackType
-from typing import Any, ClassVar, Iterable, Mapping, Self, Sized, override
+from typing import Any, ClassVar, Iterable, Mapping, Self, Sequence, Sized, override
 
 from pydantic import Field
 
@@ -31,7 +36,6 @@ class ParserArgs(MyBaseModel):
 
 
 class Parser:
-    """多数情况下，全局只使用一个即可"""
 
     _logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
@@ -48,7 +52,6 @@ class Parser:
         if args is None:
             args = get_settings('pdf_parser')
         args = ParserArgs.create(args)
-
         self._pdf2image = Pdf2Image(args.pdf2image)
         self._deepseek = Deepseek(args.deepseek)
         self._paddle = Paddle(self._manager,args.paddle)
@@ -58,7 +61,6 @@ class Parser:
 
     def parse(self, doc: KDocument, *, runner: Runner | None = None):
         try:
-
             def check_running(name: str):
                 if runner is not None and runner.is_stopped():
                     raise StoppedError(f"任务已经被停止，不再执行:{name}")
@@ -128,6 +130,9 @@ class Parser:
                 # 表示为api调用，需要输出一个zip文件
                 # 在这里做比在loop中执行更好一点，特别是大文件压缩，因为解析将来可以在free-threaded中执行
                 doc.make_zip()
+            
+            doc.write('state.json',doc.state)
+            self._logger.info('state=%s',doc.state)
         finally:
             del doc
 
@@ -143,7 +148,7 @@ class Parser:
         exc: BaseException | None,
         tb: TracebackType | None,
     ):
-        self._pdf2image.close()
+        #self._pdf2image.close()
         if self._close_manager:
             self._close_manager.close()
         del self._pdf2image
@@ -165,8 +170,19 @@ class Parser:
         
 
     @classmethod
-    def _mp_init(cls,manager:Any,parser:Any):
+    def _mp_init(cls,manager:Any,parser:Any,stopped:Any):
         assert cls._mp_instance is None
+        def check():
+            while True:
+                if stopped.value:
+                    if cls._mp_instance is not None:
+                        cls._mp_instance.__exit__(None,None,None)
+                        cls._mp_instance=None
+                    break
+                else:
+                    time.sleep(0.01)
+                
+        Thread(target=check,daemon=True).start()
         cls._mp_instance = cls(manager=manager,args=parser)
         
     @classmethod
@@ -200,21 +216,27 @@ class Parser:
                     cls._logger.info('第[%s/%s]个解析成功',n,total)
                 cls._logger.info('结束解析，共解析：%s，耗时:%.3f',n,timer.elapsed())
         else:
+            #不要嵌套使用进程池，很容易导致子进程变成僵尸进程
+            #解决方案
+            #方案1.使用subprocess的方式，虽然也是子进程，但是为完全独立，也就是没有使用resource tracker等
+            #   启动的进程可以使用进程池
+            #方案2.当前使用进程池，但是启动的子进程就不能够再使用进程池
+
             mp_context = mp.get_context('spawn')
+            stopped = mp_context.Value('b')
             mp_init = MPInit()
-            mp_init.set_fn(cls._mp_init,manager_args,parser_args)
+            mp_init.set_fn(cls._mp_init,manager_args,parser_args,stopped)
             try:
                 with ProcessPoolExecutor(max_workers=max_workers,mp_context=mp_context,initializer=mp_init) as executor:
                     for _ in executor.map(cls._mp_parse,docs):
                         n+=1
                         cls._logger.info('第[%s/%s]个解析成功',n,total)
                     cls._logger.info('结束解析，共解析：%s，耗时:%.3f',n,timer.elapsed())
-                    safe_shutdown(executor)
+                    stopped.value=True
             finally:
                 pass
         
         cls._logger.info('完成释放所有资源')
-        
 
     
     @classmethod

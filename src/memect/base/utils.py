@@ -197,9 +197,6 @@ class SafeExecutor(Executor):
         #executor.shutdown()
         safe_shutdown(executor)
     
-
-
-
     def _new_executor(self) -> Executor:
         with self._lock:
             self._create_count += 1
@@ -237,8 +234,8 @@ class SafeExecutor(Executor):
             impl = self._impl
 
         if impl:
-            #impl.shutdown(wait: bool = True, *, cancel_futures: bool = False)
-            safe_shutdown(impl,wait,cancel_futures=cancel_futures)
+            impl.shutdown(wait=True,cancel_futures=False)
+            #safe_shutdown(impl,wait,cancel_futures=cancel_futures)
 
 def safe_shutdown(executor:Executor,wait: bool = True, *, cancel_futures: bool = False):
     logger:Final = logging.getLogger(__name__)
@@ -332,12 +329,19 @@ def kill_process(process:int|psutil.Process,timeout:float=30,kill_self:bool=True
     try:
         if isinstance(process,int):
             process = psutil.Process(process)
-        if _is_resource_tracker(process):
-            return
         children = process.children(recursive=True)
         #print(f'start terminate process={process.pid},name={process.name()},children={[p.pid for p in children]},cmdline={process.cmdline()}')
+        last_processes=[]
+        first_processes=[]
+        for p in children:
+            if _is_resource_tracker(p):
+                last_processes.append(p)
+            else:
+                first_processes.append(p)
+
         logger.info('start kill children,process=%s,children=%s',process.pid,[p.pid for p in children])
-        kill_processes(children,timeout=timeout)
+        kill_processes(first_processes,timeout=timeout)
+        kill_processes(last_processes,timeout=timeout)
         #在几十核心的至强服务器，这个有时候非常慢，需要10秒以上
         if kill_self: 
             logger.info('start terminate self,process=%s',process.pid)

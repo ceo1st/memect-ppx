@@ -254,13 +254,17 @@ settings: dict[str, Any] = {
     "model_manager": {
         # 如果为True，表示每一个都是使用api调用，不加载模型
         # "use_api":False,
+        #TODO 这里的配置为server模式，在命令行执行模式
+        #max_workers=0 or use_process=False
         "executors": {
             "ocr": {
                 # 默认为True，False表示不加载
                 "enable": True,
                 "name": "ocr",
-                "max_workers": 2,
-                "use_process": True,
+                #0表示在当前进程执行,>0表示使用启动多个
+                "max_workers": 0,
+                #True表示每一个都在独立的进程
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     # >=max_workers，如果大一些，可以减少调度的耗时
@@ -271,8 +275,8 @@ settings: dict[str, Any] = {
             },
             "layout": {
                 "name": "layout",
-                "max_workers": 2,
-                "use_process": True,
+                "max_workers": 0,
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     "max_task_size": 10,
@@ -282,9 +286,9 @@ settings: dict[str, Any] = {
             },
             "formula": {
                 "name": "formula",
-                "max_workers": 2,
-                # 如果使用的是llm，没有必要启动进程，但是也不影响
-                "use_process": True,
+                # 如果使用的是llm，可以设置为4
+                "max_workers": 0,
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     "max_task_size": 10,
@@ -310,9 +314,8 @@ settings: dict[str, Any] = {
                 # 识别表格的单元格
                 "name": "",
                 "enable": True,
-                # 表示只需要一个即可，不需要通过每一个进程一个或者每个线程一个
-                "max_workers": 2,
-                "use_process": True,
+                "max_workers": 0,
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     # 因为这里使用单个模型，这个和后台llm的能力匹配即可
@@ -324,9 +327,9 @@ settings: dict[str, Any] = {
                 # 识别表格的单元格
                 "name": "",
                 "enable": True,
-                # 表示只需要一个即可，不需要通过每一个进程一个或者每个线程一个
-                "max_workers": 2,
-                "use_process": True,
+                #启动4个worker，可以同时执行4个请求
+                "max_workers": 4,
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     # 因为这里使用单个模型，这个和后台llm的能力匹配即可
@@ -338,9 +341,9 @@ settings: dict[str, Any] = {
             "text_llm": {
                 "name": "",
                 "enable": True,
-                # 表示只需要一个即可，不需要通过每一个进程一个或者每个线程一个
-                "max_workers": 2,
-                "use_process": True,
+                #启动4个worker，可以同时执行4个请求
+                "max_workers": 4,
+                "use_process": False,
                 "scheduler": {
                     "policy": "fifo",
                     # 因为这里使用单个模型，这个和后台llm的能力匹配即可
@@ -539,11 +542,9 @@ settings: dict[str, Any] = {
     },
     "pdf_parser": {
         "pdf2image": {
-            "scheduler": {
-                #'policy':'fifo',
-                "policy": "balance",
-                "max_task_size": 10,
-            }
+            "max_workers":4,
+            "max_size":(2000,2000),
+            "max_scale":2
         },
         "deepseek": {
             "model": {

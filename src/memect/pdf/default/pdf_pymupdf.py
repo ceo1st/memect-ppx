@@ -435,6 +435,10 @@ class Parser:
                 return True
             return False
 
+        def has_chars(bbox:BBox)->bool:
+            chars = bbox.get(kpage.pdf_chars,ratio=0.8)
+            return len(chars)>0
+        
         debugger: Final = self._debugger.bind(page=kpage.number)
         page = doc[kpage.number - 1]
         # 如果需要获得xref，这里需要通过digest来比较，而不是简单的/Im1 do => /Im1 1 0  => xref=1
@@ -442,10 +446,6 @@ class Parser:
         images: list[Any] = page.get_image_info()  # type: ignore
         if is_full_page([image["bbox"] for image in images]):
             return True
-        
-        def has_chars(bbox:BBox)->bool:
-            chars = bbox.get(kpage.pdf_chars,ratio=0.8)
-            return len(chars)>0
         figures: list[KPDFFigure] = []
         m = Matrix.lt_to_lb(kpage.size)
         small_images: list[Any] = []
@@ -481,9 +481,6 @@ class Parser:
                     transparent=transparent,
                 )
                 figures.append(figure)
-
-
-
         if len(small_images) > 0 or len(transparent_images) > 0:
             self._logger.warning(
                 "第%s页,小图片=%s,有文字透明图片=%s",

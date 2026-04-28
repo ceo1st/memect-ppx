@@ -356,6 +356,9 @@ class KDocument:
         self._lock: Final = threading.RLock()
         self._auto_cleaner: AutoCleaner | None = None
 
+        self.state:dict[str,Any]={}
+        """执行统计"""
+
     def __del__(self):
         self._logger.debug("gc %s", self)
 
@@ -1334,6 +1337,15 @@ class KColor:
     def __init__(self, rgba: Sequence[int], *, alpha: float = 1):
         pass
 
+    def is_black(self)->bool:
+        return self is self.BLACK
+    
+    def is_white(self)->bool:
+        return self is self.WHITE
+    
+    def jsonify(self)->Any:
+        return self.rgba[0:3]
+    
     @classmethod
     def from_list(
         cls,
@@ -1518,6 +1530,34 @@ class KChar(KObject):
         
     def markdown(self) -> str:
         return _md_escape(self.text)
+    
+    def jsonify(self):
+        data={
+            "bbox":self.bbox.jsonify(),
+            "text":self.text
+        }
+        if self.bold:
+            data['bold']=True
+        if self.italic:
+            data['italic']=True
+        if self.underline:
+            data['underline']=True
+        if self.strikeout:
+            data['strikeout']=True
+        #默认为黑色
+        if not self.color.is_black():
+            data['color']=self.color.jsonify()
+        
+        if self.font.monospace:
+            data['monospace']=True
+        elif self.font.serif:
+            data['serif']=True
+        elif self.font.sans_serif:
+            data['sans_serif']=True
+        else:
+            pass
+        return data
+        
 
     def is_valid(self) -> bool:
         """判断是否为有效的字符"""
@@ -1555,6 +1595,13 @@ class KText(KObject):
 
     def markdown(self) -> str:
         return _md_escape(self.text)
+    
+    def jsonify(self):
+        return {
+            'type':'text',
+            'bbox':self.bbox.jsonify(),
+            'text':self.text
+        }
 
 
 class KMarkdown(KObject):
@@ -1576,6 +1623,13 @@ class KMarkdown(KObject):
     def plaintext(self) -> str:
         """纯文本"""
         return self.unescape(self.text)
+    
+    def jsonify(self):
+        return {
+            "type":'markdown',
+            'bbox':self.bbox,
+            'text':self.text
+        }
 
     @classmethod
     def escape(cls, text: str) -> str:
@@ -1696,7 +1750,13 @@ class KTextline(KObject):
             elif found:
                 break
 
-
+ 
+    def jsoniyf(self)->Any:
+        return {
+            "bbox":self.bbox.jsonify(),
+            "text":self.text,
+            "objects":[obj.jsonify() for obj in self.objects]
+        }
 
     @classmethod
     def render_markdown(cls,objects:Sequence[KObject],use_style:bool=True)->str:
@@ -2159,6 +2219,13 @@ class KTextbox(KObject):
         quad = Quad.join([self.quad, other.quad])
         return self.__class__(self.page, quad, lines=lines)
 
+    def jsonify(self):
+        return {
+            "type":"textbox",
+            "bbox":self.bbox.jsonify(),
+            "text":self.text,
+            "lines":[line.jsonify() for line in self.lines]
+        }
     @classmethod
     def join(cls, tbs: Sequence[Self]) -> Self:
         assert len(tbs) > 0
@@ -2194,6 +2261,13 @@ class KFigure(KObject):
     def markdown(self) -> str:
         name = self.fullpath.name
         return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
+    
+    def jsonify(self):
+        return {
+        "type":"figure",
+            "bbox":self.bbox.jsonify(),
+            "filename":self.filename
+            }
 
 
 class KTable(KObject):
@@ -2278,7 +2352,7 @@ class KTable(KObject):
 
     def jsonify(self) -> Any:
         data = {
-            "type": self.type,
+            "type": "table",
             "bbox": self.bbox.jsonify(),
             "row_num": self.row_num,
             "col_num": self.col_num,
@@ -2360,6 +2434,8 @@ class KTable(KObject):
     def rich_html(
         self, fp: str | Path | TextIO | None = None, full: bool = True
     ) -> str:
+        import html
+        
         buf: list[str] = []
         if full:
             buf.append("<html><head></head><body>")
@@ -2398,10 +2474,10 @@ class KTable(KObject):
                 f'<td colspan="{cell.col_span}" rowspan="{cell.row_span}" style="border:1px solid;{bgcolor}">'
             )
             # tr.append(html.escape(cell.body.text()))
-            for obj in cell.body.objects:
-                if isinstance(obj, Text):
+            for obj in cell.objects:
+                if isinstance(obj, KText):
                     tr.append(html.escape(obj.text))
-                elif isinstance(obj, Figure):
+                elif isinstance(obj, KFigure):
                     tr.append(f'<img src="images/{obj.filename}">')
 
             tr.append("</td>")
@@ -2805,6 +2881,8 @@ class KCell:
         }
         if self.bbox is not None:
             obj["bbox"] = self.bbox.jsonify()
+        if self.objects:
+            obj['objects']=[obj.jsonify() for obj in self.objects]
         return obj
 
 
@@ -2843,6 +2921,15 @@ class KFormula(KObject):
         else:
             name = self.fullpath.name
             return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
+    
+    def jsonify(self):
+        data={
+        "type":"formula",
+        "bbox":self.bbox.jsonify(),
+        "filename":self.filename,
+        "latex":self.latex
+        }
+        return data
 
     # \(xx\) =>xx  标准的行内公式
     # \[xx\] => xx 标准的行间公式

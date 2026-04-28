@@ -163,7 +163,7 @@ class Parser:
                     #--------line2----
                     #--------line1----
                     del h_lines[0]
-                    self._logger.warning('第%页，删除和表格粘连的页脚线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
+                    self._logger.warning('第%s页，删除和表格粘连的页脚线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
 
         lines = bbox.get(page.pdf_lines, ratio=0.5)
         h_lines,v_lines=KLine.split(lines)
