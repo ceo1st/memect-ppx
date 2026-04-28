@@ -1,6 +1,6 @@
 import math
 
-from typing import Any, Final, Iterable, Literal, MutableSequence, NamedTuple, Sequence, cast, overload
+from typing import Any, Callable, Final, Iterable, Literal, MutableSequence, NamedTuple, Sequence, cast, overload
 
 from .matrix import Matrix
 
@@ -307,6 +307,55 @@ class BBox(tuple[float,float,float,float]):
         else:
             return BBox(x0,y0,x1,y1)
 
+    def intersect_any(self,objs:Sequence[Any],*,ratio:float=0,strict:bool=True)->bool:
+        """返回True，表示和objs中至少一个对象相交"""
+        if not objs:
+            return False
+        
+        def get_area(b:_BBox)->float:
+            w=b[2]-b[0]
+            h=b[3]-b[1]
+            if w==0:
+                w=1
+            if h==0:
+                h=1
+            return w*h
+        
+        area=self.area2
+        for obj in objs:
+            bbox = self.get_bbox(obj,strict=strict)
+            if bbox is None:
+                return False
+            xb = self.intersect(bbox)
+            if xb and xb.area2/min(get_area(bbox),area)>ratio:
+                return True
+        return False
+    
+    def intersect_all(self,objs:Sequence[Any],*,ratio:float=0,strict:bool=True)->bool:
+        """是否所有的对象都相交"""
+        if not objs:
+            return True
+        
+        def get_area(b:_BBox)->float:
+            w=b[2]-b[0]
+            h=b[3]-b[1]
+            if w==0:
+                w=1
+            if h==0:
+                h=1
+            return w*h
+        
+        area=self.area2
+        for obj in objs:
+            bbox = self.get_bbox(obj,strict=strict)
+            if bbox is None:
+                return False
+            xb = self.intersect(bbox)
+            if xb and xb.area2/min(get_area(bbox),area)>ratio:
+                pass
+            else:
+                return False
+        return True
 
     def union(self, other:_BBox) -> "BBox":
         return BBox(
@@ -315,6 +364,12 @@ class BBox(tuple[float,float,float,float]):
             max(self.x1, other[2]),
             max(self.y1, other[3]),
         )
+    
+    def union_all(self,objs:Sequence[Any])->"BBox":
+        if not objs:
+            return self
+        bbox = self.join2(objs)
+        return self.union(bbox)
 
     def iou(self, other:_BBox) -> float:
         """"""
@@ -334,7 +389,7 @@ class BBox(tuple[float,float,float,float]):
             and self.y1 >= other[3]
         )
     
-    def get[T](self,objs:Sequence[T],*,ratio:float=1,exclude:Sequence[T]|None=None,strict:bool=True,remove:bool=False)->list[T]:
+    def get[T](self,objs:Sequence[T],*,ratio:float=1,exclude:Sequence[T]|None=None,get_bbox:Callable[[T],Any]|None=None,strict:bool=True,remove:bool=False)->list[T]:
         """从objs中选择在该区域内的对象
         objs:[]
         ratio: 面积占比，1表示100%，表示对象有多少比例的面积在该区域内，如果只需要部分重叠，可以设置一个合适的比例
@@ -356,7 +411,10 @@ class BBox(tuple[float,float,float,float]):
             
             if exclude and obj in exclude:
                 continue
-            obj_bbox = BBox.get_bbox(obj,strict=strict)
+            if get_bbox is not None:
+                obj_bbox = get_bbox(obj)
+            else:
+                obj_bbox = BBox.get_bbox(obj,strict=strict)
             if obj_bbox is not None:
                 items.append((i,obj,obj_bbox))
         if not items:
@@ -525,13 +583,15 @@ class BBox(tuple[float,float,float,float]):
     def get_bbox(obj:Any,strict:bool=True)->_BBox|None:
         if isinstance(obj,BBox):
             b = obj
+        elif hasattr(obj,'bbox'):
+            b=cast(_BBox|None,obj.bbox) # type: ignore
+        elif isinstance(obj,dict):
+            b=cast(_BBox|None,obj['bbox'])
         elif isinstance(obj,Sequence):
             #这个就已经包括了BBox，但是分开判断还是更加明确一点
             b=cast(_BBox,obj)
-        elif isinstance(obj,dict):
-            b=cast(_BBox|None,obj['bbox'])
         else:
-            b=cast(_BBox|None,obj.bbox) # type: ignore
+            b=obj
         
         if strict and b is None:
             raise ValueError(f'存在为None的bbox,obj={obj}')

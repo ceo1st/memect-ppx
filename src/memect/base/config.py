@@ -31,9 +31,8 @@ def load_data(filename: str | Path, *, py_name: str = "settings") -> dict[str, A
     suffix: str = filename.suffix
     if suffix == ".json":
         return json.loads(filename.read_text("utf-8"))
-    elif suffix == ".yaml":
+    elif suffix in (".yaml",".yml") :
         import yaml
-
         return yaml.safe_load(filename.read_text("utf-8"))
     elif suffix == ".toml":
         return tomllib.loads(filename.read_text("utf-8"))
