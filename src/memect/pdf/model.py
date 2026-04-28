@@ -50,6 +50,7 @@ class Model:
                 new_files.append(FileInfo(file=file, params=params))
             else:
                 new_files.append(file)
+
         if self._use_lock:
             with self._lock:
                 return self._execute(new_files)
@@ -501,121 +502,8 @@ class ApiModel(Model):
             raise ApiError(ApiError.ANY, "")
 
 
-class OnnxModel(Model):
-    pass
-
-
-class YOLOClassifyModel(Model):
-    def __init__(self, **kwargs: Any):
-        super().__init__()
-        #from yolo_classify import YOLOClassifier
-        #self._model: Final = YOLOClassifier(**kwargs)
-
-    @override
-    def _execute(self, files: Sequence[FileInfo]):
-        # 在输出onnx模型的时候，默认为batch=1，也就是一次只能够输入一个图片
-        # 如果batch=4，必须输入4个，如果不够4个，需要使用补充够
-        # 如果batch=0，可以为任意数量
-
-        # 有两种设计
-        # batch=1，然后5个session，假设每个模型需要1G，那么，就需要5G的显存+5张图片，最大，适合处理单张图片
-        # 因为每个独立的请求都只有1张图片
-        # batch=5，只需要一个session，1G+5张图片
-        # batch=5，5个session，需要5G+25张图片，适合批量处理解析，如：每个pdf都是100页的
-        # 可以一次性100张图片过来，然后批处理
-        # 折中，就是使用batch=0，5个session，每个session可以批处理1-10张图片，只有1张的时候，也不需要补齐为5张，减少显存和
-        # 算力的占用
-
-        imgs: list[cv2.typing.MatLike] = []
-        for file in files:
-            imgs.append(file.cv2_image)
-
-        results: list[Any] = []
-        for scores, classes in self._model.classify(imgs):
-            objs: list[Any] = []
-            for score, type_ in zip(scores, classes):
-                obj = {"type": type_, "score": score}
-                objs.append(obj)
-            results.append({"objects": objs})
-
-        return results
-
-
-class YOLODetectModel(Model):
-    def __init__(self, **kwargs: Any):
-        super().__init__()
-        # 本地启动模型，然后执行
-        # onnx模型可以把预处理和后处理封装在模型中，所以就不需要再写特别的代码
-        #from yolo_detect import YOLODetector
-
-        #self._model: Final = YOLODetector(**kwargs)
-
-    @override
-    def _execute(self, files: Sequence[FileInfo]):
-        # 在输出onnx模型的时候，默认为batch=1，也就是一次只能够输入一个图片
-        # 如果batch=4，必须输入4个，如果不够4个，需要使用补充够
-        # 如果batch=0，可以为任意数量
-
-        # 有两种设计
-        # batch=1，然后5个session，假设每个模型需要1G，那么，就需要5G的显存+5张图片，最大，适合处理单张图片
-        # 因为每个独立的请求都只有1张图片
-        # batch=5，只需要一个session，1G+5张图片
-        # batch=5，5个session，需要5G+25张图片，适合批量处理解析，如：每个pdf都是100页的
-        # 可以一次性100张图片过来，然后批处理
-        # 折中，就是使用batch=0，5个session，每个session可以批处理1-10张图片，只有1张的时候，也不需要补齐为5张，减少显存和
-        # 算力的占用
-
-        imgs: list[cv2.typing.MatLike] = []
-        for file in files:
-            imgs.append(file.cv2_image)
-
-        results: list[Any] = []
-        for result in self._model.detect(imgs):
-            objs: list[Any] = []
-            for score, bbox, type_ in result:
-                obj = {"type": type_, "score": score, "bbox": bbox}
-                objs.append(obj)
-            results.append({"objects": objs})
-
-        return results
-
-
-class PaddleModel(Model):
-    pass
-
-
-class AutoLayoutModel(Model):
-    def __init__(self):
-        super().__init__()
-        # 必须从hh下载，modelscope没有
-        # export HF_ENDPOINT=https://hf-mirror.com
-        # huggingface-cli download mymodel --local-dir mymodel
-        # modelscope download --model mymodel --local_dir mymodel
-        # modelscope download --model mymodel --cache_dir ./hub   => 会根据模型的id创建路径
-
-        # huggingface-cli download PaddlePaddle/PP-DocLayoutV3_safetensors --local-dir models/PaddlePaddle/PP-DocLayoutV3_safetensors
-        # PaddlePaddle/PP-DocLayoutV3_safetensors
-        # PaddlePaddle/PP-DocLayoutV2_safetensors
-        # 有多种实现方式
-        # 1.pipeline，处理类预处理+推理+后处理
-        # 2. auto，从config.json中获得类的信息
-        # 3. 指定使用哪些类
-        from transformers import pipeline
-
-        self._pipeline = pipeline(
-            "object-detection", model="./models/PaddlePaddle/PP-DocLayoutV3_safetensors"
-        )
-
-    @override
-    def _execute(self, files: Sequence[FileInfo]) -> list[Any]:
-        for file in files:
-            results = self._pipeline(file.pil_image)
-            for idx, res in enumerate(results):
-                print(f"Order {idx + 1}: {res}")
-        return [{}]
-
-
 class RapidLayoutModel(Model):
+    _use_lock=False
     def __init__(self, mapping: Mapping[str, str] | None = None, **kwargs: Any):
         super().__init__()
         from rapid_layout import RapidLayout
@@ -654,7 +542,7 @@ class RapidLayoutModel(Model):
 
 class RapidOCRModel(Model):
     _logger = logging.getLogger(f"{__module__}.{__qualname__}")
-
+    _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
         from rapidocr import RapidOCR
@@ -855,6 +743,7 @@ class RapidOCRModel(Model):
 
 
 class RapidFormulaModel(Model):
+    _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
         #这个把pix2tex转化为onnx了
@@ -878,6 +767,7 @@ class RapidFormulaModel(Model):
 
 
 class TableClsModel(Model):
+    _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
         from table_cls import TableCls
@@ -896,6 +786,7 @@ class TableClsModel(Model):
 
 
 class TableDetModel(Model):
+    _use_lock=False
     def __init__(self,*,model_path: str|Path|None=None,**kwargs:Any):
         super().__init__()
         from .table_det import RTDETRTableCellDet
@@ -1021,27 +912,4 @@ class TestModel(Model):
         return results
 
 
-class LocalService:
-    pass
 
-
-def test():
-    args: dict[str, Any] = {
-        "scheduler": {
-            "policy": "fifo",
-            "max_task_size": 2,
-        },
-        # 本地启动
-        # 但是，也可以启动为一个服务，然后调用api就可以
-        # 这个时候，为了简化配置
-        "model": {"name": "TestModel", "args": [], "kwargs": {}},
-        "api": {"url": "http://"},
-    }
-    executor = ModelExecutor(args)
-    executor.execute(["1.png", "2.png", "3.png"])
-
-    # 如果是内部使用，执行这个，自动调度
-    executor.submit([])
-
-    # 如果是提供api，使用，task_manager执行
-    executor.execute([])
