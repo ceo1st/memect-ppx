@@ -113,7 +113,8 @@ def parse(
 
     as_doc:Annotated[bool,typer.Option(help='当file为目录且这个为true，表示为一个文档连续的页面，如：1.png,2.png,3.png')]=False,
 
-    max_workers:Annotated[int,typer.Option("-w","--workers",help='如果指定的file目录，可以设置同时执行多少个，0表示不使用多进程执行')]=0,
+    parallel:Annotated[int|None,typer.Option('-p',help='表示在解析单个文档的时候，同时解析多少个页面，0表示不并行执行，注意：越大需要的内存/显存就越多')]=None,
+    max_workers:Annotated[int,typer.Option("-w","--workers",help='如果指定的file是目录，可以设置同时执行多少个，0表示不使用多进程执行')]=0,
 
     pages: Annotated[str | None, typer.Option(help="页码范围，如 1-3,5")] = None,
     backend:Annotated[Backend|None,typer.Option()]=None,
@@ -160,7 +161,7 @@ def parse(
     dry:Annotated[bool,typer.Option(help='表示仅仅测试设置参数等，不执行')]=False
 ) -> None:
     """解析 PDF 文件"""
-    from .base.config import setup,parse_kvs
+    from .base.config import setup,parse_kvs,get_settings
     from .base.debug import XDebugger
     from .pdf.base import KDocumentFactory,ParseParams
     from .pdf.parser import Parser
@@ -195,9 +196,17 @@ def parse(
         #set_custom_values(custom_settings,glm,'pdf_parser.glm.model')
         pass
 
+    if parallel is not None:
+        #如果使用gpu，将需要更大的内存
+        for n in ['ocr','layout','formula','table_det']:
+            custom_settings[f'model_manager.executors.{n}.max_workers']=parallel
+
     _set_device(cpu,cuda=cuda)
 
     setup(settings=custom_settings,conf_dir=conf)
+
+
+    
 
     if debug:
         XDebugger.setup()
@@ -259,12 +268,12 @@ def parse(
         console.log(f'共需要解析:{len(docs)}')
 
     else:
+        #如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
+        #如果是远程，和正常一样调用
         try:
             Parser.batch(list(get_docs(file)),max_workers=max_workers)
         finally:
             pass
-            #if max_workers>0:
-                #kill_child_processes(os.getpid(),timeout=5)
 
 
 
@@ -306,12 +315,12 @@ def test(
     tester.run(dir)
 
 
-@app.command(help='提前下载好需要的模型，方便docker制作')
+@app.command(help='提前下载好需要的模型')
 def download():
-    #ocr
-    #layout
-
-    pass
+    from memect.base.config import setup
+    from memect.models import download_all
+    setup()
+    download_all()
 
 def main() -> None:
     from .nvidia_path import set_to_env

@@ -45,6 +45,7 @@ dependencies = [
     "rapid-latex-ocr>=0.0.6",
     "filelock>=3.25.2",
     "pyclipper>=1.4.0",
+    "rapidfuzz>=3.14.5",
 ]
 
 [project.scripts]
@@ -120,6 +121,10 @@ override-dependencies = [
     #排除torch
     "torch;sys_platform == 'never'",
     "torchvision;sys_platform == 'never'"
+]
+
+constraint-dependencies = [
+    "polars>=1.40"
 ]
 conflicts = [[{ extra = "cuda" }, { extra = "cann" }]]
 

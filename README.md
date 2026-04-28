@@ -471,6 +471,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=memect%2Fmemect-ppx&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=memect/memect-ppx&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=memect/memect-ppx&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=memect/memect-ppx&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## License
 
 PPX is released under the [PolyForm Noncommercial License 1.0.0](LICENSE).
