@@ -308,7 +308,7 @@ class ModelExecutor:
                 fn=self._execute_on_process
             else:
                 fn=self._execute_on_thread
-            futures:list[Future]=[]
+            futures:list[Future[Any]]=[]
             for i in range(0,len(files),self._chunk_size):
                 futures.append(self._executor.submit(fn,files[i:i+self._chunk_size]))
             return lists.flat([f.result() for f in futures])

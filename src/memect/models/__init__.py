@@ -1,13 +1,11 @@
 import hashlib
 import logging
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any, Final
 
 import httpx
 from filelock import FileLock
-
-
 
 # 这个只是支持多线程下
 _lock: Final = threading.Lock()
@@ -93,10 +91,10 @@ def download_all():
 
 
 def download_latex():
-    from rapid_latex_ocr import LatexOCR
     from pathlib import Path
+
+    from rapid_latex_ocr import LatexOCR, utils
     from rapid_latex_ocr.utils import DownloadModel
-    from rapid_latex_ocr import utils
     def patch_url():
         #old_init=DownloadModel.__init__
         def new_init(self) -> None:
@@ -111,7 +109,7 @@ def download_latex():
     LatexOCR()
 
 def download_ocr():
-    from rapidocr import RapidOCR, OCRVersion, ModelType
+    from rapidocr import ModelType, OCRVersion, RapidOCR
     for version in [OCRVersion.PPOCRV5, OCRVersion.PPOCRV4]:
         for model_type in [ModelType.MOBILE, ModelType.SERVER]:
             params = {

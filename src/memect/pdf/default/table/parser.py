@@ -1,8 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Final, Sequence
 
-from memect.base.bbox import BBox
-from memect.pdf.base import KDocument, KPage, TableMode, VObject
+from memect.pdf.base import KDocument, KPage, TableMode
 from memect.pdf.default.table.wbk import WBKMode
 from memect.pdf.default.table.ybk import YBKMode
 from memect.pdf.model import ModelManager

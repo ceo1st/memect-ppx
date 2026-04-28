@@ -1629,9 +1629,6 @@ class KMarkdown(KObject):
         """纯文本"""
         return self.unescape(self.text)
 
-    def jsonify(self):
-        return {"type": "markdown", "bbox": self.bbox, "text": self.text}
-
     @classmethod
     def escape(cls, text: str) -> str:
         return _md_escape(text)
