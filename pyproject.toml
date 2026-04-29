@@ -50,7 +50,7 @@ dependencies = [
 
 [project.urls]
 Documentation = "https://github.com/memect/memect-ppx#readme"
-Homepage = "https://github.com/memect/memect-ppx"
+Homepage = "https://pdf2x.cn/"
 Issues = "https://github.com/memect/memect-ppx/issues"
 License = "https://github.com/memect/memect-ppx/blob/HEAD/LICENSE"
 Repository = "https://github.com/memect/memect-ppx"
