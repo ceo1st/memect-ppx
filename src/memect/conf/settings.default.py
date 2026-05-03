@@ -152,8 +152,8 @@ def get_ocr_device() -> dict[str, Any]:
     #cpu+pytorch非常非常慢
     #==
     #cuda+onnxruntime 4090,0.5秒/张
+    #cuda+onnxruntime 3090,1.3秒/张
     #cuda+onnxruntime 2080,8秒/张（很慢）
-    #cuda+pytorch     2080,1.5秒/张（windows/linux）
     #dml+onnxruntime  2080,1.5秒/张（windows）
 
     #结论：如果需要使用显卡，需要>=4090，否则还是使用cpu更快
@@ -442,7 +442,7 @@ settings: dict[str, Any] = {
                     #默认为6
                     #如果使用openvino，使用1更快
                     #如果使用cuda+onnxruntime，在4090，使用默认即可，2080/3090，需要使用100
-                    "Rec.rec_batch_num":6,
+                    #"Rec.rec_batch_num":6,
                     # 表示下载目录
                     #'Det.model_dir':'./models/ocr',
                     # 表示模型文件

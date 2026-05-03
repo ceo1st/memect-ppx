@@ -229,6 +229,9 @@ def setup(
         #TODO
         import memect.conf
         default_conf_dir = Path(memect.conf.__file__).parent
+
+        _state['custom_settings']=settings
+        _state['custom_log_settings']=log_settings
         _state["settings"] = _load_settings(default_conf_dir/"settings.default.py", custom_settings=settings,custom_dir=conf_dir)
         # 设置日志
         if use_log:
