@@ -336,7 +336,7 @@ class ModelExecutor:
 
     def _new_executor(self) -> Executor:
         if self._use_process:
-            mp_init = MPInit()
+            mp_init = MPInit(name=f'{self._name}_executor')
             mp_init.set_fn(self._init_process, self._model_cfg)
             return ProcessPoolExecutor(
                 self._max_workers,

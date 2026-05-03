@@ -187,8 +187,9 @@ def patch2():
 
 def patch3():
     from table_cls.utils.download_model import logger 
+    pass
 patch1()
 patch2()
-patch3()
+#patch3()
 
     

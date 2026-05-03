@@ -96,7 +96,6 @@ class Parser:
             else:
                 # 图片，忽略
                 pass
-
             check_running("parse")
             backend = doc.params.backend
             if backend == Backend.DEEPSEEK:
@@ -297,7 +296,7 @@ class Parser:
     ) -> tuple[Executor, Any]:
         mp_context = mp.get_context("spawn")
         stopped = mp_context.Value("b")
-        mp_init = MPInit()
+        mp_init = MPInit(name='pdfparser')
         mp_init.set_fn(cls._mp_init, manager_args, parser_args, stopped)
         return ProcessPoolExecutor(
             max_workers=max_workers, mp_context=mp_context, initializer=mp_init

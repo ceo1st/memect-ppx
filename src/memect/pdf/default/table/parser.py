@@ -11,8 +11,8 @@ class TableParser:
     def __init__(self,manager:ModelManager):
         super().__init__()
         self._manager:Final = manager
-        self._table_cls: Final = manager.get("table_cls")
-        self._table_cls_key: Final = "cache/default/table_cls"
+        #self._table_cls: Final = manager.get("table_cls")
+        #self._table_cls_key: Final = "cache/default/table_cls"
         self._table_det: Final = manager.get("table_det")
         self._table_det_key: Final = "cache/default/table_det"
         self._table_llm = manager.get("table_llm")

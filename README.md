@@ -21,6 +21,9 @@ $uv pip install opencv-contrib-python --no-config
 #安装依赖的cuda库，如果系统中已经全局安装，可以不安装，需要和onnxruntime-gpu的一致
 #如果是其他版本，请根据onnxruntime-gpu的要求安装几个
 $uv pip install memect-ppx[cuda]
+#如果是windows且没有安装cuda，仅仅安装了direct12
+#uv pip install onnxruntime-directml --no-config
+#uv pip install install onnxruntime-cann
 $uv pip install onnxruntime-gpu --no-config
 #or opencv-contrib-python-headless
 $uv pip install opencv-contrib-python --no-config
@@ -43,9 +46,11 @@ $uv pip install opencv-contrib-python --no-config
 $uv pip install onnxruntime --no-config
 
 
+
 #命令说明：
 #安装包的方式，请使用: ppx
-#clone代码的方式，请使用:./ppx
+#clone代码的方式，linux/macOS请使用:./ppx
+#clone代码的方式，windows请使用: ppx.bat
 
 #默认解析
 $ppx parse a.pdf

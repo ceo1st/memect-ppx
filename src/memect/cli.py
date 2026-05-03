@@ -31,7 +31,7 @@ def _parse_pages(pages: str | None) -> list[int]:
 def _set_device(cpu:bool,cuda:str|None|None=None,cann:str|None=None):
     if cpu:
         #强制使用cpu，即使当前支持gpu
-        os.environ['PPX__FORCE_CPU']='true'
+        os.environ['PPX_FORCE_CPU']='true'
     
     if cuda:
         #指定使用哪个设备
@@ -55,7 +55,8 @@ def _parse_llm(s:str)->dict[str,Any]:
         #{'data':[{},{}]}
         info=result['data'][0]
         id_ = info['id']
-        #max_model_len = info['max_model_len']
+        #litellm没有返回这个
+        #max_model_len = info.get('max_model_len',-1)
         if 'paddle' in id_:
             name='paddle'
         elif 'deepseek' in id_:

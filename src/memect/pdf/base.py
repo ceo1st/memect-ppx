@@ -28,6 +28,8 @@ import PIL
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
+from huggingface_hub import parse_safetensors_file_metadata
+from openvino import passes
 from pydantic import ConfigDict
 
 from memect.base import images, lists, pdfs
@@ -1532,6 +1534,20 @@ class KChar(KObject):
         """如果是wingdings的字符，可以获得pua区域的文本，方便在生成docx的时候直接使用"""
         self.subtype = subtype
 
+    def alike(self, obj: "KChar") -> bool:
+        c1 = self
+        c2 = obj
+        return (
+            c1.bold == c2.bold
+            and c1.italic == c2.italic
+            and c1.strikeout == c2.strikeout
+            and c1.underline == c2.underline
+            and c1.color == c2.color
+            and c1.font == c2.font
+            and c1.source==c2.source
+            and abs(c1.bbox.height-c2.bbox.height)<=2
+        )
+
     @cached_property
     def min_bbox(self) -> BBox:
         if self.text in "》】）｝］？；。：，！、":
@@ -1557,15 +1573,10 @@ class KChar(KObject):
         # 默认为黑色
         if not self.color.is_black():
             data["color"] = self.color.jsonify()
-
-        if self.font.monospace:
-            data["monospace"] = True
-        elif self.font.serif:
-            data["serif"] = True
-        elif self.font.sans_serif:
-            data["sans_serif"] = True
-        else:
-            pass
+        
+        data['font']=self.font.name
+        #if self.wingdings_text:
+            #data['wingdings']=self.wingdings_text
         return data
 
     def is_valid(self) -> bool:
@@ -1676,7 +1687,7 @@ class KSpan(KObject):
     type = "span"
 
     def __init__(
-        self, page: KPage, quad: Quad, *, chars: Sequence[KChar], score: float = 1
+        self, page: KPage, quad: Quad|BBox, *, chars: Sequence[KChar], score: float = 1
     ):
         assert len(chars) > 0
         super().__init__(page, quad)
@@ -1686,6 +1697,30 @@ class KSpan(KObject):
     @cached_property
     def text(self) -> str:
         return "".join(c.text for c in self.chars)
+    
+    @property
+    def bold(self)->bool:
+        return self.chars[0].bold
+    
+    @property
+    def italic(self)->bool:
+        return self.chars[0].italic
+    
+    @property
+    def underline(self)->bool:
+        return self.chars[0].underline
+    
+    @property
+    def strikeout(self)->bool:
+        return self.chars[0].strikeout
+    
+    @property
+    def font(self)->KFont:
+        return self.chars[0].font
+    
+    @property
+    def color(self)->KColor:
+        return self.chars[0].color
 
 
 class KTextline(KObject):
@@ -1713,6 +1748,41 @@ class KTextline(KObject):
     @cached_property
     def text(self) -> str:
         return "".join(c.text for c in self.chars)
+
+    def split(self) -> list[KObject]:
+        """把相邻的属性相同的字符串合并为一个span，方便渲染"""
+
+        def join(group: list[KObject], obj: KObject) -> bool:
+            if not (isinstance(obj, KChar) and isinstance(group[-1], KChar)):
+                return False
+            c1 = group[-1]
+            c2 = obj
+            if -2 <= c2.bbox.x0 - c1.bbox.x1 <= 3 and c1.alike(c2):
+                group.append(c2)
+                return True
+            else:
+                return False
+        
+        def is_span(group:Sequence[KObject])->TypeGuard[Sequence[KChar]]:
+            return isinstance(group[0],KChar)
+
+        groups: list[list[KObject]] = []
+        group: list[KObject] = [self.objects[0]]
+        groups.append(group)
+        for obj in self.objects[1:]:
+            if not join(group, obj):
+                group = [obj]
+                groups.append(group)
+        
+        new_objects:list[KObject]=[]
+        for group in groups:
+            if is_span(group):
+                span = KSpan(self.page,BBox.join2(group),chars=group)
+                new_objects.append(span)
+            else:
+                new_objects.extend(group)
+        
+        return new_objects
 
     def to_textbox(self) -> "KTextbox":
         return KTextbox(self.page, self.quad, lines=[self])

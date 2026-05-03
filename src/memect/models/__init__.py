@@ -86,7 +86,7 @@ def download_all():
     #rapid_layout
     download_layout()
     #table_det
-    download_table_cls()
+    #download_table_cls()
     get_model_path('table_det.onnx')
 
 
@@ -132,10 +132,12 @@ def download_layout():
     ModelProcessor.get_model_path(ModelType.PP_DOC_LAYOUTV3)
 
 def download_table_cls():
-    from table_cls import TableCls
-    from table_cls.main import ModelType
-
-    TableCls.get_model_path(ModelType.YOLO_CLS_X.value,None)
-    TableCls.get_model_path(ModelType.PADDLE_CLS.value,None)
-    TableCls.get_model_path(ModelType.YOLO_CLS.value,None)
-    TableCls.get_model_path(ModelType.Q_CLS.value,None)
+    try:
+        from table_cls import TableCls
+        from table_cls.main import ModelType
+        TableCls.get_model_path(ModelType.YOLO_CLS_X.value,None)
+        TableCls.get_model_path(ModelType.YOLO_CLS.value,None)
+        TableCls.get_model_path(ModelType.PADDLE_CLS.value,None)
+        TableCls.get_model_path(ModelType.Q_CLS.value,None)
+    except ImportError:
+        pass
