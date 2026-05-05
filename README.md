@@ -44,8 +44,8 @@ $uv sync --extra cuda --no-install-project
 $uv pip install opencv-contrib-python --no-config
 #or onnxruntime-gpu 
 $uv pip install onnxruntime --no-config
-
-
+#如果是windows，如果有显卡的，可以安装这个，速度可能更快，或者比安装cuda要简单一些
+$uv pip install onnxruntime-directml --no-config 
 
 #命令说明：
 #安装包的方式，请使用: ppx

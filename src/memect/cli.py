@@ -1,9 +1,10 @@
 # coding=utf-8
+from enum import StrEnum
 import json
 import os
 from pathlib import Path
 import re
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 import typer
@@ -13,6 +14,8 @@ from .pdf.base import Backend,OCRMode, ParseMode, TableMode
 app = typer.Typer()
 
 
+class ModelName(StrEnum):
+    pass
 def _parse_pages(pages: str | None) -> list[int]:
     if not pages:
         return []
@@ -28,10 +31,10 @@ def _parse_pages(pages: str | None) -> list[int]:
     return sorted(result)
 
 
-def _set_device(cpu:bool,cuda:str|None|None=None,cann:str|None=None):
+def _set_device(cpu:str|None,cuda:str|None|None=None,cann:str|None=None):
     if cpu:
         #强制使用cpu，即使当前支持gpu
-        os.environ['PPX_FORCE_CPU']='true'
+        os.environ['PPX_CPU']=cpu
     
     if cuda:
         #指定使用哪个设备
@@ -138,7 +141,7 @@ def parse(
     md:Annotated[bool|None,typer.Option(help="")]=None,
     doc_json:Annotated[bool|None,typer.Option('--json',help="")]=None,
 
-    cpu: Annotated[bool,typer.Option(help='强制使用cpu，即使当前有gpu')]=False,
+    cpu: Annotated[Literal['all','ocr','layout']|None,typer.Option(help='强制使用cpu，即使当前有gpu')]=None,
     cuda:Annotated[str|None,typer.Option(help='指定使用哪些gpu，等同于CUDA_VISIBLE_DEVICES的设置')]=None,
 
     #如果修改个别参数，通过--set --set-log 会简便
@@ -162,7 +165,7 @@ def parse(
     dry:Annotated[bool,typer.Option(help='表示仅仅测试设置参数等，不执行')]=False
 ) -> None:
     """解析 PDF 文件"""
-    from .base.config import setup,parse_kvs,get_settings
+    from .base.config import setup,parse_kvs
     from .base.debug import XDebugger
     from .pdf.base import KDocumentFactory,ParseParams
     from .pdf.parser import Parser
@@ -324,8 +327,6 @@ def download():
     download_all()
 
 def main() -> None:
-    from .nvidia_path import set_to_env
-    set_to_env()
     app()
 
 

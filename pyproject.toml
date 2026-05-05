@@ -64,7 +64,8 @@ cuda = [
     "nvidia-cufft-cu12",
     "nvidia-curand-cu12",
     "nvidia-cuda-nvrtc-cu12",
-    "nvidia-nvjpeg-cu12",
+    #"nvidia-nvjpeg-cu12",
+    "nvidia-nvjitlink-cu12"
 ]
 
 [[tool.uv.index]]

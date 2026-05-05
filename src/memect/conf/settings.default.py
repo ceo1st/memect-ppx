@@ -1,9 +1,19 @@
+from functools import lru_cache
 import logging
 import os
 import platform
 from pathlib import Path
+import sys
 from typing import Any, Final
 
+from memect.base.utils import console
+
+if sys.platform != 'darwin':
+    import onnxruntime
+    #directory=None 表示先查找pytorc的lib，再查找安装的nvidia包，再系统路径
+    #directory=''，nvidia的包，再系统路径
+    onnxruntime.preload_dlls(directory=None)
+    #onnxruntime.print_debug_info()
 
 def is_running_in_docker() -> bool:
     # 在dockerfile中设置环境变量，就可以知道在docker运行了
@@ -15,17 +25,30 @@ def is_running_in_docker() -> bool:
     return False
 
 
-def is_force_cpu() -> bool:
+@lru_cache()
+def get_value[T: str | int | float | bool](name: str, default: T | None) -> T | None:
+    # TODO 可以读取当前的".env"文件？获得环境变量？
+    value = os.environ.get(name.lower()) or os.environ.get(name.upper())
+    console.log(f"env {name}={value}")
+    if value is None:
+        return default
+    type_ = type(default) if default is not None else str
+    try:
+        return type_(value)  # type: ignore
+    except ValueError:
+        console.log(
+            f"环境变量设置的值的无法转换为对应的类型，type={type_},{name}={value}"
+        )
+        return default
+
+
+def is_force_cpu(name: str) -> bool:
     """表示是否强制使用cpu"""
     # 在gpu环境下，强制使用cpu，目的是为了方便切换而不需要修改配置
-    if os.environ.get("PPX_FORCE_CPU"):
-        return True
-    else:
+    cpu = get_value("PPX_CPU", "")
+    if not cpu:
         return False
-
-
-def is_force_gpu() -> bool:
-    if os.environ.get("PPX_FORCE_GPU"):
+    elif cpu == "all" or cpu == "true" or name in [n.strip() for n in cpu.split(",")]:
         return True
     else:
         return False
@@ -38,12 +61,10 @@ def is_apple_silicon():
 _gpus: Final[dict[str, bool]] = {}
 
 
-def use_gpu(engine: str = "onnxruntime", vendor: str = "cuda") -> bool:
-    if is_force_cpu():
+def use_gpu(model: str, engine: str = "onnxruntime", vendor: str = "cuda") -> bool:
+    if is_force_cpu(model):
         # 即使在gpu环境下，也使用cpu，避免需要修改配置
         return False
-    if is_force_gpu():
-        return True
     key = f"{engine}_{vendor}"
     if key not in _gpus:
         _gpus[key] = _use_gpu(engine, vendor=vendor)
@@ -65,22 +86,21 @@ def _use_gpu(engine: str, vendor: str = "cuda") -> bool:
         try:
             import onnxruntime
 
-            if (
-                vendor == "dml"
-                and onnxruntime.get_device() == "CPU-DML"
-                and "DmlExecutionProvider" in onnxruntime.get_available_providers()
-            ):
-                # 不需要再判断DmlExecutionProvider
-                return True
-            if onnxruntime.get_device() != "GPU":
-                return False
             providers = onnxruntime.get_available_providers()
             mappings = {
-                "cuda": "CUDAExecutionProvider",
-                "amd": "MIGraphXExecutionProvider",
-                "cann": "CANNExecutionProvider",
+                "dml": ("CPU-DML", "DmlExecutionProvider"),
+                "cuda": ("GPU", "CUDAExecutionProvider"),
+                "amd": ("GPU", "MIGraphXExecutionProvider"),
+                "cann": ("GPU", "CANNExecutionProvider"),
             }
-            return mappings[vendor] in providers
+            cfg = mappings[vendor]
+            if cfg[0] != onnxruntime.get_device():
+                # 判断是否有硬件了（如：显卡）
+                return False
+            if cfg[1] not in providers:
+                # 判断是否安装了对应的库
+                return False
+            return True
         except ModuleNotFoundError:
             return False
     elif engine == "torch":
@@ -107,22 +127,6 @@ def _use_gpu(engine: str, vendor: str = "cuda") -> bool:
         raise ValueError(f"不支持的engine={engine}")
 
 
-def get_value(name: str, default: str | int | float | bool | None) -> Any:
-    value = os.environ.get(name.lower()) or os.environ.get(name.upper())
-    if value is None:
-        return default
-    type_ = type(default) if default is not None else str
-    try:
-        return type_(value)
-    except ValueError:
-        from memect.base.utils import console
-
-        console.log(
-            f"环境变量设置的值的无法转换为对应的类型，type={type_},{name}={value}"
-        )
-        return default
-
-
 def is_x86():
     machine = platform.machine().lower()
     return machine in ("x86_64", "amd64")
@@ -131,94 +135,29 @@ def is_x86():
 def use_openvino():
     try:
         import openvino  # type: ignore
+
+        return is_x86()
     except ImportError:
         return False
-    return is_x86()
 
 
-def get_ocr_engine() -> str:
-    if use_gpu():
-        return "onnxruntime"
-    elif use_openvino():
-        # amd/intel,cpu下这个更快
-        return "openvino"
-    else:
-        return "onnxruntime"
-
-
-def get_ocr_device() -> dict[str, Any]:
-    #cpu+openvino最快，看cpu，i7-4770，8秒/张，志强，2秒/张
-    #cpu+onnxruntime慢
-    #cpu+pytorch非常非常慢
-    #==
-    #cuda+onnxruntime 4090,0.5秒/张
-    #cuda+onnxruntime 3090,1.3秒/张
-    #cuda+onnxruntime 2080,8秒/张（很慢）
-    #dml+onnxruntime  2080,1.5秒/张（windows）
-
-    #结论：如果需要使用显卡，需要>=4090，否则还是使用cpu更快
-    #linux: 有4090显卡，可以安装onnxruntime-gpu
-    #       2080,3090显卡，如果cpu不够快，可以安装pytorch
-    #mac intel：使用cpu+openvino，mac m系列：使用cpu+onnxruntime（没有机器测试性能）
-    #windows: 可以安装onnxruntime-directml
-
-    #使用2080/3090显卡，Rec.rec_batch_num=6 (默认，很慢)，需要设置为100（正常，1.5秒）
-    #如果是openvino，设置为1更快
-    if use_gpu(vendor="cuda"):
+def get_device(model: str):
+    if use_gpu(model, vendor="cuda"):
         return {"engine": "onnxruntime", "use_cuda": True}
-    elif use_gpu(vendor="cann"):
+    elif use_gpu(model, vendor="cann"):
         return {"engine": "onnxruntime", "use_cann": True}
-    elif use_gpu(vendor="dml"):
-        return {"engine": "onnxruntime", "use_dml": True}
-    elif is_apple_silicon():
-        # coreml
-        # mac m系列，没有机器测试
-        # mac intel系列，有错误，且很慢很慢
-        return {"engine": "onnxruntime", "use_coreml": False}
-    elif use_openvino():
-        #在实测中，onnxruntime-gpu+2080，3090的显卡很慢，在4090显卡正常，0.5秒一个图片
-        #openvino比onnxruntime快得多
-        #i7-4770 4秒/张
-        return {"engine": "openvino"}
-    else:
-        #i7-4770 10秒/张
-        #arm机器，使用openvino快还是onnxruntime快？
-        return {"engine": "onnxruntime"}
-
-
-def get_layout_device():
-    if use_gpu(vendor="cuda"):
-        return {"engine": "onnxruntime", "use_cuda": True}
-    elif use_gpu(vendor="cann"):
-        return {"engine": "onnxruntime", "use_cann": True}
-    elif use_gpu(vendor="dml"):
+    elif use_gpu(model, vendor="dml"):
         return {"engine": "onnxruntime", "use_dml": True}
     elif is_apple_silicon():
         # 没有选项use_coreml:True
-        return {"engine": "onnxruntime"}
+        # 没有设备，无法测试在M系列下，使用openvino快还是onnxruntime快
+        # cpu+openvino快还是cpu+onnxruntime快还是cpu+onnxruntime+coreml快？
+        return {"engine": "onnxruntime", "use_coreml": False}
+        # return {'engine':'openvino'}
     elif use_openvino():
-        #i7-4770 2秒/张
         return {"engine": "openvino"}
     else:
-        #i7-4770 2秒/张
         return {"engine": "onnxruntime"}
-
-def get_table_det_device():
-    pass
-
-def get_cpu_engine():
-    if is_x86():
-        return "openvino"
-    else:
-        return "onnxruntime"
-
-
-def get_engine():
-    """简便的方法，如果没有特别的要求的"""
-    if use_gpu():
-        return "onnxruntime"
-    else:
-        return get_cpu_engine()
 
 
 def get_model_path(file: str | Path) -> str | None:
@@ -282,8 +221,25 @@ _paddle_layout_v2 = {
 
 _paddle_layout_v3 = _paddle_layout_v2
 
-_ocr_device: Final = get_ocr_device()
-_layout_device: Final = get_layout_device()
+# 4090显卡比cpu快，2080/3090等不一定，windows下可以安装onnxruntime-directml
+# 4090显卡0.5秒/张
+# 2080/3090显卡1.5-2秒/张
+# 如果是windows，cuda+onnxruntime很慢的话，可以使用dml+onnxruntime
+# 或者可以考虑设置：Rec.rec_batch_num=6 (默认，很慢)，需要设置为100（正常，1.5秒）
+# cpu+openvino，2秒/张，如果是更好的cpu，可以达到1.5秒/张
+# cpu+onnxruntime，非常慢
+# mac m系列的cpu，默认使用onnxruntime，和openvino对比，没有设备测试
+_ocr_device: Final = get_device("ocr")
+# 显卡比cpu快,cpu+openvino和cpu+onnxruntime持平
+_layout_device: Final = get_device("layout")
+# 显卡比cpu快,cpu+openvino和cpu+onnxruntime持平
+_table_device: Final = get_device("table")
+_formula_device: Final = get_device("formula")
+
+console.log(f"ocr={_ocr_device}")
+console.log(f"layout={_layout_device}")
+console.log(f"table={_table_device}")
+console.log(f"formula={_formula_device}")
 
 settings: dict[str, Any] = {
     "server": {
@@ -350,8 +306,7 @@ settings: dict[str, Any] = {
                     # >=max_workers，如果大一些，可以减少调度的耗时
                     "max_task_size": 10,
                 },
-                # or "ocr_server"
-                "model": "ocr_mobile",
+                "model": "ocr",
             },
             "layout": {
                 "name": "layout",
@@ -423,7 +378,7 @@ settings: dict[str, Any] = {
             # 这里的设置对应RapidOCR，然后必须使用具体的枚举类型，但是使用了这些，每次就必须载入RapidOCR这个库
             # 这个又直接载入cv2/numpy，导致在多进程下，有些不需要的，载入就变慢，所以这里还是使用字符串
             # 在这个模型中做转换处理
-            "ocr_mobile": {
+            "ocr": {
                 "name": "RapidOCRModel",
                 "kwargs": {
                     "Global.model_root_dir": get_model_path("./models/ocr"),
@@ -435,23 +390,25 @@ settings: dict[str, Any] = {
                     "Det.engine_type": _ocr_device["engine"],
                     "Cls.engine_type": _ocr_device["engine"],
                     "Rec.engine_type": _ocr_device["engine"],
-                    "Det.model_type": "mobile",
-                    "Cls.model_type": "mobile",
-                    "Rec.model_type": "mobile",
-
-                    #默认为6
-                    #如果使用openvino，使用1更快
-                    #如果使用cuda+onnxruntime，在4090，使用默认即可，2080/3090，需要使用100
-                    #"Rec.rec_batch_num":6,
+                    "Det.model_type": get_value("ppx_ocr_model", "mobile"),
+                    "Rec.model_type": get_value("ppx_ocr_model", "mobile"),
+                    # 如果是v5，可以为server,mobile，如果为v4，只能够mobile
+                    "Cls.model_type": get_value("ppx_ocr_model", "mobile")
+                    if get_value("ppx_ocr_version", "v5") == "v5"
+                    else "mobile",
+                    # 默认为6
+                    # 如果使用openvino，使用1更快
+                    # 如果使用cuda+onnxruntime，在4090，使用默认即可，2080/3090，需要使用100
+                    # "Rec.rec_batch_num":6,
                     # 表示下载目录
                     #'Det.model_dir':'./models/ocr',
                     # 表示模型文件
                     #'Det.model_path':'',
                     #'Cls.model_path':'',
                     #'Rec.model_path':'',
-                    "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
-                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
-                    "Cls.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
+                    "Det.ocr_version": f"PP-OCR{get_value('ppx_ocr_version', 'v5')}",
+                    "Rec.ocr_version": f"PP-OCR{get_value('ppx_ocr_version', 'v5')}",
+                    "Cls.ocr_version": f"PP-OCR{get_value('ppx_ocr_version', 'v5')}",
                     # linux/windows
                     "EngineConfig.onnxruntime.use_cuda": _ocr_device.get(
                         "use_cuda", False
@@ -478,57 +435,15 @@ settings: dict[str, Any] = {
                     "Det.limit_type": "min",
                 },
             },
-            "ocr_server": {
-                "name": "RapidOCRModel",
-                "kwargs": {
-                    "Global.model_root_dir": get_model_path("./models/ocr"),
-                    "Global.text_score": 0.5,
-                    # -1表示无论如何都det，否则w/h>width_height_ratio，就不det了，而是直接rec
-                    "Global.width_height_ratio": -1,
-                    "Det.engine_type": _ocr_device["engine"],
-                    "Cls.engine_type": _ocr_device["engine"],
-                    "Rec.engine_type": _ocr_device["engine"],
-                    "Det.model_type": "server",
-                    "Cls.model_type": "server"
-                    if get_value("ocr_version", "v5") =='v5'
-                    else "mobile",
-                    "Rec.model_type": "server",
-                    # 表示下载目录
-                    #'Det.model_dir':'./models/ocr',
-                    # 表示模型文件
-                    #'Det.model_path':'',
-                    #'Cls.model_path':'',
-                    #'Rec.model_path':'',
-                    "Det.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
-                    "Rec.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
-                    "Cls.ocr_version": f"PP-OCR{get_value('ocr_version', 'v5')}",
-                    "EngineConfig.onnxruntime.use_cuda": _ocr_device.get(
-                        "use_cuda", False
-                    ),
-                    # 在mac m系列下，用这个更快？
-                    "EngineConfig.onnxruntime.use_coreml": _ocr_device.get(
-                        "use_coreml", False
-                    ),
-                    # 在华为gpu下，用这个
-                    "EngineConfig.onnxruntime.use_cann": _ocr_device.get(
-                        "use_cann", False
-                    ),
-                    # 在windows下，用这个更快？
-                    "EngineConfig.onnxruntime.use_dml": _ocr_device.get(
-                        "use_dml", False
-                    ),
-                },
-            },
             "layout_v2": {
                 "name": "RapidLayoutModel",
                 "kwargs": {
                     "mapping": dict(_paddle_layout_v2),
                     "model_type": "pp_doc_layoutv2",
-                    # cpu下，openvino快一些
-                    "engine_type": _layout_device["engine"],
                     "model_dir_or_path": get_model_path(
                         "./models/layout/pp_doc_layoutv2.onnx"
                     ),
+                    "engine_type": _layout_device["engine"],
                     "engine_cfg": {
                         "use_cuda": _layout_device.get("use_cuda", False),
                         "use_cann": _layout_device.get("use_cann", False),
@@ -543,11 +458,10 @@ settings: dict[str, Any] = {
                 "kwargs": {
                     "mapping": dict(_paddle_layout_v3),
                     "model_type": "pp_doc_layoutv3",
-                    # or "openvino"
-                    "engine_type": _layout_device["engine"],
                     "model_dir_or_path": get_model_path(
                         "./models/layout/pp_doc_layoutv3.onnx"
                     ),
+                    "engine_type": _layout_device["engine"],
                     "engine_cfg": {
                         "use_cuda": _layout_device.get("use_cuda", False),
                         "use_cann": _layout_device.get("use_cann", False),
@@ -562,7 +476,9 @@ settings: dict[str, Any] = {
                 "kwargs": {
                     "model": "paddleocr-vl",
                     "client": {
-                        "base_url": "http://127.0.0.1:4001/v1",
+                        "base_url": get_value(
+                            "ppx_paddle_url", "http://127.0.0.1:4001/v1"
+                        ),
                         "api_key": "",
                     },
                     "params": {
@@ -584,7 +500,9 @@ settings: dict[str, Any] = {
                 "kwargs": {
                     "model": "glmocr",
                     "client": {
-                        "base_url": "http://127.0.0.1:4002/v1",
+                        "base_url": get_value(
+                            "ppx_glm_url", "http://127.0.0.1:4002/v1"
+                        ),
                         "api_key": "",
                     },
                     "params": {
@@ -605,7 +523,10 @@ settings: dict[str, Any] = {
                 "kwargs": {
                     "model_path": get_model_path("./models/memect/table_det.onnx"),
                     "score_threshold": 0.5,
-                    "use_cuda": use_gpu("onnxruntime"),
+                    "engine": _table_device["engine"],
+                    "use_cuda": _table_device.get("use_cuda", False),
+                    "use_cann": _table_device.get("use_cann", False),
+                    "use_dml": _table_device.get("use_dml", False),
                 },
             },
             "formula": {
@@ -631,13 +552,13 @@ settings: dict[str, Any] = {
         "pdf2image": {"max_workers": 4, "max_size": (2000, 2000), "max_scale": 2},
         "deepseek": {
             "model": {
-                "base_url": get_value("llm_deepseek_url", "http://127.0.0.1:4000/v1"),
+                "base_url": get_value("ppx_deepseek_url", "http://127.0.0.1:4000/v1"),
                 "scheduler": {
                     # fifo:按顺序执行
                     # balance: 公平执行
                     "policy": "balance",
                     # 可以同时处理10个文件
-                    "max_task_size": get_value("llm_deepseek_size", 10),
+                    "max_task_size": get_value("ppx_deepseek_size", 10),
                 },
             }
         },
@@ -645,14 +566,14 @@ settings: dict[str, Any] = {
             # layout or layout-v3
             "layout": "layout",
             "model": {
-                "base_url": get_value("llm_paddle_url", "http://127.0.0.1:4001/v1"),
+                "base_url": get_value("ppx_paddle_url", "http://127.0.0.1:4001/v1"),
                 #'model':'paddleocr-vl-1.5',
                 "scheduler": {
                     # fifo:按顺序执行
                     # balance: 公平执行
                     "policy": "balance",
                     # 可以同时处理10个文件
-                    "max_task_size": get_value("llm_paddle_size", 10),
+                    "max_task_size": get_value("ppx_paddle_size", 10),
                 },
             },
         },
@@ -660,11 +581,11 @@ settings: dict[str, Any] = {
             # layout or layout-v3
             "layout": "layout",
             "model": {
-                "base_url": get_value("llm_glm_url", "http://127.0.0.1:4002/v1"),
+                "base_url": get_value("ppx_glm_url", "http://127.0.0.1:4002/v1"),
                 "scheduler": {
                     "policy": "balance",
                     # 单显卡一般就是10个并发，如果多显卡，可以设置更大
-                    "max_task_size": get_value("llm_glm_size", 10),
+                    "max_task_size": get_value("ppx_glm_size", 10),
                 },
             },
         },
