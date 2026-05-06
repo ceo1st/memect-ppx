@@ -19,18 +19,33 @@ class RTDETRTableCellDet:
     
     _INPUT_SIZE = (640, 640)  # (H, W)
 
-    def __init__(self, model_path: str|Path, score_threshold: float = 0.5,use_cuda:bool=False,use_cann:bool=False):
-        import onnxruntime as ort
-        providers:list[Any]=[]
-        if use_cuda:
-            providers.append("CUDAExecutionProvider")
-        elif use_cann:
-            providers.append("CANNExecutionProvider")
-        providers.append("CPUExecutionProvider")
-        self._session = ort.InferenceSession(model_path, providers=providers)
+    def __init__(self, model_path: str|Path, score_threshold: float = 0.5,engine:str='openvino',use_cuda:bool=False,use_cann:bool=False,use_dml:bool=False):
         self._score_threshold = score_threshold
-        session_providers = self._session.get_providers()
-        self._logger.info('use providers=%s',session_providers)
+        self._session=None
+        self._ov_compiled=None
+        if engine=='onnxruntime':
+            import onnxruntime as ort
+            providers:list[Any]=[]
+            if use_cuda:
+                providers.append("CUDAExecutionProvider")
+            elif use_cann:
+                providers.append("CANNExecutionProvider")
+            elif use_dml:
+                providers.append('DmlExecutionProvider')
+            else:
+                pass
+            providers.append("CPUExecutionProvider")
+            self._session = ort.InferenceSession(model_path, providers=providers)
+            session_providers = self._session.get_providers()
+            self._logger.info('use engine=%s,providers=%s',engine,session_providers)
+        elif engine=='openvino':
+            from openvino import Core
+            ie = Core()
+            model = ie.read_model(model_path)
+            self._ov_compiled = ie.compile_model(model, "CPU")
+            self._logger.info('use engine=%s',engine)
+        else:
+            raise ValueError(f'不支持的engine={engine}')
 
     def _preprocess(self, image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Returns (image blob, im_shape, scale_factor) as paddle model expects."""
@@ -57,11 +72,16 @@ class RTDETRTableCellDet:
     def __call__(self, image: np.ndarray,*,show_gui:bool=False) -> _Result:
         origin_h,origin_w = image.shape[0:2]
         blob, im_shape, scale_factor = self._preprocess(image)
-        outputs: list[np.ndarray] = self._session.run(None, {  # type: ignore[assignment]
-            "image": blob,
-            "im_shape": im_shape,
-            "scale_factor": scale_factor,
-        })
+        if self._ov_compiled is not None:
+            infer = self._ov_compiled.create_infer_request()
+            infer.infer({"image": blob, "im_shape": im_shape, "scale_factor": scale_factor})
+            outputs = [infer.get_output_tensor(0).data]
+        else:
+            outputs: list[np.ndarray] = self._session.run(None, {  # type: ignore[assignment]
+                "image": blob,
+                "im_shape": im_shape,
+                "scale_factor": scale_factor,
+            })
         cells = self._postprocess(outputs[0])
         if show_gui:
             vis = image.copy()

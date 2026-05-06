@@ -4,9 +4,9 @@ import io
 import shutil
 from pathlib import Path
 from typing import Sequence
+import typing
 
-import cv2
-import cv2.typing
+
 import PIL
 import PIL.Image
 import PIL.ImageOps
@@ -14,6 +14,9 @@ from PIL import ExifTags
 
 from .bbox import BBox, Quad
 
+if typing.TYPE_CHECKING:
+    import cv2
+    import cv2.typing
 
 def size(file:str|Path|bytes)->tuple[int,int]:
     """获得图片的大小，轻量级操作"""
@@ -195,8 +198,9 @@ def to_url(image:PIL.Image.Image,*,size:tuple[int,int]|None=None,max_size:tuple[
     data = base64.b64encode(data).decode()
     return (image,f'data:{mime};base64,{data}')
 
-def rotate_cv2(img:cv2.typing.MatLike, angle:int):
+def rotate_cv2(img:'cv2.typing.MatLike', angle:int):
     """正值表示顺时针"""
+    import cv2
     if angle == 0:
         return img
     elif angle == 90:
@@ -208,16 +212,18 @@ def rotate_cv2(img:cv2.typing.MatLike, angle:int):
     else:
         raise ValueError(f'不支持的度数:{angle}')
 
-def cv2_to_pil(image:cv2.typing.MatLike,mode:str='rgb')->PIL.Image.Image:
+def cv2_to_pil(image:'cv2.typing.MatLike',mode:str='rgb')->PIL.Image.Image:
     """cv2的图片总是为bgr/bgra，转换为rgb/rgba"""
+    import cv2
     if image.shape[2] == 4:
         return PIL.Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA))
     else:
         return PIL.Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-def pil_to_cv2(image:PIL.Image.Image)->cv2.typing.MatLike:
+def pil_to_cv2(image:PIL.Image.Image)->'cv2.typing.MatLike':
     """PIL图片转换为cv2格式(BGR)"""
     import numpy as np
+    import cv2
     if image.mode == 'RGBA':
         return cv2.cvtColor(np.array(image), cv2.COLOR_RGBA2BGRA)
     elif image.mode == 'RGB':
