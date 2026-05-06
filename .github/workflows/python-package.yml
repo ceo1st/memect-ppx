@@ -7,51 +7,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-install:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12"]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install memect-ppx
-        run: |
-          uv sync --index-url https://pypi.org/simple
-
-      - name: Install opencv
-        run: |
-          uv pip install opencv-contrib-python-headless --no-config
-
-      - name: Verify CLI entry point
-        run: |
-          uv run ppx --help
-
   build:
-    needs: [check-install]
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
       - name: Install uv
@@ -68,8 +30,50 @@ jobs:
           path: dist/
           retention-days: 30
 
-  release:
+  check-install:
     needs: [build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Install from local dist
+        run: |
+          uv pip install dist/*.whl
+
+      - name: Install opencv
+        run: |
+          uv pip install opencv-contrib-python-headless --no-config
+
+      - name: Verify CLI entry point
+        run: |
+          uv run ppx --help
+
+  release:
+    needs: [check-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write
