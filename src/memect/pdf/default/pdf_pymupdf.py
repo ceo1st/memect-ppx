@@ -7,7 +7,7 @@ import PIL
 import PIL.ImageDraw
 import pymupdf
 
-from memect.base import images, lists, utils
+from memect.base import images, utils
 from memect.base.bbox import BBox, Quad
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
@@ -535,6 +535,8 @@ class Parser:
 
             return paths
         
+        
+        
         def split(paths:list[Any]):
             line_paths:list[Any]=[]
             rect_paths:list[Any]=[]
@@ -559,7 +561,7 @@ class Parser:
         page.pdf_lines.extend(h_lines)
         page.pdf_lines.extend(v_lines)
 
-        #矩形的合并，目的是为了能够还原背景，但是这些是否非常复杂的计算
+        #矩形的合并，目的是为了能够还原背景，非常复杂的计算
         page.pdf_rects.clear()
         page.pdf_rects.extend([])
         timer.mark('end merge')

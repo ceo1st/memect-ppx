@@ -4,6 +4,7 @@
 !/version.txt
 !/app
 !/ppx
+!/ppx.bat
 !/setup.py
 !/web/
 !/docker-entrypoint.sh

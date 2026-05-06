@@ -1,13 +1,11 @@
 import hashlib
 import logging
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any, Final
 
 import httpx
 from filelock import FileLock
-
-
 
 # 这个只是支持多线程下
 _lock: Final = threading.Lock()
@@ -88,15 +86,15 @@ def download_all():
     #rapid_layout
     download_layout()
     #table_det
-    download_table_cls()
+    #download_table_cls()
     get_model_path('table_det.onnx')
 
 
 def download_latex():
-    from rapid_latex_ocr import LatexOCR
     from pathlib import Path
+
+    from rapid_latex_ocr import LatexOCR, utils
     from rapid_latex_ocr.utils import DownloadModel
-    from rapid_latex_ocr import utils
     def patch_url():
         #old_init=DownloadModel.__init__
         def new_init(self) -> None:
@@ -111,7 +109,7 @@ def download_latex():
     LatexOCR()
 
 def download_ocr():
-    from rapidocr import RapidOCR, OCRVersion, ModelType
+    from rapidocr import ModelType, OCRVersion, RapidOCR
     for version in [OCRVersion.PPOCRV5, OCRVersion.PPOCRV4]:
         for model_type in [ModelType.MOBILE, ModelType.SERVER]:
             params = {
@@ -134,10 +132,12 @@ def download_layout():
     ModelProcessor.get_model_path(ModelType.PP_DOC_LAYOUTV3)
 
 def download_table_cls():
-    from table_cls import TableCls
-    from table_cls.main import ModelType
-
-    TableCls.get_model_path(ModelType.YOLO_CLS_X.value,None)
-    TableCls.get_model_path(ModelType.PADDLE_CLS.value,None)
-    TableCls.get_model_path(ModelType.YOLO_CLS.value,None)
-    TableCls.get_model_path(ModelType.Q_CLS.value,None)
+    try:
+        from table_cls import TableCls
+        from table_cls.main import ModelType
+        TableCls.get_model_path(ModelType.YOLO_CLS_X.value,None)
+        TableCls.get_model_path(ModelType.YOLO_CLS.value,None)
+        TableCls.get_model_path(ModelType.PADDLE_CLS.value,None)
+        TableCls.get_model_path(ModelType.Q_CLS.value,None)
+    except ImportError:
+        pass

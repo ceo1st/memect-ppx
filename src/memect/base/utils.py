@@ -331,8 +331,8 @@ def kill_process(process:int|psutil.Process,timeout:float=30,kill_self:bool=True
             process = psutil.Process(process)
         children = process.children(recursive=True)
         #print(f'start terminate process={process.pid},name={process.name()},children={[p.pid for p in children]},cmdline={process.cmdline()}')
-        last_processes=[]
-        first_processes=[]
+        last_processes:list[psutil.Process]=[]
+        first_processes:list[psutil.Process]=[]
         for p in children:
             if _is_resource_tracker(p):
                 last_processes.append(p)

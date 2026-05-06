@@ -202,7 +202,8 @@ def setup(
     settings: Mapping[str, Any] | None = None,
     log_settings: Mapping[str, Any] | None = None,
     conf_dir:str|Path=Path('./conf'),
-    use_log:bool=True
+    use_log:bool=True,
+    name:str='app'
 ):
     """设置初始化，如果已经初始化，不再执行，所以如果需要应用一些自定义的设置，必须先执行"""
     from .utils import console
@@ -215,7 +216,7 @@ def setup(
 
         #console.log("config setup")
         console.rule("start setup config")
-        console.log(f"pid={os.getpid()}")
+        console.log(f"pid={os.getpid()},name={name}")
         console.log(f"cwd={os.path.abspath('.')}")
         console.log(f'use_log={use_log}')
         #console.log(f"env_prefix={env_prefix}")
@@ -228,6 +229,9 @@ def setup(
         #TODO
         import memect.conf
         default_conf_dir = Path(memect.conf.__file__).parent
+
+        _state['custom_settings']=settings
+        _state['custom_log_settings']=log_settings
         _state["settings"] = _load_settings(default_conf_dir/"settings.default.py", custom_settings=settings,custom_dir=conf_dir)
         # 设置日志
         if use_log:
@@ -262,12 +266,13 @@ class _F:
 class MPInit:
     """在多进程的时候，执行这个初始化，应用相同的配置"""
 
-    def __init__(self, use_log: bool = True):
+    def __init__(self,name:str='app',use_log: bool = True):
         super().__init__()
         #确保先初始化
         setup()
         global _state
         #self._env_prefix = _state["env_prefix"]
+        self._name:Final = name
         self._custom_settings = _state["custom_settings"]
         self._custom_log_settings = _state["custom_log_settings"]
         self._use_log = use_log
@@ -279,10 +284,12 @@ class MPInit:
 
     def __call__(self):
         # 在多进程下，也启用日志，可能会很慢
+
         setup(
             self._custom_settings,
             self._custom_log_settings,
-            use_log=self._use_log
+            use_log=self._use_log,
+            name=self._name
         )
         # 忽略ctrl+c，等待主进程关闭释放
         signal.signal(signal.SIGINT, signal.SIG_IGN)

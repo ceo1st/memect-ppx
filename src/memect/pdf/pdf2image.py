@@ -336,7 +336,7 @@ class Pdf2Image:
         max_workers = self._max_workers
         if self._mode == "process":
             # 这个不会释放进程，进程常驻
-            mp_init = MPInit()
+            mp_init = MPInit(name='pdf2image')
             mp_init.set_fn(self._init_process,factory)
             return ProcessPoolExecutor(
                 max_workers, mp_context=mp.get_context("spawn"), initializer=mp_init
