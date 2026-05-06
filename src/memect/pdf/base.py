@@ -28,8 +28,6 @@ import PIL
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
-from huggingface_hub import parse_safetensors_file_metadata
-from openvino import passes
 from pydantic import ConfigDict
 
 from memect.base import images, lists, pdfs

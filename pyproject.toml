@@ -20,7 +20,7 @@ dependencies = [
     "httpx[brotli,http2,socks]>=0.28.1",
     "openai>=2.29.0",
     "orjson>=3.11.7",
-    "pdf-oxide>=0.3.17",
+    #"pdf-oxide>=0.3.17",
     "pillow>=12.1.1",
     "pptx-ea-font>=0.0.4",
     "pydantic>=2.12.5",
@@ -34,8 +34,10 @@ dependencies = [
     "shapely>=2.1.2",
     "typer>=0.24.1",
     "uvicorn[standard]>=0.42.0",
-    #windows or linux or mac(仅仅支持2025.4.1，最新的不支持intel cpu)
-    "openvino>=2025.4.1; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
+    #windows/linux/mac(仅仅支持2025.4.1，最新的不支持intel cpu),x86_64
+    #mac(arm64)
+    #windows/linux，arm64没有机器测试，暂时就不安装了
+    "openvino>=2025.4.1; platform_machine == 'x86_64' or platform_machine == 'AMD64' or sys_platform=='darwin'",
     #arm的，仅仅支持mac和linux，但是没有机器测试和onnxruntime的性能对比
     #"openvino>=2025.4.1; (sys_platform == 'darwin' and platform_machine == 'arm64' or sys_platform == 'linux' and platform_machine == 'aarch64')",
     "psutil>=7.2.2",
@@ -48,25 +50,6 @@ dependencies = [
 [project.scripts]
 # 格式: "命令名 = "Python模块路径:函数名""
 ppx = "memect.cli:main"
-
-#开发中的依赖，项目发布/运行不需要，使用
-#uv sync --group train 
-[dependency-groups]
-train = ["ultralytics>=8.4.23"]
-
-#运行的依赖，如：
-#uv sync --extra cpu
-[project.optional-dependencies]
-cuda = [
-    "nvidia-cuda-runtime-cu12",
-    "nvidia-cudnn-cu12",
-    "nvidia-cublas-cu12",
-    "nvidia-cufft-cu12",
-    "nvidia-curand-cu12",
-    "nvidia-cuda-nvrtc-cu12",
-    #"nvidia-nvjpeg-cu12",
-    "nvidia-nvjitlink-cu12"
-]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
@@ -95,16 +78,6 @@ name = "pypi"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
 default = true
 
-# torch 按 extra 选择不同 index
-#torch = [
-#{ index = "pytorch-cpu", extra = "cpu" },
-#{ index = "pytorch-cuda", extra = "cuda" },
-#{ index = "pytorch-cuda", extra = "tensorrt" },
-#{ index = "pytorch-cuda", extra = "cann" },
-#]
-
-#
-
 
 [tool.uv]
 override-dependencies = [
@@ -118,10 +91,6 @@ override-dependencies = [
     "onnxruntime-gpu;sys_platform == 'never'",
     #排除torch
     "torch;sys_platform == 'never'",
-    "torchvision;sys_platform == 'never'"
+    "torchvision;sys_platform == 'never'",
 ]
-
-constraint-dependencies = [
-    "polars>=1.40"
-]
-conflicts = [[{ extra = "cuda" }, { extra = "cann" }]]
+constraint-dependencies = ["polars>=1.40"]

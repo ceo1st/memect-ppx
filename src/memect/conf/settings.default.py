@@ -135,7 +135,7 @@ def is_x86():
 def use_openvino():
     try:
         import openvino  # type: ignore
-
+        #glibc>=35的linux可以安装，但是无法正常运行，所以目前现在限制为x86
         return is_x86()
     except ImportError:
         return False
@@ -149,11 +149,12 @@ def get_device(model: str):
     elif use_gpu(model, vendor="dml"):
         return {"engine": "onnxruntime", "use_dml": True}
     elif is_apple_silicon():
-        # 没有选项use_coreml:True
-        # 没有设备，无法测试在M系列下，使用openvino快还是onnxruntime快
-        # cpu+openvino快还是cpu+onnxruntime快还是cpu+onnxruntime+coreml快？
-        return {"engine": "onnxruntime", "use_coreml": False}
-        # return {'engine':'openvino'}
+        #use_coreml:True 总是失败
+        #cpu+openvino比cpu+onnxruntime快
+        #2秒/张
+        #return {"engine": "onnxruntime", "use_coreml": False}
+        #1秒/张
+        return {'engine':'openvino'}
     elif use_openvino():
         return {"engine": "openvino"}
     else:
@@ -479,7 +480,7 @@ settings: dict[str, Any] = {
                         "base_url": get_value(
                             "ppx_paddle_url", "http://127.0.0.1:4001/v1"
                         ),
-                        "api_key": "",
+                        "api_key": "x",
                     },
                     "params": {
                         # <=后台llmserver的max-token-len - input_tokens
@@ -503,7 +504,7 @@ settings: dict[str, Any] = {
                         "base_url": get_value(
                             "ppx_glm_url", "http://127.0.0.1:4002/v1"
                         ),
-                        "api_key": "",
+                        "api_key": "x",
                     },
                     "params": {
                         # <=后台llmserver的max-token-len - input_tokens
@@ -553,6 +554,7 @@ settings: dict[str, Any] = {
         "deepseek": {
             "model": {
                 "base_url": get_value("ppx_deepseek_url", "http://127.0.0.1:4000/v1"),
+                "api_key":"x",
                 "scheduler": {
                     # fifo:按顺序执行
                     # balance: 公平执行
@@ -567,6 +569,7 @@ settings: dict[str, Any] = {
             "layout": "layout",
             "model": {
                 "base_url": get_value("ppx_paddle_url", "http://127.0.0.1:4001/v1"),
+                "api_key":"x",
                 #'model':'paddleocr-vl-1.5',
                 "scheduler": {
                     # fifo:按顺序执行
@@ -582,6 +585,7 @@ settings: dict[str, Any] = {
             "layout": "layout",
             "model": {
                 "base_url": get_value("ppx_glm_url", "http://127.0.0.1:4002/v1"),
+                "api_key":"x",
                 "scheduler": {
                     "policy": "balance",
                     # 单显卡一般就是10个并发，如果多显卡，可以设置更大
