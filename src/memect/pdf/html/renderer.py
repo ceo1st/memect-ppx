@@ -1,5 +1,5 @@
 
-from ..base import KDocument
+from ..base import KDocument, KObject, KPage
 
 
 
@@ -18,13 +18,34 @@ from typing import (Any, ClassVar, Final, Self, Sequence, TypedDict, cast,
 
 
 
-from ...x2x.bbox import BBox
-from ...x2x.matrix import Matrix
+from memect.base.bbox import BBox
+from memect.base.matrix import Matrix
 
 type _BBox = Sequence[float]  # tuple[float,float,float,float,float,float]
 type _Offset = Mapping[str, float]
 type _Object = dict[str, Any]
 
+def render_template(template:str,values:dict[str,Any])->str:
+    replaces: list[dict[str, Any]] = []
+    for k, v in values.items():
+        i = template.index(k)
+        j = i+len(k)
+        replaces.append({
+            'start': i,
+            'end': j,
+            'value': v
+        })
+
+    html_buf: list[str] = []
+    replaces.sort(key=lambda r: r['start'])
+    start = 0
+    for r in replaces:
+        html_buf.append(template[start:r['start']])
+        html_buf.append(r['value'])
+        start = r['end']
+
+    html_buf.append(template[start:])
+    return ''.join(html_buf)
 
 class _View(TypedDict):
     left: float
@@ -44,6 +65,18 @@ class _Html:
     def __str__(self)->str:
         return self._html
 
+
+class Context:
+    def __init__(self):
+        super().__init__()
+        self.scale=1
+        self.use_var=False
+    
+    def calc(self,v:float,unit:str='px'):
+        if self.use_var:
+            return f'calc(var(--scale) * {v}{unit})'
+        else:
+            return f'{v*self.scale}{unit}'
 class HtmlTag:
     def __init__(self, name: str):
         super().__init__()
@@ -106,11 +139,12 @@ class HtmlTag:
         offset = offset or {'left': 0, 'top': 0}
         height = page['height']
         style['left'] = '{:.2f}px'.format((bbox[0]-offset['left'])*scale)
+        #原点从左下角转换为左上角
         style['top'] = '{:.2f}px'.format((height-bbox[3]-offset['top'])*scale)
         style['width'] = '{:.2f}px'.format((bbox[2]-bbox[0])*scale)
         style['height'] = '{:.2f}px'.format((bbox[3]-bbox[1])*scale)
 
-    def set_font(self, span: 'Span',bbox:_BBox):
+    def set_font(self, span: 'HSpan',bbox:_BBox):
         style = self.style
         scale = span.view['scale']
         # size:float = span['fontsize']*scale
@@ -121,7 +155,7 @@ class HtmlTag:
         italic: bool = span.data.get('italic', False)
         underline:bool=span.data.get('underline',False)
         #删除线
-        strickout:bool=span.data.get('strickout',False)
+        strikeout:bool=span.data.get('strikeout',False)
 
         color:Any=span.data.get('color')
 
@@ -300,16 +334,17 @@ class HtmlTag:
         return ''.join(buf)
 
 
-class TObject:
+class HObject[T:KObject|KPage]:
+    """表示一个用来渲染的对象"""
     type:ClassVar[str]=''
     _logger=logging.getLogger(f'{__module__}.{__qualname__}')
-    def __init__(self,page:'Page',data:dict[str,Any],*,parent:'TObject|None'=None,merged_index:int|None=None):
+    def __init__(self,page:'HPage',data:T,*,parent:'HObject[Any]|None'=None,merged_index:int|None=None):
         super().__init__()
         self.page = page
         self.data = data
-        self.bbox = data['bbox']
+        self.bbox = data.bbox
         self.view_bbox = self.bbox
-        self.parent:TObject|None=parent
+        self.parent:HObject|None=parent
 
         self.read_order:int=0
         """阅读顺序，从1开始，0表示没有设置"""
@@ -414,23 +449,21 @@ class TObject:
                 
         tag.data['type']=self.type
 
-    def create_object(self,type:str,data:dict[str,Any],*,parent:'TObject|None'=None,merged_index:int|None=None)->'TObject':
+    def create_object(self,type:str,data:dict[str,Any],*,parent:'HObject|None'=None,merged_index:int|None=None)->'HObject':
         if type=='figure':
-            return Figure(self.page,data,parent=parent,merged_index=merged_index)
+            return HFigure(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='span':
-            return Span(self.page,data,parent=parent,merged_index=merged_index)
+            return HSpan(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='line':
-            return Line(self.page,data,parent=parent,merged_index=merged_index)
+            return HLine(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='rect':
-            return Rect(self.page,data,parent=parent,merged_index=merged_index)
-        elif type=='form':
-            return Form(self.page,data,parent=parent,merged_index=merged_index)
+            return HRect(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='formula':
-            return Formula(self.page,data,parent=parent,merged_index=merged_index)
+            return HFormula(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='text':
-            return Text(self.page,data,parent=parent,merged_index=merged_index)
+            return HTextbox(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='table':
-            return Table(self.page,data,parent=parent,merged_index=merged_index)
+            return HTable(self.page,data,parent=parent,merged_index=merged_index)
         elif type=='block':
             return Block(self.page,data,parent=parent,merged_index=merged_index)
         else:
@@ -443,29 +476,9 @@ class TObject:
         """输出简易版的内容"""
         return {}
 
-def render_template(template:str,values:dict[str,Any])->str:
-    replaces: list[dict[str, Any]] = []
-    for k, v in values.items():
-        i = template.index(k)
-        j = i+len(k)
-        replaces.append({
-            'start': i,
-            'end': j,
-            'value': v
-        })
 
-    html_buf: list[str] = []
-    replaces.sort(key=lambda r: r['start'])
-    start = 0
-    for r in replaces:
-        html_buf.append(template[start:r['start']])
-        html_buf.append(r['value'])
-        start = r['end']
 
-    html_buf.append(template[start:])
-    return ''.join(html_buf)
-
-class Document:
+class HDocument:
     template = importlib.resources.files(
         __package__).joinpath('doc.html').read_text('utf-8')
     doc_js = importlib.resources.files(
@@ -474,7 +487,7 @@ class Document:
         super().__init__()
         self.data = data
         self.scale = scale
-        self.pages:list[Page]=[]
+        self.pages:list[HPage]=[]
         self.fonts:dict[str,Any]={}
         self.tree:XTree|None=None
         self.id_seqs:dict[str,int]={}
@@ -482,7 +495,7 @@ class Document:
     
     def _prepare(self):
         for page in self.data.get('pages',[]):
-            self.pages.append(Page(self,page,scale=self.scale))
+            self.pages.append(HPage(self,page,scale=self.scale))
             #TODO 如果仅仅是按页解析，就可以获得body中的对象，建立按页阅读的顺序
 
         
@@ -499,7 +512,7 @@ class Document:
     def get_font(self,id:str)->Any:
         return self.fonts[id]
 
-    def get_page(self,no:int)->'Page':
+    def get_page(self,no:int)->'HPage':
         for page in self.pages:
             if page.number==no:
                 return page
@@ -560,8 +573,6 @@ class Document:
         return render_template(self.template,values)
 
     def render_pages(self):
-        #for page in doc['pages']:
-            #page['html_scale']=scale
         tag = HtmlTag('div')
         tag.classes.append('doc')
         tag.attrs['id']='doc'
@@ -576,83 +587,42 @@ class Document:
         self.id_seqs[prefix]=seq
         return f'{prefix}_{seq}'
 
-class Page(TObject):
+class HPage(HObject[KPage]):
     type:ClassVar[str]='page'
-    def __init__(self,doc:Document,data:dict[str,Any],scale:float|None=None):
-        
-        data['bbox']=(0,0,data['width'],data['height'])
-
+    def __init__(self,doc:HDocument,data:KPage,scale:float|None=None):
         self.doc = doc
-        self.width = data['width']
-        self.height = data['height']
+        self.width = data.width
+        self.height = data.height
 
         self.max_width=0
-        self.scale= self._get_scale(scale,data['width'],max_width=self.max_width)
+        self.scale= self._get_scale(scale,data.width,max_width=self.max_width)
         """从页面转换为html的缩放比例"""
-        self.number = cast(int,data.get('number'))
+        self.number = data.number
 
         super().__init__(self,data)
 
         #按页或者章节树解析
-        self.header:Header|None = None
-        self.footer:Footer|None = None
+        self.header:HHeader|None = None
+        self.footer:HFooter|None = None
         self.body:Body|None = None
-        self.footnotes:list[Footnote]=[]
+        self.footnotes:list[HFootnote]=[]
         self.other:Other|None=None
 
         #pdf2json的结果
-        self.lines:list[Line]=[]
-        self.rects:list[Rect]=[]
-        self.spans:list[Span]=[]
-        self.figures:list[Figure]=[]
-        self.tags:list[Any]=[]
-        self.forms:list[Form]=[]
-        
-        if data.get('lines'):
-            for obj in data.get('lines',[]):
-                self.lines.append(Line(self,obj))
-        if data.get('rects'):
-            for obj in data.get('rects',[]):
-                self.rects.append(Rect(self,obj))
-        if data.get('spans'):
-            for obj in data.get('spans',[]):
-                self.spans.append(Span(self,obj))
-        
-        if data.get('figures'):
-            for obj in data.get('figures',[]):
-                self.figures.append(Figure(self,obj))
-        
-        if data.get('forms'):
-            for obj in data.get('forms',[]):
-                self.forms.append(Form(self,obj))
+        self.lines:list[HLine]=[]
+        self.rects:list[HRect]=[]
+        self.spans:list[HSpan]=[]
+        self.figures:list[HFigure]=[]
 
-        if data.get('tags'):
-            #for tag in data.get('tags'):
-            self.tags.extend(data.get('tags',[]))
-        
+        self.objects:list[HObject]=[]
+       
+
+        for obj in self.data.objects:
+            self.objects.append(self._create_object(obj)) 
 
         
-        #
-        if data.get('header') is not None:
-            self.header = Header(self,data.get('header',{}))
-        if data.get('footer') is not None:
-            self.footer = Footer(self,data.get('footer',{}))
-        
-        if data.get('footnotes'):
-            for obj in data.get('footnotes',[]):
-                self.footnotes.append(Footnote(self,obj))
-        
-        if data.get('body'):
-            #doc.json
-            self.body = Body(self,data.get('body',{}))
-        
-        if data.get('other'):
-            self.other = Other(self,data.get('other',{}))
-        
-        #if data.get('background'):
-            #self.background = Block(self.data.get('background'))
 
-    def _get_scale(self,scale: float | None,width:int,max_width: int) -> float:
+    def _get_scale(self,scale: float | None,width:float,max_width: float) -> float:
         if scale == 0 or scale is None:
             if max_width==0:
                 return 1
@@ -805,15 +775,15 @@ class Page(TObject):
         objects:dict[str,Any]={}
         if self.body is not None:
             for obj in self.body.objects:
-                if isinstance(obj,Table):
+                if isinstance(obj,HTable):
                     #输出一个简单的
                     objects[obj.id]=obj.jsonify()
-                elif isinstance(obj,Formula):
+                elif isinstance(obj,HFormula):
                     objects[obj.id]=obj.jsonify()
         return objects
     
   
-class Span(TObject):
+class HSpan(HObject):
     type:ClassVar[str]='span'
     @property
     def font(self)->Any:
@@ -903,7 +873,7 @@ class Span(TObject):
         return self.data['text']
 
     
-class Line(TObject):
+class HLine(HObject):
     type: ClassVar[str] = 'line'
 
     @override
@@ -933,7 +903,7 @@ class Line(TObject):
         tag.set_color('background-color',data.get('color',(0,0,0)))
         return [tag]
 
-class Rect(TObject):
+class HRect(HObject):
     type: ClassVar[str] = 'rect'
     @override
     def render(self) -> Sequence[HtmlTag]:
@@ -972,7 +942,7 @@ class Rect(TObject):
 
         return [tag]
 
-class Figure(TObject):
+class HFigure(HObject):
     type: ClassVar[str] = 'figure'
 
     @override
@@ -1020,84 +990,14 @@ class Figure(TObject):
             'type':'figure',
             'filename':self.data['filename']
         }
-class Tag(TObject):
-    type: ClassVar[str] = 'tag'
-    @override
-    def _render_one(self, obj: Any, *, offset: Mapping[str, float] | None = None, **kwargs: Any) -> Sequence[Any]:
-        xtag = obj
-
-        
-        def make_tag(view:_View,multi:bool)->HtmlTag:
-            tag:HtmlTag=HtmlTag('div')
-            tag.classes.append('tag')
-            if multi:
-                tag.classes.append('tag-multi')
-            tag.set_class_by_level(view,'tag')
-            tag.set_pos(view,offset=offset)
-            tag.set_size(view)
-            tag.set_title(xtag,['name','mcid','props'])
-            tag.data['tag-id']=xtag.get('id','')
-            return tag
-
-        #bboxes = xtag.get('bboxes')
-        views = xtag.get('views')
-        tags:list[HtmlTag]=[]
-        if len(views)>1 and not xtag.get('tags'):
-            #如果有多个bboxes且没有子tags，每个bboxes单独显示
-            for view in views:
-                #view = Renderer.make_view(xtag['page'],b,xtag['view']['scale'])
-                tags.append(make_tag(view,True))
-        else:
-            tags.append(make_tag(xtag['view'],False))
-            if xtag.get('tags'):
-                #如果又有子tag，该如何呈现？
-                tags[0].children.extend(Renderer.render_objects('tag',xtag.get('tags'),offset=xtag['view']))
-        return tags
-
-class Form(TObject):
-    type: ClassVar[str] = 'form'
-
-    @override
-    def _prepare(self):
-        self.forms:list[Form]=[]
-        for obj in self.data.get('forms',[]):
-            self.forms.append(Form(self.page,obj,parent=self))
-        return super()._prepare()
-    
 
 
-    @override
-    def render(self) -> Sequence[Any]:
-        data = self.data
-        offset = self.parent.offset if self.parent else None
-
-        from_:HtmlTag=HtmlTag('div')
-        from_.classes.append('form')
-        from_.set_class_by_level(self.view,'form')
-        
-        from_.set_pos(self.view,offset=offset)
-        from_.set_size(self.view)
-        from_.set_title(data,['name','number','objid'])
-        from_.set_data(data,['path'])
-
-        if False:
-            if data.get('tags'):
-                #如果又有tag
-                from_.children.extend(Renderer.render_objects('tag',data.get('tags'),offset=data['view']))
-                pass
-        
-        for f in self.forms:
-            from_.children.extend(f.render())
-
-        return [from_]
-
-
-class Block(TObject):
+class Block(HObject):
     type:ClassVar[str]='block'
 
     @override
     def _prepare(self):
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         for i,obj in enumerate(self.data.get('objects',[])):
             self.objects.append(self.create_object(obj['type'],obj,parent=self))
             #一开始存在的对象都会按原来的顺序建立阅读顺序，从1开始
@@ -1131,7 +1031,7 @@ class Block(TObject):
             tags.append(obj.render_read_order(i+1))
         return tags
     
-    def add(self,obj:TObject):
+    def add(self,obj:HObject):
         assert obj.parent is None
         self.objects.append(obj)
         obj.parent=self
@@ -1140,16 +1040,16 @@ class Block(TObject):
         return {
             'type':'block',
             #不再输出line，rect等，仅仅输出
-            'objects':[obj.jsonify() for obj in self.objects if isinstance(obj,(Table,Text,Figure,Formula))]
+            'objects':[obj.jsonify() for obj in self.objects if isinstance(obj,(HTable,HTextbox,HFigure,HFormula))]
         }
     
-class Header(Block):
+class HHeader(Block):
     type:ClassVar[str]='header'
     
-class Footer(Block):
+class HFooter(Block):
     type:ClassVar[str]='footer'
 
-class Footnote(Block):
+class HFootnote(Block):
     type:ClassVar[str]='footnote'
 
 class Body(Block):
@@ -1158,7 +1058,7 @@ class Body(Block):
 class Other(Block):
     type:ClassVar[str]='other'
 
-class Formula(TObject):
+class HFormula(HObject):
     type:ClassVar[str]='formula'
 
     @override
@@ -1199,14 +1099,14 @@ class Formula(TObject):
         obj={'type':'formula','filename':self.data['filename'],'latex':self.data.get('latex')}
         return obj
     
-class Text(TObject):
-    type:ClassVar[str]='text'
+class HTextbox(HObject):
+    type:ClassVar[str]='textbox'
     
     @override
     def _prepare(self):
-        self.textlines:list[Textline]=[]
+        self.textlines:list[HTextline]=[]
         for tl in self.data.get('lines',[]):
-            tl = Textline(self.page,tl,parent=self)
+            tl = HTextline(self.page,tl,parent=self)
             self.textlines.append(tl)
         return super()._prepare()
     
@@ -1247,12 +1147,12 @@ class Text(TObject):
             'text':self.text
         }
 
-class Textline(TObject):
+class HTextline(HObject):
     type:ClassVar[str]='textline'
 
     @override
     def _prepare(self):
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         for obj in self.data.get('objects',[]):
             self.objects.append(self.create_object(obj['type'],obj,parent=self))
         return super()._prepare()
@@ -1273,21 +1173,48 @@ class Textline(TObject):
     def text(self)->str:
         buf:list[str]=[]
         for obj in self.objects:
-            if isinstance(obj,Span):
+            if isinstance(obj,HSpan):
                 buf.append(obj.text)
         return ''.join(buf)
 
+class HText(HObject):
+    type='text'
 
-class Table(TObject):
+    @override
+    def render(self)->Sequence[HtmlTag]:
+        data=self.data
+        offset=self.parent.offset if self.parent else None
+        tag = HtmlTag('div')
+        tag.set_pos(self.view,offset=offset)
+        tag.set_size(self.view)
+        tag.classes.append('text')
+        #无法知道是多少行，所以就只能够大概计算
+        
+        return [tag]
+
+class HMarkdown(HObject):
+    type='markdown'
+
+    @override
+    def render(self)->Sequence[HtmlTag]:
+        data=self.data
+        offset=self.parent.offset if self.parent else None
+        tag = HtmlTag('div')
+        tag.set_pos(self.view,offset=offset)
+        tag.set_size(self.view)
+        tag.classes.append('text')
+        #无法知道是多少行，所以就只能够大概计算
+        return [tag]
+class HTable(HObject):
     type:ClassVar[str]='table'
 
     @override
     def _prepare(self):
         self.row_num = self.data['row_num']
         self.col_num = self.data['col_num']
-        self.cells:list[Cell]=[]
+        self.cells:list[HCell]=[]
         for obj in self.data.get('cells',[]):
-            self.cells.append(Cell(self.page,obj,parent=self))
+            self.cells.append(HCell(self.page,obj,parent=self))
     
     @override
     def render(self)->Sequence[HtmlTag]:
@@ -1364,7 +1291,7 @@ class Table(TObject):
             'cells':cells
         }
         return obj
-class Cell(TObject):
+class HCell(HObject):
     type:ClassVar[str]='cell'
     def _prepare(self):
         self.row_index:int = self.data['row_index']
@@ -1372,7 +1299,7 @@ class Cell(TObject):
         self.row_span:int = self.data.get('row_span',1)
         self.col_span:int = self.data.get('col_span',1)
 
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         for obj in self.data['body']['objects']:
             #对象使用的parent为table，而不是cell，因为offset是相对table
             ##obj相对table，而不是相对self.body这个block
@@ -1420,7 +1347,7 @@ class Cell(TObject):
             'row_span':self.row_span,
             'col_span':self.col_span,
             #仅仅输出这几个
-            'objects':[obj.jsonify() for obj in self.objects if isinstance(obj,(Text,Figure,Formula))]
+            'objects':[obj.jsonify() for obj in self.objects if isinstance(obj,(HTextbox,HFigure,HFormula))]
         }
         return obj
 class XTree:
@@ -1634,7 +1561,7 @@ class XTable(XObject):
     @override
     def _prepare(self):
         data = self.data
-        self.tables:list[Table]=[]
+        self.tables:list[HTable]=[]
         merged = len(data['tables'])>1
         for i,obj in enumerate(data.get('tables',[])):
             page = self.doc.get_page(obj['page_number'])
@@ -1713,7 +1640,7 @@ class XTitle(XObject):
     def _prepare(self):
         data = self.data
         self.text = data['text']
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         if data.get('body'):
             #表示来自原文
             merged = len(data['body']['objects'])>1
@@ -1743,7 +1670,7 @@ class XText(XObject):
     type:ClassVar[str]='xtext'
     @override
     def _prepare(self):
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         merged = len(self.data['objects'])>1
         for i,obj_data in enumerate(self.data['objects']):
             page = self.doc.get_page(obj_data['page_number'])
@@ -1758,7 +1685,7 @@ class XFigure(XObject):
     type:ClassVar[str]='xfigure'
     @override
     def _prepare(self):
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         merged = len(self.data['objects'])>1
         for i,obj_data in enumerate(self.data['objects']):
             page = self.doc.get_page(obj_data['page_number'])
@@ -1774,7 +1701,7 @@ class XFormula(XObject):
 
     @override
     def _prepare(self):
-        self.objects:list[TObject]=[]
+        self.objects:list[HObject]=[]
         merged = len(self.data['objects'])>1
         for i,obj_data in enumerate(self.data['objects']):
             page = self.doc.get_page(obj_data['page_number'])
@@ -1983,7 +1910,7 @@ class OutlineBuilder:
 
 
 class HtmlRenderer:
-    """支持渲染pdf2json.json,image2json.json,doc.json的结果"""
+    
     def render(self,data:dict[str,Any],result_file:Path|str,scale:float=1):
         result_file=Path(result_file)
         result_file.parent.mkdir(parents=True,exist_ok=True)
@@ -1992,29 +1919,6 @@ class HtmlRenderer:
         html = doc.render()
         result_file.write_text(html,encoding='utf-8')
     
-    def render_tow(self,name:str,dir1:Path,dir2:Path,scale:float=1):
-        #TODO 暂时不需要这个方法了
-        data1=json.loads(dir1.joinpath('doc.json').read_text('utf-8'))
-        data2=json.loads(dir2.joinpath('doc.json').read_text('utf-8'))
-        result_file=dir2.joinpath(f'{name}.html')
-        result_file.parent.mkdir(parents=True,exist_ok=True)
-
-        #需要获得相对与dir2的目录，否则构造pages/,images/的路径的时候，就不正确了
-        v1_doc = Document(data1,scale=scale)
-        v1_html = v1_doc.render_pages()
-        
-        #因为输出文件是在dir2，所以不需要设置目录，使用默认的相对目录即可
-        v2_doc = Document(data2,scale=scale)
-        v2_html = v2_doc.render_pages()
-
-        values={
-            '{{v1_html}}':v1_html,
-            '{{v2_html}}':v2_html
-        }
-        template=Path('').read_text('utf-8')
-        html = render_template(template,values)
-        result_file.write_text(html,encoding='utf-8')
-
-        
+  
 
 

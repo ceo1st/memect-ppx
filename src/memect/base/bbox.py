@@ -829,34 +829,3 @@ class Quad(tuple[Point,Point,Point,Point]):
             b=cast(_Quad|None,obj.quad) # type: ignore
         return b
 
-if __name__ == "__main__":
-    # 从 BBox 创建
-    bbox = BBox(10, 20, 110, 80)
-    quad = bbox.to_quad()
-    print(f"quad:    {quad}")
-    print(f"center:  {quad.center}")
-    print(f"area:    {quad.area}")
-    print(f"bbox:    {quad.bbox}")
-    print(f"is_rect: {quad.is_rect}")
-
-    # PDF 仿射变换（平移 +5, +10）
-    m = (1, 0, 0, 1, 5, 10)
-    print(f"\ntransform {m}:")
-    print(f"  {quad.transform(m)}")
-
-    # 旋转 45°
-    print(f"\nrotate 45°:")
-    print(f"  {quad.rotate(45)}")
-
-    # 缩放
-    print(f"\nscale 0.5x:")
-    print(f"  {quad.scale(0.5)}")
-
-    # 格式转换
-    print(f"\nto_flat: {quad.to_flat()}")
-    print(f"to_list: {quad.to_list()}")
-
-    # NamedTuple 特性
-    p1, p2, p3, p4 = quad
-    print(f"\n解包: {p1}, {p2}")
-    print(f"isinstance tuple: {isinstance(quad, tuple)}")

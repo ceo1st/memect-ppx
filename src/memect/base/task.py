@@ -274,7 +274,6 @@ class Task:
     async def _run_task(self, timeout: float | None = None):
         runner = self._runner
         saver = self._saver
-        ok=True
         try:
             self._start_clock = time.monotonic()
             self._start_time = time.time()

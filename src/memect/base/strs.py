@@ -290,7 +290,7 @@ class _Rule:
                 #Ⅷ => viii
                 #严格要求
                 if n1!=1:
-                    raise ValueError(f'')
+                    raise ValueError('')
                 
                 for k in range(n2):
                     positions.append((i,i+1))
@@ -300,7 +300,7 @@ class _Rule:
             else:
                 #viii => Ⅷ
                 if n2!=1:
-                    raise ValueError(f'')
+                    raise ValueError('')
                 
                 positions.append((i,i+n1))
                 
@@ -312,21 +312,5 @@ class _Rule:
         return NText(text,new_text,positions,parent=parent)
 
 
-
-            
-def usage():
-    s1='   （ab   c）   '
-    nt = NText.get(s1,mode='b2q',space='remove')
-    
-    m = re.fullmatch(r'bc',nt.text)
-    if m:
-        #获得在原始字符串的位置
-        start,end = nt.get_range(m.start(),m.end())
-        #获得在原始字符串的文本
-        s2 = nt.get_text(m.start(),m.end())
-    
-    s='a b c d e'
-    nt = NText.get(s)
-    nt = nt.strip().b2q().sub(r'[\s]','')
 
 

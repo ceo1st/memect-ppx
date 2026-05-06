@@ -147,7 +147,7 @@ def replace[T](
             i = seq.index(obj)
             del seq[i]
         if i == -1:
-            raise ValueError(f"old_objs为空")
+            raise ValueError("old_objs为空")
         # 插入到最后一个元素的地方
         insert(seq, i, new_objs)
 

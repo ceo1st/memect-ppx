@@ -154,6 +154,15 @@ settings:Final[dict[str,Any]] = {
             #from rapid_layout.utils.logger import logger
             "handlers":["rich"]
         },
+        "rapid_layout.utils.typings":{
+            "handlers":["rich"]
+        },
+        "rapid_layout.inference_engine.base":{
+            "handlers":["rich"]
+        },
+        "rapid_layout.model_handler.utils":{
+            "handlers":["rich"]
+        },
         "DownloadModel":{
             #现在没有使用到这个库，如果使用到，需要先执行这一句，先加载logger
             #from table_cls.utils.download_model import logger 
@@ -178,8 +187,9 @@ def patch2():
 
 def patch3():
     from table_cls.utils.download_model import logger 
+    pass
 patch1()
 patch2()
-patch3()
+#patch3()
 
     

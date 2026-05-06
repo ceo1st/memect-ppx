@@ -5,51 +5,36 @@
 ```bash
 #>=3.12
 $uv venv -p 3.12
+#Linux/Mac
 $source .venv/bin/activate
-
-#如果是在已经存在的环境中，建议先删除
-#$uv pip uninstall opencv-python opencv-contrib-python opencv-contrib-headless opencv-contrib-python-headless
-#$uv pip uninstall onnxruntime onnxruntime-gpu
-
-#cpu版本
+#Windows
+#.venv\Scripts\activate
 $uv pip install memect-ppx
-$uv pip install onnxruntime --no-config
-#or opencv-contrib-python-headless
-$uv pip install opencv-contrib-python --no-config
+#安装其他依赖的包，避免冲突，可选参数，默认: --gpu auto，也就是如果有显卡的，自动安装对应的库，如果不想，--gpu no
+#--gpu auto|no|cuda|cann|dml
+#--headless  如果在docker等环境中，可能需要这个
+$ppx install
+#下载依赖的模型
+$ppx download
+```
 
-#gpu版本
-#安装依赖的cuda库，如果系统中已经全局安装，可以不安装，需要和onnxruntime-gpu的一致
-#如果是其他版本，请根据onnxruntime-gpu的要求安装几个
-$uv pip install memect-ppx[cuda]
-$uv pip install onnxruntime-gpu --no-config
-#or opencv-contrib-python-headless
-$uv pip install opencv-contrib-python --no-config
+## 源代码方式
 
-
-#安装方法二
-$git clone 
-$cd ppx
+```bash
+$git clone https://github.com/memect/memect-ppx.git
+$cd memect-ppx
 $uv venv -p 3.12
-#如果操作系统比较老<=ubuntu 20.04
-#--no-install-package pdf-oxide
 $uv sync --no-install-project
-#如果需要使用gpu，如果系统中已经全局安装，可以不安装，或者安装另外的版本
-$uv sync --extra cuda --no-install-project
+$./ppx install
+$./ppx download
+```
 
-#这两个必须手动安装
-#or opencv-contrib-python-headless
-$uv pip install opencv-contrib-python --no-config
-#or onnxruntime-gpu 
-$uv pip install onnxruntime --no-config
+## 执行
 
-
-#命令说明：
-#安装包的方式，请使用: ppx
-#clone代码的方式，请使用:./ppx
-
+```bash
+#源代码模式，请使用"./ppx"替代"ppx"
 #默认解析
 $ppx parse a.pdf
-
 #大模型解析，指定url即可，目前仅仅支持deepseek-ocr，paddleocr-vl，glm-ocr等模型
 $ppx parse a.pdf --llm http://127.0.0.1:4000/v1
 #如果使用的模型的名字不包含deepseek，paddle，glm等，需要指定，如下：
@@ -61,7 +46,6 @@ $mkdir conf
 #参考src/memect/conf/settings.custom.py 语法
 $vi conf/settings.py
 $vi conf/log.py
-
 #如果在配置文件中写好了路径和模型等，就不需要在命令行再指定
 $ppx parse a.pdf --backend deepseek
 ```
