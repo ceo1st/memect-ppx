@@ -18,6 +18,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from memect.base import lists
+from memect.base import utils
 from memect.base.api import ApiError
 from memect.base.config import MPInit, get_settings
 from memect.base.debug import XDebugger
@@ -743,6 +744,7 @@ class RapidOCRModel(Model):
 
 
 class FormulaPPModel(Model):
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
@@ -755,7 +757,9 @@ class FormulaPPModel(Model):
             with self._lock:
                 from memect.pdf.formula_pp import Parser
                 if self._model is None:
+                    timer = utils.Timer.start()
                     self._model = Parser(**self._model_kwargs)
+                    self._logger.info('load fromula model,elapsed=%.3f',timer.elapsed())
 
         results:list[Any]=[]
         for file in files:

@@ -9,6 +9,9 @@ $uv venv -p 3.12
 $source .venv/bin/activate
 #Windows
 #.venv\Scripts\activate
+
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv pip install memect-ppx
 #安装其他依赖的包，避免冲突，可选参数，默认: --gpu auto，也就是如果有显卡的，自动安装对应的库，如果不想，--gpu no
 #--gpu auto|no|cuda|cann|dml
@@ -25,6 +28,9 @@ $ppx download
 $git clone https://github.com/memect/memect-ppx.git
 $cd memect-ppx
 $uv venv -p 3.12
+#每次代码更新了，建议执行一次下面3个步骤
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv sync --no-install-project
 $./ppx install
 $./ppx download
