@@ -227,6 +227,7 @@ def parse(
     mode: Annotated[ParseMode | None, typer.Option(help="")] = None,
     ocr: Annotated[OCRMode | None, typer.Option(help="")] = None,
     table: Annotated[TableMode | None, typer.Option(help="")] = None,
+    formula:Annotated[str|None,typer.Option(help='可以指定解析公式的paddle/glm的url，默认为使用本地模型，速度很慢')]=None,
     # remove_watermark:Annotated[bool|None,typer.Option(help='设置是否需要清除水印')]=None,
     # all:Annotated[bool,typer.Option()]=None,
     docx: Annotated[bool | None, typer.Option(help="")] = None,
@@ -234,7 +235,7 @@ def parse(
     md: Annotated[bool | None, typer.Option(help="")] = None,
     doc_json: Annotated[bool | None, typer.Option("--json", help="")] = None,
     cpu: Annotated[
-        Literal["all", "ocr", "layout"] | None,
+        Literal["all", "ocr", "layout","table","formula"] | None,
         typer.Option(help="强制使用cpu，即使当前有gpu"),
     ] = None,
     cuda: Annotated[
@@ -305,6 +306,21 @@ def parse(
         # set_custom_values(custom_settings,paddle,'pdf_parser.paddle.model')
         # set_custom_values(custom_settings,glm,'pdf_parser.glm.model')
         pass
+
+    if formula:
+        if formula in ('paddle','glm'):
+            custom_settings['model_manager.executors.formula.model']=formula
+        elif formula == 'local':
+            custom_settings['model_manager.executors.formula.model']='formula'
+        else:
+            formula_args = _parse_llm(formula)
+            if formula_args['name'] not in ('paddle','glm'):
+                raise ValueError('')
+            custom_settings['model_manager.executors.formula.model']=formula_args['name']
+            custom_settings[f'model_manager.models.{formula_args['name']}.model']=formula_args['model']
+            custom_settings[f'model_manager.models.{formula_args['name']}.client.base_url']=formula_args['base_url']
+            
+
 
     if parallel is not None:
         # 如果使用gpu，将需要更大的内存

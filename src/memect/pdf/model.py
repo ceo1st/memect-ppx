@@ -742,30 +742,44 @@ class RapidOCRModel(Model):
         return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], dtype=np.float32)
 
 
-class RapidFormulaModel(Model):
+class FormulaModel(Model):
     _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
-        #这个把pix2tex转化为onnx了
-        #需要从github上下载文件，会比较慢
-        #https://github.com/RapidAI/RapidLaTeXOCR/releases
-        from rapid_latex_ocr import LatexOCR
-
-        #kwargs = self._normalize_kwargs(kwargs)
-        self._model: Final = LatexOCR(**kwargs)
+        from memect.pdf.formula import Parser
+        self._model: Final = Parser(**kwargs)
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
         results:list[Any]=[]
         for file in files:
-            res,elapsed = self._model(file.cv2_image)
+            t1=time.monotonic()
+            res = self._model.parse(file.cv2_image)
             results.append({
                 'latex':res,
-                'elapsed':elapsed
+                'elapsed':time.monotonic()-t1
             })
         return results
 
+class MfrModel(Model):
+    _use_lock=False
+    def __init__(self, **kwargs: Any):
+        super().__init__()
+        from memect.pdf.mfr import Parser
+        self._parser = Parser(**kwargs)
 
+    @override
+    def _execute(self, files: Sequence[FileInfo]):
+        results:list[Any]=[]
+        for file in files:
+            t1 = time.monotonic()
+            res = self._parser.parse(file.cv2_image)
+            results.append({
+                'latex':res,
+                'elapsed':time.monotonic()-t1
+            })
+        return results
+    
 class TableClsModel(Model):
     _use_lock=False
     def __init__(self, **kwargs: Any):
