@@ -21,6 +21,23 @@ _models: dict[str, Any] = {
         "sha256": "c267cafe004067be73c44cc3aa7990f34e1026c467464372fa6843500f5da1c2",
         "verified": False,
     },
+    "PP-FormulaNet_plus-M_infer/inference.onnx":{
+        "url":"",
+        "sha256":"bcb3c3c445be6a3e03ae3b11de2b05aca1479c0254958552736705c1266e4001",
+        "verified":False
+    },
+    "PP-FormulaNet_plus-M_infer/inference.yml":{
+        "url":"",
+        "sha256":"87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538",
+        "verified":False
+    },
+
+    "PP-FormulaNet_plus-M_infer":{
+        "modelscope":"Memect/PP-FormulaNet_plus-M_infer",
+        "verified":False
+    },
+
+    #===这些将被遗弃====
     "formula/encoder.onnx":{
         "url":"https://modelscope.cn/models/Memect/rapid_latex_ocr/resolve/v1.0.0/encoder.onnx",
         "sha256":"01bf5dc25539ca0cd5b1bd29296ea495977a6ba5f629dc4178277809d26e5e7d",
@@ -84,7 +101,13 @@ def get_model_path(name: str):
             return path
         
         logger.info("模型不存在，开始下载模型:%s", name)
-        if cfg.get('huggingface'):
+        if cfg.get('modelscope'):
+            from modelscope import snapshot_download
+            #TODO 还需要endpoint吗？
+            snapshot_download(cfg.get('modelscope'),local_dir=path)
+            path.joinpath('_done.txt').write_text('ok')
+            cfg['verified']=True
+        elif cfg.get('huggingface'):
             from huggingface_hub import snapshot_download
             import os
             #国外用户可以如下取消：export HF_ENDPOINT=
@@ -132,7 +155,9 @@ def download_all():
     #table_det
     #download_table_cls()
     #download_formula()
-    get_model_path('mfr')
+    get_model_path('PP-FormulaNet_plus-M_infer')
+    #get_model_path('PP-FormulaNet_plus-S_infer')
+    #get_model_path('mfr')
     get_model_path('table_det.onnx')
 
 

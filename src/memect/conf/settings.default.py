@@ -237,6 +237,7 @@ _layout_device: Final = get_device("layout")
 _table_device: Final = get_device("table")
 _formula_device: Final = get_device("formula")
 #cpu+onnxruntime比cpu+openvino快，不过复杂一些的模型，都需要50秒
+#FormulaPPModel不支持cpu+openvino，必须使用onnxruntime
 _formula_device['engine']='onnxruntime'
 
 console.log(f"ocr={_ocr_device}")
@@ -534,6 +535,17 @@ settings: dict[str, Any] = {
             },
             
             "formula":{
+                "name":"FormulaPPModel",
+                "kwargs":{
+                    "model_dir":get_model_path("./models/PP-FormulaNet_plus-M_infer"),
+                    #必须使用onnxruntime，不支持openvino
+                    "engine":"onnxruntime",
+                    "use_cuda":_formula_device.get('use_cuda',False),
+                    'use_cann':_formula_device.get('use_cann',False),
+                    "use_dml":_formula_device.get('use_dml',False)
+                }
+            },
+            "formula-mfr":{
                 "name":"MfrModel",
                 "kwargs":{
                     "model_dir":get_model_path("./models/mfr"),

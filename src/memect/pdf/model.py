@@ -742,6 +742,31 @@ class RapidOCRModel(Model):
         return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], dtype=np.float32)
 
 
+class FormulaPPModel(Model):
+    _use_lock=False
+    def __init__(self, **kwargs: Any):
+        super().__init__()
+        self._model=None
+        self._model_kwargs=kwargs
+
+    @override
+    def _execute(self, files: Sequence[FileInfo]):
+        if self._model is None:
+            with self._lock:
+                from memect.pdf.formula_pp import Parser
+                if self._model is None:
+                    self._model = Parser(**self._model_kwargs)
+
+        results:list[Any]=[]
+        for file in files:
+            t1=time.monotonic()
+            res = self._model.parse(file.cv2_image)
+            results.append({
+                'latex':res,
+                'elapsed':time.monotonic()-t1
+            })
+        return results
+
 class FormulaModel(Model):
     _use_lock=False
     def __init__(self, **kwargs: Any):
