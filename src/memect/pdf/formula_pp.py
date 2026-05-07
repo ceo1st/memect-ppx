@@ -242,8 +242,9 @@ class _UniMERNetDecode:
     def __call__(self, preds) -> list[str]:
         if hasattr(preds, 'numpy'):
             preds = preds.numpy()
-        token_ids = np.asarray(preds, dtype=np.int32)
-        print(f"[DEBUG] preds type={type(preds)}, dtype={getattr(preds, 'dtype', '?')}, token_ids dtype={token_ids.dtype}, sample={token_ids.flat[:5].tolist()}")
+        preds = np.asarray(preds, dtype=np.int64)
+        vocab_size = self._tokenizer.get_vocab_size()
+        token_ids = np.where((preds >= 0) & (preds < vocab_size), preds, self._eos_token_id).astype(np.int32)
         results = []
         for tok_id in token_ids:
             end_idx = np.argwhere(tok_id == self._eos_token_id)
