@@ -239,8 +239,10 @@ class _UniMERNetDecode:
         text = self._remove_chinese_text_wrapping(text)
         return self._normalize(text)
 
-    def __call__(self, preds: np.ndarray) -> list[str]:
-        token_ids = np.array(preds).astype(np.int32)
+    def __call__(self, preds) -> list[str]:
+        if hasattr(preds, 'numpy'):
+            preds = preds.numpy()
+        token_ids = np.asarray(preds, dtype=np.int32)
         results = []
         for tok_id in token_ids:
             end_idx = np.argwhere(tok_id == self._eos_token_id)
