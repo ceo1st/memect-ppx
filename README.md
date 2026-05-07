@@ -14,7 +14,8 @@ $uv pip install memect-ppx
 #--gpu auto|no|cuda|cann|dml
 #--headless  如果在docker等环境中，可能需要这个
 $ppx install
-#下载依赖的模型
+#下载依赖的模型，因为需要从huggingface中下载，默认已经设置好代理，如果需要取消或者设置其他
+#export HF_ENDPOINT=xxx
 $ppx download
 ```
 
@@ -49,6 +50,21 @@ $vi conf/log.py
 #如果在配置文件中写好了路径和模型等，就不需要在命令行再指定
 $ppx parse a.pdf --backend deepseek
 ```
+
+## GPU加速
+
+1. ocr
+  4090会快一些，2080，3090可能比现代的cpu慢
+
+2. table
+   gpu快3-5倍
+
+3. layout
+   gpu快3-5倍
+
+4. formula
+  gpu快几倍，特别是对于复杂的公式，可以到达十几倍，所以，如果有大量的公式，建议在gpu下执行，
+  或者通过"--formula http://xxx/v1"  配置使用大模型
 
 ## 启动模型
 
