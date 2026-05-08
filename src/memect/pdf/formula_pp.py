@@ -40,7 +40,7 @@ class Model:
         elif self._engine == "onnxruntime":
             from onnxruntime import InferenceSession, SessionOptions, GraphOptimizationLevel
             sess_opt = SessionOptions()
-            #sess_opt.log_severity_level = 4
+            sess_opt.log_severity_level = 1
             #sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
             #sess_opt.enable_mem_pattern = True
             #sess_opt.enable_cpu_mem_arena = True
@@ -49,8 +49,15 @@ class Model:
             raise ValueError(f"Unsupported engine: {self._engine}")
 
     def _get_providers(self):
+        cuda_options = {
+            "device_id": 0,
+            "arena_extend_strategy": "kNextPowerOfTwo",
+            "gpu_mem_limit": 2 * 1024 * 1024 * 1024,  # 2GB
+            "cudnn_conv_algo_search": "EXHAUSTIVE",
+            "do_copy_in_default_stream": True,  # 关键：在同一流中做拷贝，减少同步开销
+        }
         if self._device == "cuda":
-            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            return [("CUDAExecutionProvider",cuda_options), "CPUExecutionProvider"]
         elif self._device == "cann":
             return ["CANNExecutionProvider", "CPUExecutionProvider"]
         elif self._device == "dml":
