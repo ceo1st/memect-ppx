@@ -35,12 +35,6 @@ class Model:
                 "CPU", {"INFERENCE_NUM_THREADS": 0, "PERFORMANCE_HINT": "LATENCY"}
             )
             model = core.read_model(str(self._model_path))
-            for inp in model.inputs:
-                shape = inp.get_partial_shape()
-                if shape.rank.is_dynamic:
-                    continue
-                new_dims = [1 if d.is_dynamic else d.get_length() for d in shape]
-                model.reshape({inp.get_any_name(): PartialShape(new_dims)})
             self._session = core.compile_model(model, "CPU")
         elif self._engine == "onnxruntime":
             from onnxruntime import (
@@ -50,10 +44,10 @@ class Model:
             )
 
             sess_opt = SessionOptions()
-            sess_opt.log_severity_level = 1
-            # sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
-            # sess_opt.enable_mem_pattern = True
-            # sess_opt.enable_cpu_mem_arena = True
+            #sess_opt.log_severity_level = 1
+            sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
+            sess_opt.enable_mem_pattern = True
+            sess_opt.enable_cpu_mem_arena = True
             self._session = InferenceSession(
                 str(self._model_path),
                 sess_options=sess_opt,
@@ -63,15 +57,16 @@ class Model:
             raise ValueError(f"Unsupported engine: {self._engine}")
 
     def _get_providers(self):
+        #在gpu下很慢
         cuda_options = {
             "device_id": 0,
             "arena_extend_strategy": "kNextPowerOfTwo",
             # "gpu_mem_limit": 2 * 1024 * 1024 * 1024,  # 2GB
-            "cudnn_conv_algo_search": "EXHAUSTIVE",
+            #"cudnn_conv_algo_search": "EXHAUSTIVE",
             "do_copy_in_default_stream": True,  # 关键：在同一流中做拷贝，减少同步开销
             # 禁用自动 CPU 回退判断
-            "enable_cuda_graph": False,
-            "prefer_nhwc": True,
+            #"enable_cuda_graph": False,
+            #"prefer_nhwc": True,
         }
         if self._device == "cuda":
             return [("CUDAExecutionProvider", cuda_options), "CPUExecutionProvider"]
@@ -329,7 +324,7 @@ class Parser:
             else get_model_path("PP-FormulaNet_plus-M_infer")
         )
         self._model_dir = model_dir
-        self._model_path = model_dir / "inference.onnx"
+        self._model_path = model_dir / "inference_int8.onnx"
         self._config_path = model_dir / "inference.yml"
 
         if use_cuda:

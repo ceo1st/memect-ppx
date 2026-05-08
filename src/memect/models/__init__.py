@@ -21,14 +21,9 @@ _models: dict[str, Any] = {
         "sha256": "c267cafe004067be73c44cc3aa7990f34e1026c467464372fa6843500f5da1c2",
         "verified": False,
     },
-    "PP-FormulaNet_plus-M_infer/inference.onnx":{
-        "url":"",
-        "sha256":"bcb3c3c445be6a3e03ae3b11de2b05aca1479c0254958552736705c1266e4001",
-        "verified":False
-    },
-    "PP-FormulaNet_plus-M_infer/inference.yml":{
-        "url":"",
-        "sha256":"87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538",
+
+    "mfr":{
+        "huggingface":"breezedeus/pix2text-mfr-1.5",
         "verified":False
     },
 
@@ -58,10 +53,7 @@ _models: dict[str, Any] = {
         "sha256":"1dc27b18d6a518d0d5ff3f4bb7bd98521fe80ad39e5b2a246d4109f1bb9d5019",
         "verified":False
     },
-    "mfr":{
-        "huggingface":"breezedeus/pix2text-mfr-1.5",
-        "verified":False
-    }
+
 }
 
 

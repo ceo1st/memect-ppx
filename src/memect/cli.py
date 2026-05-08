@@ -310,8 +310,10 @@ def parse(
     if formula:
         if formula in ('paddle','glm'):
             custom_settings['model_manager.executors.formula.model']=formula
-        elif formula == 'local':
-            custom_settings['model_manager.executors.formula.model']='formula'
+        elif formula == 'mfr':
+            custom_settings['model_manager.executors.formula.model']='formula-mfr'
+        elif formula =='pp':
+            custom_settings['model_manager.executors.formula.model']='formula-pp'
         else:
             formula_args = _parse_llm(formula)
             if formula_args['name'] not in ('paddle','glm'):

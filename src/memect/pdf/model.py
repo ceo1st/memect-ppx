@@ -791,18 +791,28 @@ class FormulaModel(Model):
         return results
 
 class MfrModel(Model):
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
-        from memect.pdf.mfr import Parser
-        self._parser = Parser(**kwargs)
+        #from memect.pdf.mfr import Parser
+        self._model= None #Parser(**kwargs)
+        self._model_kwargs = kwargs
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
+        if self._model is None:
+            with self._lock:
+                if self._model is None:
+                    from memect.pdf.mfr import Parser
+                    timer = utils.Timer.start()
+                    self._model = Parser(**self._model_kwargs)
+                    self._logger.info('load formula elapsed=%.3f',timer.elapsed())
+
         results:list[Any]=[]
         for file in files:
             t1 = time.monotonic()
-            res = self._parser.parse(file.cv2_image)
+            res = self._model.parse(file.cv2_image)
             results.append({
                 'latex':res,
                 'elapsed':time.monotonic()-t1

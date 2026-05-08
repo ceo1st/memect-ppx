@@ -332,8 +332,8 @@ settings: dict[str, Any] = {
                     "policy": "fifo",
                     "max_task_size": 10,
                 },
-                # paddle or glm or formula
-                "model": get_value("ppx_formula","formula"),
+                # paddle or glm or formula-pp or formula-mfr
+                "model": get_value("ppx_formula","formula-pp"),
             },
             "table_det": {
                 # 识别表格的单元格
@@ -534,7 +534,8 @@ settings: dict[str, Any] = {
                 },
             },
             
-            "formula":{
+            "formula-pp":{
+                #在cpu下快，在gpu下很慢
                 "name":"FormulaPPModel",
                 "kwargs":{
                     "model_dir":get_model_path("./models/PP-FormulaNet_plus-M_infer"),
@@ -546,6 +547,7 @@ settings: dict[str, Any] = {
                 }
             },
             "formula-mfr":{
+                #在cpu下慢，在gpu下快
                 "name":"MfrModel",
                 "kwargs":{
                     "model_dir":get_model_path("./models/mfr"),
