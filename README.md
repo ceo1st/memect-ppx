@@ -70,7 +70,12 @@ $ppx parse a.pdf --backend deepseek
 
 4. formula
   gpu快几倍，特别是对于复杂的公式，可以到达十几倍，所以，如果有大量的公式，建议在gpu下执行，
-  或者通过"--formula http://xxx/v1"  配置使用大模型
+  或者通过"--formula http://xxx/v1"  配置使用大模型(paddle/glm)
+
+  或者：--formula mfr   gpu快，cpu慢
+       --formula pp    gpu慢，cpu快
+      
+  如果不要把公式转换为latex, --formula no
 
 ## 启动模型
 
