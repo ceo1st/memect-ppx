@@ -149,7 +149,7 @@ def download_all():
     #download_formula()
     get_model_path('PP-FormulaNet_plus-M_infer')
     #get_model_path('PP-FormulaNet_plus-S_infer')
-    #get_model_path('mfr')
+    get_model_path('mfr')
     get_model_path('table_det.onnx')
 
 
