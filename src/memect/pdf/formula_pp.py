@@ -40,10 +40,10 @@ class Model:
         elif self._engine == "onnxruntime":
             from onnxruntime import InferenceSession, SessionOptions, GraphOptimizationLevel
             sess_opt = SessionOptions()
-            sess_opt.log_severity_level = 4
-            sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
-            sess_opt.enable_mem_pattern = True
-            sess_opt.enable_cpu_mem_arena = True
+            #sess_opt.log_severity_level = 4
+            #sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
+            #sess_opt.enable_mem_pattern = True
+            #sess_opt.enable_cpu_mem_arena = True
             self._session = InferenceSession(str(self._model_path), sess_options=sess_opt, providers=self._get_providers())
         else:
             raise ValueError(f"Unsupported engine: {self._engine}")
