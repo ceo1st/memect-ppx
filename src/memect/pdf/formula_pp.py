@@ -14,7 +14,9 @@ from memect.models import get_model_path
 
 
 class Model:
-    def __init__(self, model_path: str | Path, engine: str = "onnxruntime", device: str = "cpu"):
+    def __init__(
+        self, model_path: str | Path, engine: str = "onnxruntime", device: str = "cpu"
+    ):
         self._model_path = Path(model_path)
         self._engine = engine.lower()
         self._device = device.lower()
@@ -27,8 +29,11 @@ class Model:
 
         if self._engine == "openvino":
             from openvino import Core, PartialShape
+
             core = Core()
-            core.set_property("CPU", {"INFERENCE_NUM_THREADS": 0, "PERFORMANCE_HINT": "LATENCY"})
+            core.set_property(
+                "CPU", {"INFERENCE_NUM_THREADS": 0, "PERFORMANCE_HINT": "LATENCY"}
+            )
             model = core.read_model(str(self._model_path))
             for inp in model.inputs:
                 shape = inp.get_partial_shape()
@@ -38,13 +43,22 @@ class Model:
                 model.reshape({inp.get_any_name(): PartialShape(new_dims)})
             self._session = core.compile_model(model, "CPU")
         elif self._engine == "onnxruntime":
-            from onnxruntime import InferenceSession, SessionOptions, GraphOptimizationLevel
+            from onnxruntime import (
+                InferenceSession,
+                SessionOptions,
+                GraphOptimizationLevel,
+            )
+
             sess_opt = SessionOptions()
             sess_opt.log_severity_level = 1
-            #sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
-            #sess_opt.enable_mem_pattern = True
-            #sess_opt.enable_cpu_mem_arena = True
-            self._session = InferenceSession(str(self._model_path), sess_options=sess_opt, providers=self._get_providers())
+            # sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
+            # sess_opt.enable_mem_pattern = True
+            # sess_opt.enable_cpu_mem_arena = True
+            self._session = InferenceSession(
+                str(self._model_path),
+                sess_options=sess_opt,
+                providers=self._get_providers(),
+            )
         else:
             raise ValueError(f"Unsupported engine: {self._engine}")
 
@@ -52,12 +66,15 @@ class Model:
         cuda_options = {
             "device_id": 0,
             "arena_extend_strategy": "kNextPowerOfTwo",
-            "gpu_mem_limit": 2 * 1024 * 1024 * 1024,  # 2GB
+            # "gpu_mem_limit": 2 * 1024 * 1024 * 1024,  # 2GB
             "cudnn_conv_algo_search": "EXHAUSTIVE",
             "do_copy_in_default_stream": True,  # 关键：在同一流中做拷贝，减少同步开销
+            # 禁用自动 CPU 回退判断
+            "enable_cuda_graph": False,
+            "prefer_nhwc": True,
         }
         if self._device == "cuda":
-            return [("CUDAExecutionProvider",cuda_options), "CPUExecutionProvider"]
+            return [("CUDAExecutionProvider", cuda_options), "CPUExecutionProvider"]
         elif self._device == "cann":
             return ["CANNExecutionProvider", "CPUExecutionProvider"]
         elif self._device == "dml":
@@ -138,13 +155,24 @@ class _LatexImageFormat:
         divide_h = math.ceil(im_h / 16) * 16
         divide_w = math.ceil(im_w / 16) * 16
         img = img[:, :, 0]
-        img = np.pad(img, ((0, divide_h - im_h), (0, divide_w - im_w)), constant_values=(1, 1))
+        img = np.pad(
+            img, ((0, divide_h - im_h), (0, divide_w - im_w)), constant_values=(1, 1)
+        )
         img_expanded = img[:, :, np.newaxis].transpose(2, 0, 1)
         return img_expanded[np.newaxis, :]
 
 
 class _UniMERNetDecode:
-    SPECIAL_TOKENS_ATTRIBUTES = ["bos_token", "eos_token", "unk_token", "sep_token", "pad_token", "cls_token", "mask_token", "additional_special_tokens"]
+    SPECIAL_TOKENS_ATTRIBUTES = [
+        "bos_token",
+        "eos_token",
+        "unk_token",
+        "sep_token",
+        "pad_token",
+        "cls_token",
+        "mask_token",
+        "additional_special_tokens",
+    ]
 
     def __init__(self, character_list: dict):
         self._unk_token = "<unk>"
@@ -169,16 +197,27 @@ class _UniMERNetDecode:
                 if isinstance(token, AddedToken):
                     added_tokens_decoder[int(idx)] = token
 
-            added_tokens_encoder = {k.content: v for v, k in sorted(added_tokens_decoder.items(), key=lambda x: x[0])}
+            added_tokens_encoder = {
+                k.content: v
+                for v, k in sorted(added_tokens_decoder.items(), key=lambda x: x[0])
+            }
             tokens_to_add = list(added_tokens_decoder.values())
             encoder = list(added_tokens_encoder.keys())
-            tokens_to_add += [t for t in self._all_special_tokens_extended() if str(t) not in encoder and t not in tokens_to_add]
+            tokens_to_add += [
+                t
+                for t in self._all_special_tokens_extended()
+                if str(t) not in encoder and t not in tokens_to_add
+            ]
 
             if tokens_to_add:
                 special_tokens = self._all_special_tokens()
                 tokens, is_last_special = [], None
                 for token in tokens_to_add:
-                    is_special = (token.special or str(token) in special_tokens) if isinstance(token, AddedToken) else str(token) in special_tokens
+                    is_special = (
+                        (token.special or str(token) in special_tokens)
+                        if isinstance(token, AddedToken)
+                        else str(token) in special_tokens
+                    )
                     if is_last_special is None or is_last_special == is_special:
                         tokens.append(token)
                     else:
@@ -218,7 +257,10 @@ class _UniMERNetDecode:
         for x in re.findall(text_reg, s):
             pattern = r"(\\[a-zA-Z]+)\s(?=\w)|\\[a-zA-Z]+\s(?=})"
             for m in re.findall(pattern, x[0]):
-                if m not in ["\\operatorname", "\\mathrm", "\\text", "\\mathbf"] and m.strip():
+                if (
+                    m not in ["\\operatorname", "\\mathrm", "\\text", "\\mathbf"]
+                    and m.strip()
+                ):
                     s = s.replace(m, m + "XXXXXXX").replace(" ", "")
                     names.append(s)
         if names:
@@ -240,6 +282,7 @@ class _UniMERNetDecode:
     def _post_process(self, text: str) -> str:
         try:
             from ftfy import fix_text
+
             text = fix_text(text)
         except ImportError:
             pass
@@ -247,11 +290,13 @@ class _UniMERNetDecode:
         return self._normalize(text)
 
     def __call__(self, preds) -> list[str]:
-        if hasattr(preds, 'numpy'):
+        if hasattr(preds, "numpy"):
             preds = preds.numpy()
         preds = np.asarray(preds, dtype=np.int64)
         vocab_size = self._tokenizer.get_vocab_size()
-        token_ids = np.where((preds >= 0) & (preds < vocab_size), preds, self._eos_token_id).astype(np.int32)
+        token_ids = np.where(
+            (preds >= 0) & (preds < vocab_size), preds, self._eos_token_id
+        ).astype(np.int32)
         results = []
         for tok_id in token_ids:
             end_idx = np.argwhere(tok_id == self._eos_token_id)
@@ -264,11 +309,25 @@ class _UniMERNetDecode:
 
 class Parser:
     """目前不支持cpu+openvino，因为有算子不支持"""
-    def __init__(self, model_dir: str | Path | None = None, engine: str = "onnxruntime",
-                 use_cuda: bool = False, use_cann: bool = False, use_dml: bool = False):
-        if isinstance(model_dir,str) and model_dir in ("PP-FormulaNet_plus-S_infer","PP-FormulaNet_plus-M_infer"):
+
+    def __init__(
+        self,
+        model_dir: str | Path | None = None,
+        engine: str = "onnxruntime",
+        use_cuda: bool = False,
+        use_cann: bool = False,
+        use_dml: bool = False,
+    ):
+        if isinstance(model_dir, str) and model_dir in (
+            "PP-FormulaNet_plus-S_infer",
+            "PP-FormulaNet_plus-M_infer",
+        ):
             model_dir = get_model_path(model_dir)
-        model_dir = Path(model_dir) if model_dir else get_model_path("PP-FormulaNet_plus-M_infer")
+        model_dir = (
+            Path(model_dir)
+            if model_dir
+            else get_model_path("PP-FormulaNet_plus-M_infer")
+        )
         self._model_dir = model_dir
         self._model_path = model_dir / "inference.onnx"
         self._config_path = model_dir / "inference.yml"
@@ -291,7 +350,7 @@ class Parser:
         self._post_op = self._build_postprocess()
 
     def _build_preprocess(self) -> list[Any]:
-        ops:list[Any] = []
+        ops: list[Any] = []
         for cfg in self._config["PreProcess"]["transform_ops"]:
             key = list(cfg.keys())[0]
             args = cfg.get(key) or {}
