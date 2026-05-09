@@ -6,6 +6,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-05-09
+
+### ✨ Features
+
+- Add formula parsing modules and refactor FormulaModel
+
+### 📌 Miscellaneous
+
+- Merge branch 'main' into dev/github
+- 完善cli，以便公式可以不解析
+- 添加了pp的formula模型
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
+- 修复模型中gpu下的异常
+- 修复FormulaPP的异常
+- 添加日志
+- 添加modelscope
+- 使用PP的公式模型，速度更快
+- 更新了readme.md
+- 使用新的公式模型
+
+### 📝 Documentation
+
+- Update CHANGELOG for 0.2.3
+
+### 🔨 Chore
+
+- Bump version to 0.2.4
+
+### 🤖 CI/CD
+
+- Add --system flag to uv pip install for GitHub Actions
+- Build first, then verify from local dist before release
+- Checkout tag commit instead of hardcoded main branch
+
 ## [0.2.3] - 2026-05-06
 
 ### 🐛 Fixes
