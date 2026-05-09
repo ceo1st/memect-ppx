@@ -33,12 +33,16 @@ $uv venv -p 3.12
 $source .venv/bin/activate
 #Windows
 #.venv\Scripts\activate
+
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv pip install memect-ppx
 #安装其他依赖包，避免冲突。可选参数，默认: --gpu auto，即有显卡时自动安装对应库；如果不想安装 GPU 相关库，使用 --gpu no
 #--gpu auto|no|cuda|cann|dml
 #--headless  如果在 docker 等环境中，可能需要这个
 $ppx install
-#下载依赖模型
+#下载依赖模型。模型需要从 HuggingFace 下载，默认已经设置好代理；如需取消或改用其他地址：
+#export HF_ENDPOINT=xxx
 $ppx download
 ```
 
@@ -48,6 +52,9 @@ $ppx download
 $git clone https://github.com/memect/memect-ppx.git
 $cd memect-ppx
 $uv venv -p 3.12
+#每次代码更新后，建议执行下面 3 个步骤
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv sync --no-install-project
 $./ppx install
 $./ppx download
@@ -171,6 +178,28 @@ ppx parse <input_path> -o <output_path>
 ppx parse report.pdf -o output/
 ```
 
+## GPU 加速
+
+1. OCR
+   4090 会快一些；2080、3090 可能比现代 CPU 慢。
+
+2. Table
+   GPU 通常快 3-5 倍。
+
+3. Layout
+   GPU 通常快 3-5 倍。
+
+4. Formula
+   GPU 会快几倍，复杂公式场景可达到十几倍。因此，如果文档中有大量公式，建议在 GPU 下执行，或通过 `--formula http://xxx/v1` 配置使用大模型（Paddle / GLM）。
+
+   也可以指定本地公式识别后端：
+
+   ```bash
+   --formula mfr   # GPU 快，CPU 慢
+   --formula pp    # GPU 慢，CPU 快
+   --formula no    # 不将公式转换为 LaTeX
+   ```
+
 ### 解析单个文件
 
 ```bash
@@ -257,7 +286,7 @@ ppx parse report.pdf --backend deepseek
 
 ---
 
-## Use from python
+## Python 调用
 
 PPX 可直接作为库使用。`Parser` 设计为多次调用时全局只需要一个对象。
 
@@ -291,7 +320,7 @@ ppx parse <path> [OPTIONS]
   --backend     default | deepseek | paddle | glm   （默认：default）
   --ocr         yes | no | auto                      （默认：auto）
   --table       no | ybk | wbk | auto | llm          （默认：auto）
-  --pages       页面范围，例如 "1-5,10
+  --pages       页面范围，例如 "1-5,10"
   --mode        page | tree                  （默认：page）
   -o, --output  输出目录
 ```
@@ -320,6 +349,8 @@ report.pdf.out/
 | `doc.json` | JSON 树：文档 → 页面 → 对象，每个对象含边界框坐标 |
 | `pages/` | 逐页 Markdown 和 JSON，适合页面级处理 |
 | `images/` | 提取的图像区域；仅当文档含图形时存在 |
+
+---
 
 ## 平台支持
 
@@ -443,13 +474,15 @@ uv pip install opencv-python-headless
 ppx parse report.pdf --pages "1-5,10,15-20"
 ```
 
+---
+
 ## 产品体验
 
-pdf2x产品网页端体验: <https://pdf2x.cn/>
+pdf2x 产品网页端体验：<https://pdf2x.cn/>
 
-[免费申请API KEY](https://pdf2x.cn/api/apikey/page) 实现接口调用。
+[免费申请 API KEY](https://pdf2x.cn/api/apikey/page) 实现接口调用。
 
-小程序体验
+小程序体验：
 
 ![pdf2x 小程序码](docs/images/pdf2x.jpg)
 

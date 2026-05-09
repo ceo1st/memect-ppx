@@ -42,6 +42,8 @@
 /src/**/*.egg-info/
 /src/**/*.onnx
 
+/src/memect/models
+!/src/memect/models/__init__.py
 
 !/docker-compose.yaml
 !/.env.sample
