@@ -9,12 +9,16 @@ $uv venv -p 3.12
 $source .venv/bin/activate
 #Windows
 #.venv\Scripts\activate
+
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv pip install memect-ppx
 #安装其他依赖的包，避免冲突，可选参数，默认: --gpu auto，也就是如果有显卡的，自动安装对应的库，如果不想，--gpu no
 #--gpu auto|no|cuda|cann|dml
 #--headless  如果在docker等环境中，可能需要这个
 $ppx install
-#下载依赖的模型
+#下载依赖的模型，因为需要从huggingface中下载，默认已经设置好代理，如果需要取消或者设置其他
+#export HF_ENDPOINT=xxx
 $ppx download
 ```
 
@@ -24,6 +28,9 @@ $ppx download
 $git clone https://github.com/memect/memect-ppx.git
 $cd memect-ppx
 $uv venv -p 3.12
+#每次代码更新了，建议执行一次下面3个步骤
+#如果下载包很慢，可以如下设置
+#export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple/
 $uv sync --no-install-project
 $./ppx install
 $./ppx download
@@ -49,6 +56,26 @@ $vi conf/log.py
 #如果在配置文件中写好了路径和模型等，就不需要在命令行再指定
 $ppx parse a.pdf --backend deepseek
 ```
+
+## GPU加速
+
+1. ocr
+  4090会快一些，2080，3090可能比现代的cpu慢
+
+2. table
+   gpu快3-5倍
+
+3. layout
+   gpu快3-5倍
+
+4. formula
+  gpu快几倍，特别是对于复杂的公式，可以到达十几倍，所以，如果有大量的公式，建议在gpu下执行，
+  或者通过"--formula http://xxx/v1"  配置使用大模型(paddle/glm)
+
+  或者：--formula mfr   gpu快，cpu慢
+       --formula pp    gpu慢，cpu快
+      
+  如果不要把公式转换为latex, --formula no
 
 ## 启动模型
 

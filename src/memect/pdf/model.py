@@ -18,6 +18,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from memect.base import lists
+from memect.base import utils
 from memect.base.api import ApiError
 from memect.base.config import MPInit, get_settings
 from memect.base.debug import XDebugger
@@ -742,30 +743,82 @@ class RapidOCRModel(Model):
         return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], dtype=np.float32)
 
 
-class RapidFormulaModel(Model):
+class FormulaPPModel(Model):
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
-        #这个把pix2tex转化为onnx了
-        #需要从github上下载文件，会比较慢
-        #https://github.com/RapidAI/RapidLaTeXOCR/releases
-        from rapid_latex_ocr import LatexOCR
+        self._model=None
+        self._model_kwargs=kwargs
 
-        #kwargs = self._normalize_kwargs(kwargs)
-        self._model: Final = LatexOCR(**kwargs)
+    @override
+    def _execute(self, files: Sequence[FileInfo]):
+        if self._model is None:
+            with self._lock:
+                from memect.pdf.formula_pp import Parser
+                if self._model is None:
+                    timer = utils.Timer.start()
+                    self._model = Parser(**self._model_kwargs)
+                    self._logger.info('load fromula model,elapsed=%.3f',timer.elapsed())
+
+        results:list[Any]=[]
+        for file in files:
+            t1=time.monotonic()
+            res = self._model.parse(file.cv2_image)
+            results.append({
+                'latex':res,
+                'elapsed':time.monotonic()-t1
+            })
+        return results
+
+class FormulaModel(Model):
+    _use_lock=False
+    def __init__(self, **kwargs: Any):
+        super().__init__()
+        from memect.pdf.formula import Parser
+        self._model: Final = Parser(**kwargs)
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
         results:list[Any]=[]
         for file in files:
-            res,elapsed = self._model(file.cv2_image)
+            t1=time.monotonic()
+            res = self._model.parse(file.cv2_image)
             results.append({
                 'latex':res,
-                'elapsed':elapsed
+                'elapsed':time.monotonic()-t1
             })
         return results
 
+class MfrModel(Model):
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
+    _use_lock=False
+    def __init__(self, **kwargs: Any):
+        super().__init__()
+        #from memect.pdf.mfr import Parser
+        self._model= None #Parser(**kwargs)
+        self._model_kwargs = kwargs
 
+    @override
+    def _execute(self, files: Sequence[FileInfo]):
+        if self._model is None:
+            with self._lock:
+                if self._model is None:
+                    from memect.pdf.mfr import Parser
+                    timer = utils.Timer.start()
+                    self._model = Parser(**self._model_kwargs)
+                    self._logger.info('load formula elapsed=%.3f',timer.elapsed())
+
+        results:list[Any]=[]
+        for file in files:
+            t1 = time.monotonic()
+            res = self._model.parse(file.cv2_image)
+            results.append({
+                'latex':res,
+                'elapsed':time.monotonic()-t1
+            })
+        return results
+    
 class TableClsModel(Model):
     _use_lock=False
     def __init__(self, **kwargs: Any):
