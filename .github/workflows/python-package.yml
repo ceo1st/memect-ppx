@@ -62,11 +62,11 @@ jobs:
 
       - name: Install from local dist
         run: |
-          uv pip install dist/*.whl
+          uv pip install dist/*.whl --system
 
       - name: Install opencv
         run: |
-          uv pip install opencv-contrib-python-headless --no-config
+          uv pip install opencv-contrib-python-headless --no-config --system
 
       - name: Verify CLI entry point
         run: |
