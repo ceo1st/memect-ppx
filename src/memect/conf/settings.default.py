@@ -236,6 +236,9 @@ _layout_device: Final = get_device("layout")
 # 显卡比cpu快,cpu+openvino和cpu+onnxruntime持平
 _table_device: Final = get_device("table")
 _formula_device: Final = get_device("formula")
+#cpu+onnxruntime比cpu+openvino快，不过复杂一些的模型，都需要50秒
+#FormulaPPModel不支持cpu+openvino，必须使用onnxruntime
+_formula_device['engine']='onnxruntime'
 
 console.log(f"ocr={_ocr_device}")
 console.log(f"layout={_layout_device}")
@@ -329,8 +332,8 @@ settings: dict[str, Any] = {
                     "policy": "fifo",
                     "max_task_size": 10,
                 },
-                # paddle or glm or rapid_formula
-                "model": "formula",
+                # paddle or glm or formula-pp or formula-mfr
+                "model": get_value("ppx_formula","formula-pp"),
             },
             "table_det": {
                 # 识别表格的单元格
@@ -530,21 +533,50 @@ settings: dict[str, Any] = {
                     "use_dml": _table_device.get("use_dml", False),
                 },
             },
-            "formula": {
-                "name": "RapidFormulaModel",
+            
+            "formula-pp":{
+                #在cpu下快，在gpu下很慢
+                "name":"FormulaPPModel",
+                "kwargs":{
+                    "model_dir":get_model_path("./models/PP-FormulaNet_plus-M_infer"),
+                    #必须使用onnxruntime，不支持openvino
+                    "engine":"onnxruntime",
+                    "use_cuda":_formula_device.get('use_cuda',False),
+                    'use_cann':_formula_device.get('use_cann',False),
+                    "use_dml":_formula_device.get('use_dml',False)
+                }
+            },
+            "formula-mfr":{
+                #在cpu下慢，在gpu下快
+                "name":"MfrModel",
+                "kwargs":{
+                    "model_dir":get_model_path("./models/mfr"),
+                    "engine":_formula_device["engine"],
+                    "use_cuda":_formula_device.get('use_cuda',False),
+                    'use_cann':_formula_device.get('use_cann',False),
+                    "use_dml":_formula_device.get('use_dml',False)
+                }
+            },
+            "formula2": {
+                #目前没有使用这个模型
+                "name": "FormulaModel",
                 "kwargs": {
-                    "image_resizer_path": get_model_path(
-                        "./models/rapid_latex_ocr/image_resizer.onnx"
+                    "resizer_path": get_model_path(
+                        "./models/formula/image_resizer.onnx"
                     ),
                     "encoder_path": get_model_path(
-                        "./models/rapid_latex_ocr/encoder.onnx"
+                        "./models/formula/encoder.onnx"
                     ),
                     "decoder_path": get_model_path(
-                        "./models/rapid_latex_ocr/decoder.onnx"
+                        "./models/formula/decoder.onnx"
                     ),
-                    "tokenizer_json": get_model_path(
-                        "./models/rapid_latex_ocr/tokenizer.json"
+                    "tokenizer_path": get_model_path(
+                        "./models/formula/tokenizer.json"
                     ),
+                    'engine':_formula_device['engine'],
+                    'use_cuda':_formula_device.get('use_cuda',False),
+                    'use_cann':_formula_device.get('use_cann',False),
+                    'use_dml':_formula_device.get('use_dml',False)
                 },
             },
         },
