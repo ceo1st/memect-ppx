@@ -14,21 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 📌 Miscellaneous
 
-- Merge branch 'main' into dev/github
 - 完善cli，以便公式可以不解析
 - 添加了pp的formula模型
-- Ai debug
-- Ai debug
-- Ai debug
-- Ai debug
-- Ai debug
-- Ai debug
 - 修复模型中gpu下的异常
 - 修复FormulaPP的异常
 - 添加日志
 - 添加modelscope
 - 使用PP的公式模型，速度更快
-- 更新了readme.md
 - 使用新的公式模型
 
 ### 📝 Documentation
