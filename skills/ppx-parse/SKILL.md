@@ -1,6 +1,6 @@
 ---
-name: ppx-parse
-version: 0.2.3
+name: memect-ppx
+version: 0.2.5
 title: memect-ppx
 user-invocable: true
 description: >
