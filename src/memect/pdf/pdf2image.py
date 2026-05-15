@@ -189,6 +189,8 @@ class _Drawer2(Drawer):
 class Pdf2ImageArgs(MyBaseModel):
     provider: Annotated[Provider | None, Field(description="")] = None
     max_workers:int=4
+    max_size:tuple[int,int]=(2000,2000)
+    max_scale:float=2
     mode:str='process'
 
 class Pdf2Image:
@@ -213,6 +215,8 @@ class Pdf2Image:
 
         #如果将来支持了free-threaded，就可以使用多线程的方式执行而不需要使用多进程
         self._mode:Final=args.mode
+        self._max_size = args.max_size
+        self._max_scale = args.max_scale
         self._drawers:Final = threading.local()
         
     def _get_page_count(self, file: str | Path) -> int:
@@ -279,7 +283,7 @@ class Pdf2Image:
             }
             return
         
-        args = DrawerArgs(file=doc.file,out_dir=doc.pages_dir)
+        args = DrawerArgs(file=doc.file,out_dir=doc.pages_dir,max_scale=self._max_scale,max_size=self._max_size)
         self.execute(args,pagenos,show_progress=show_progress)
         doc.state['pdf2image']={
             'total':len(pagenos),

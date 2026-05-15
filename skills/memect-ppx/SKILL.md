@@ -1,13 +1,13 @@
 ---
-name: ppx-parse
-version: 0.2.3
+name: memect-ppx
+version: 0.2.5
 title: memect-ppx
 user-invocable: true
 description: >
-  Parse PDFs and images into Markdown/JSON using the `ppx` CLI.
+  Parse PDFs and images into Markdown/JSON using the memect-ppx (`ppx`) CLI.
   Use when the user asks to OCR scanned PDFs or screenshots, extract tables from PDFs,
   convert PDF/image to Markdown, preserve document layout, inspect parsing output.
-  Also triggers on: 解析PDF、图片转文字、扫描件识别、扫描件转文字、提取表格、
+  Also triggers on: memect-ppx、ppx parse、解析PDF、图片转文字、扫描件识别、扫描件转文字、提取表格、
   PDF转Markdown、文档解析、OCR识别、识别图片文字、解析图片、提取文档内容。
 metadata:
   openclaw:
@@ -17,7 +17,7 @@ metadata:
     homepage: https://github.com/memect/memect-ppx
 ---
 
-# PPX Parse
+# memect-ppx
 
 Use the local `ppx` CLI to parse PDFs and images into structured Markdown and JSON.
 

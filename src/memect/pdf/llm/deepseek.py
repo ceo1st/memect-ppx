@@ -9,7 +9,7 @@ from pydantic import Field
 from memect.base.bbox import BBox
 from memect.base.debug import XDebugger
 from memect.base.utils import MyBaseModel
-from memect.pdf.base import KDocument, KMarkdown, KPage, KTable
+from memect.pdf.base import KDocument,KPage, KTable, KText
 from .llm import Model, ModelArgs, Task
 
 
@@ -176,14 +176,17 @@ class Deepseek:
             if not m:
                 if text:
                     #使用一个无效的BBox，仍然保留文本
-                    page.objects.append(KMarkdown(page,BBox(0,0,0,0).to_quad(),text=text))
+                    #输出markdown不影响，输出html就不知道在哪里显示了
+                    self._logger.warning('第%s页，没有获得bbox',page.number)
+                    page.objects.append(KText.from_markdown(page,text,BBox(0,0,0,0)))
                 return
             
             type_ = normalize_type(m.group(2))
             bboxes = parse_bboxes(m.group(3))           
             if len(bboxes)==0:
+                #输出markdown不影响，输出html就不知道在哪里显示了
                 self._logger.warning('第%s页，没有获得bbox:%s',page.number,m.group())
-                page.objects.append(KMarkdown(page,BBox(0,0,0,0).to_quad(),text=text))
+                page.objects.append(KText.from_markdown(page,text,BBox(0,0,0,0) ))
             else:
                 if len(bboxes)>1:
                     self._logger.warning('第%s页，返回的bboxes有多个:%s',page.number,bboxes)
@@ -192,7 +195,7 @@ class Deepseek:
                     page.make_figure(adjust_bbox(bboxes[0]).to_quad(),add=True)
                 elif type_ == "table":
                     #获得的是html，然后可以解析为cells
-                    table = KTable(page,adjust_bbox(bboxes[0]).to_quad())
+                    table = KTable(page,adjust_bbox(bboxes[0]))
                     try:
                         table.fill_html(text)
                     except Exception:
@@ -213,8 +216,7 @@ class Deepseek:
                         #---b1-------
                         #--b2--   <图片> 
                         #所以使用合并后的bbox
-                        md = KMarkdown(page,BBox.join(bboxes).to_quad(),text=text)
-                        page.objects.append(md)
+                        page.objects.append(KText.from_markdown(page,text,BBox.join(bboxes)))
 
 
         def case1(text:str,bboxes:Sequence[BBox])->bool:
@@ -238,8 +240,8 @@ class Deepseek:
             t2 = lines[-1].strip()
 
             self._logger.warning('第%s页，一个文本返回2个bbox，所以切成2个返回:t1=%s,t2=%s',page.number,t1,t2)
-            page.objects.append(KMarkdown(page,b1.to_quad(),text=t1))
-            page.objects.append(KMarkdown(page,b2.to_quad(),text=t2))
+            page.objects.append(KText.from_markdown(page,t1,b1 ))
+            page.objects.append(KText.from_markdown(page,t2,b2))
             return True
 
 
@@ -247,5 +249,12 @@ class Deepseek:
         parse(text)
 
         if debugger.allow('draw'):
-            page.draw(('objects',page.objects),dir=f'debug/{self._name}')
+            tables:list[Any]=[]
+            i=0
+            for obj in page.objects:
+                if isinstance(obj,KTable):
+                    tables.append((f'table_{i}',obj.cells))
+                    i+=1
+                
+            page.draw(('objects',page.objects),*tables,dir=f'debug/{self._name}')
 
