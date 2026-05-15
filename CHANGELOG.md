@@ -6,6 +6,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### ✨ Features
+
+- **skill**: Rename to memect-ppx, bump to 0.2.5, add --html option
+
+### 📌 Miscellaneous
+
+- Merge branch 'dev/github' into github-main-clean
+- [fix] Comment out Tree initialization and event listener in doc.js
+- Merge branch 'main' into dev/github
+- 去掉了KMarkdown，使用KText，也支持渲染为html
+- Merge remote-tracking branch 'origin/github-main-clean' into github-main-clean
+
+### 📝 Documentation
+
+- Add --html usage examples
+
+### 🔨 Chore
+
+- Update release command to dual-scenario format
+- Track .claude/commands and update gitignore
+- Ignore scripts/ directory
+- Add .claude/commands for internal dev workflow
+- Track .claude/commands and update gitignore
+- Ignore scripts/ directory
+- Clean up redundant entries in CHANGELOG
+- Track release scripts and auto-update CHANGELOG on tag
+
 ## [0.2.4] - 2026-05-09
 
 ### ✨ Features
@@ -14,13 +43,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 📌 Miscellaneous
 
+- Merge branch 'main' into dev/github
 - 完善cli，以便公式可以不解析
 - 添加了pp的formula模型
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
+- Ai debug
 - 修复模型中gpu下的异常
 - 修复FormulaPP的异常
 - 添加日志
 - 添加modelscope
 - 使用PP的公式模型，速度更快
+- 更新了readme.md
 - 使用新的公式模型
 
 ### 📝 Documentation
