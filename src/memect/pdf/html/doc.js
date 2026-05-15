@@ -412,7 +412,7 @@ const tree = {
     }
 }
 
-const t = new Tree('#outline', tree)
-t.addEventListener('click', (e) => {
-    console.log('node clicked:', e.detail.node)
-})
+// const t = new Tree('#outline', tree)
+// t.addEventListener('click', (e) => {
+//     console.log('node clicked:', e.detail.node)
+// })
