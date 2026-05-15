@@ -20,7 +20,6 @@
 !/PPX_CLA.md
 !/pyproject.toml
 !/.gitignore
-!/.claude/
 !/.dockerignore
 !/install
 !/.gitattributes
