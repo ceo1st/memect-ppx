@@ -22,10 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 📝 Documentation
 
+- Update CHANGELOG for 0.2.5
 - Add --html usage examples
 
 ### 🔨 Chore
 
+- Rename skill dir ppx-parse → memect-ppx, improve search discoverability
 - Update release command to dual-scenario format
 - Track .claude/commands and update gitignore
 - Ignore scripts/ directory
