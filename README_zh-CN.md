@@ -86,6 +86,9 @@ $ppx parse a.pdf --backend deepseek
 PPX 默认使用 pipeline 模式；指定 `-o output/` 时，解析结果通常写入
 `output/doc.md`。
 
+如果还需要导出 HTML，可加上 `--html`。启用后，PPX 会在输出目录中额外生成
+`doc.html`。
+
 
 ---
 
@@ -214,6 +217,9 @@ ppx parse report.pdf --ocr no
 
 # 解析图片
 ppx parse scan.png
+
+# 同时导出 HTML
+ppx parse report.pdf -o output/ --html
 ```
 
 ### 解析表格
@@ -320,9 +326,17 @@ ppx parse <path> [OPTIONS]
   --backend     default | deepseek | paddle | glm   （默认：default）
   --ocr         yes | no | auto                      （默认：auto）
   --table       no | ybk | wbk | auto | llm          （默认：auto）
+  --html        输出 HTML 文件（`doc.html`）
+  --json        输出结构化 JSON 文件（`doc.json`）
   --pages       页面范围，例如 "1-5,10"
   --mode        page | tree                  （默认：page）
   -o, --output  输出目录
+```
+
+HTML 示例：
+
+```bash
+./ppx parse example/专利证书_1.pdf -o output/ --html
 ```
 
 其他子命令：
@@ -338,6 +352,7 @@ ppx start               启动 HTTP API 服务
 ```text
 report.pdf.out/
 ├── doc.md          # 完整文档的 Markdown
+├── doc.html        # 开启 --html 时额外生成的 HTML
 ├── doc.json        # 完整结构化数据，含每对象坐标
 ├── pages/          # 逐页拆分（每页一条记录）
 └── images/         # 提取的图形/图片（检测到图形时存在）
@@ -346,6 +361,7 @@ report.pdf.out/
 | 路径 | 说明 |
 | ---- | ---- |
 | `doc.md` | 含图形引用的 Markdown |
+| `doc.html` | 通过 `--html` 生成的可预览 / 可导出的 HTML |
 | `doc.json` | JSON 树：文档 → 页面 → 对象，每个对象含边界框坐标 |
 | `pages/` | 逐页 Markdown 和 JSON，适合页面级处理 |
 | `images/` | 提取的图像区域；仅当文档含图形时存在 |
