@@ -125,10 +125,8 @@ class Parser:
                 doc.write("doc.docx", data)
 
             if doc.params.html:
-                # 一个是给开发用的
-                # 一个是给用户可以直接看的，纯静态的
-                # TODO
-                doc.write("doc.html", "<html></html>")
+                from .html import HtmlRenderer
+                doc.write("doc.html",HtmlRenderer().render(doc))
 
             if doc.params.markdown:
                 doc.write("doc.md", doc.markdown())
