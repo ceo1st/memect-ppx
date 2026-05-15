@@ -6,13 +6,9 @@ build-backend = "setuptools.build_meta"
 target-version = "py312"
 
 [project]
-name = 'memect-ppx'
-description = 'memect-ppx 是一个 PDF / 图片文档解析工具，将输入文件转换为结构化的 Markdown、JSON。支持本地模型（默认）和多种 LLM 后端（DeepSeek、PaddleOCR、GLM等），适用于高精度文档理解场景。'
-readme = "README.md"
-license = "PolyForm-Noncommercial-1.0.0"
-dynamic = ["version"]
+name = 'ppx'
+version = '0.1'
 requires-python = ">= 3.12"
-classifiers = []
 dependencies = [
     "anyio>=4.12.1",
     "beautifulsoup4>=4.14.3",
@@ -51,13 +47,6 @@ dependencies = [
     "huggingface_hub",
     "modelscope"
 ]
-
-[project.urls]
-Documentation = "https://github.com/memect/memect-ppx#readme"
-Homepage = "https://pdf2x.cn/"
-Issues = "https://github.com/memect/memect-ppx/issues"
-License = "https://github.com/memect/memect-ppx/blob/HEAD/LICENSE"
-Repository = "https://github.com/memect/memect-ppx"
 
 [project.scripts]
 # 格式: "命令名 = "Python模块路径:函数名""
@@ -105,41 +94,4 @@ override-dependencies = [
     "torch;sys_platform == 'never'",
     "torchvision;sys_platform == 'never'",
 ]
-
-constraint-dependencies = [
-    "polars>=1.40"
-]
-conflicts = [[{ extra = "cuda" }, { extra = "cann" }]]
-
-[tool.setuptools.dynamic]
-version = { file = "version.txt" }
-
-[tool.setuptools]
-include-package-data = true
-py-modules = ["ppx"]
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-"memect.web" = [
-    "index.html",
-    "index.css",
-    "index.js",
-    "package.json",
-    "favicon.ico",
-    "favicon-16x16.png",
-    "favicon-32x32.png",
-    "admin/*.html",
-    "libs/**/*",
-]
-"memect.pdf.html" = [
-    "doc.html",
-    "doc.js",
-]
-"memect.pdf.fonts" = [
-    "*.ttf",
-    "*.ttc",
-    "sans-serif/*.ttc",
-    "serif/*.ttc",
-]
+constraint-dependencies = ["polars>=1.40"]

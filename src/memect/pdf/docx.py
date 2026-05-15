@@ -2,7 +2,7 @@
 
 import io
 
-from .base import KDocument, KFigure, KFormula, KMarkdown, KTable, KText
+from .base import KDocument, KFigure, KFormula, KTable, KText
 
 
 class DocxBuilder:
@@ -23,8 +23,7 @@ class DocxBuilder:
                         #可以使用固定的字体大小，或者计算一个大概的
                         
                         pass
-                    elif isinstance(obj,KMarkdown):
-                        pass
+
                     elif isinstance(obj,KFigure):
                         pass
                     elif isinstance(obj,KFormula):
