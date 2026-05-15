@@ -479,45 +479,7 @@ const tree2 = {
     }
 }
 
-tree = new Tree('#outline', data.tree,{defaultExpanded:false})
-let lastXID = null
-tree.addEventListener('click', (e) => {
-    console.log('node clicked:', e.detail.node)
-    const number = e.detail.node.number
-    if (typeof number == 'number') {
-        document.querySelector(`.page[data-number="${number}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' })
-        return
-    }
-
-    const xid = e.detail.node.xid
-    const els = document.querySelector('.doc').querySelectorAll(`[data-xid="${xid}"]`)
-    if (els.length > 0) {
-        els[0].scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-
-})
-
-tree.addEventListener('active',(e)=>{
-    console.log('active',e)
-    const xid = e.detail.node.xid
-    const els = document.querySelector('.doc').querySelectorAll(`[data-xid="${xid}"]`)
-    if (lastXID !== xid) {
-        document.querySelector('.doc').querySelectorAll(`[data-xid="${lastXID}"]`).forEach(el => {
-            el.classList.remove('object-highlight')
-        })
-    }
-    lastXID = xid
-    
-    if (els.length > 0) {
-        els.forEach(el => {
-            //可以添加一个class，如：object-selected
-            el.classList.toggle('object-highlight')
-        })
-    }
-
-
-})
-
-if (!CSS.supports('selector(&)')) {
-    alert('您的浏览器不支持最新的css语法，请使用新版本的浏览器，Chrome 112+、Firefox 117+、Safari 16.5+')
-}
+// const t = new Tree('#outline', tree)
+// t.addEventListener('click', (e) => {
+//     console.log('node clicked:', e.detail.node)
+// })
