@@ -20,7 +20,7 @@ from memect.pdf.base import (
     KText,
     KTextline,
 )
-from memect.pdf.xbase import XNode
+from memect.pdf.x.xbase import XNode
 
 type _BBox = Sequence[float]  # tuple[float,float,float,float,float,float]
 type _Offset = tuple[float, float]
