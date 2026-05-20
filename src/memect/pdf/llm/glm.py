@@ -141,14 +141,8 @@ class GLM:
         # 第二步，切割页面对象调用llm识别获得结果
         self._llm_model.parse(self._llm_key, doc)
 
-        # 根据两步的结果进行处理
-        buf: list[str] = []
-        for page in doc.pages:
-            if page.skipped:
-                continue
-
-            text = self._parse_page(page)
-            buf.append(text)
+        for page in doc.working_pages:
+            self._parse_page(page)
 
     def _parse_layout(self, doc: KDocument):
         #debugger = self._debugger.bind()
@@ -158,7 +152,7 @@ class GLM:
             page.load_layout(page.cache.pop(name))
             
 
-    def _parse_page(self, page: KPage) -> str:
+    def _parse_page(self, page: KPage):
         #doc: Final = page.doc
         debugger: Final = self._debugger.bind(page=page.number)
         # 必须存在，如果不存在，不应该执行到这里
@@ -199,8 +193,6 @@ class GLM:
                         latex=KFormula.normalize(text),
                         filename=figure.filename,
                     )
-                formula.llm_text=text
-                formula.raw_text=raw_text
                 formula.vobject = vobj
                 page.objects.append(
                     formula
@@ -211,9 +203,7 @@ class GLM:
         def parse_text(vobj: VObject, text: str,raw_text:str):
             # 根据vobj.raw_type设计markdown的level？
             #返回的是markdown，如：#xxx$xxx$，还有行内公式
-            md = KText.from_markdown(page,text,vobj.quad)
-            md.llm_text=text
-            md.raw_text=text
+            md = KText.from_markdown(page,vobj.quad,text)
             md.vobject=vobj
             page.objects.append(md)
 
@@ -251,7 +241,6 @@ class GLM:
         if debugger.allow("draw"):
             page.draw(('raw_vobjects',page.raw_vobjects),('vobjects',page.vobjects),('objects',page.objects),dir=f"debug/{self.name}")
 
-        return page.markdown()
     
     def _clean_text(self,text:str|None)->str:
         """对模型返回的text进行一些清洗"""

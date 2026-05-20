@@ -37,6 +37,12 @@ function initPage(page) {
     //.text中可能包含inline公式，还可以渲染，但是需要使用引入第三方的库
     //el.innerHTML=renderLatex(el.textContent)
 
+    if (true) {
+        page.querySelectorAll('.body >.text').forEach((el) => {
+            el.innerHTML = convertInlineMath(el.textContent)
+        })
+    }
+
     //先批量生成公式
     const formulas = Array.from(page.querySelectorAll('.formula')).map(el => ({
         el,
@@ -149,6 +155,7 @@ const scaleInput = document.getElementById('scale-input')
 const bgInput = document.getElementById('bg-input')
 const layoutInput = document.getElementById('layout-input')
 const showPageNumberInput = document.getElementById('show-page-number-input')
+const showPageSectionInput = document.getElementById('show-page-section-input')
 const viewer = document.querySelector('.viewer')
 
 // 程序化滚动期间，屏蔽 observer 对 currentNumber 的反向更新
@@ -223,6 +230,11 @@ function bindInputs() {
         if (showPageNumberInput.checked) doc.dataset.showPageNumber = ''
         else delete doc.dataset.showPageNumber
     })
+
+        showPageSectionInput.addEventListener('change', () => {
+        if (showPageSectionInput.checked) doc.dataset.showPageSection = ''
+        else delete doc.dataset.showPageSection
+    })
 }
 
 function initEvents() {
@@ -254,16 +266,16 @@ function initEvents() {
     pages.forEach(el => observer.observe(el))
 
 
-    
+
     document.addEventListener('dblclick', (ev) => {
         const formulaEl = ev.target.closest('.formula')
         if (formulaEl) {
             const dlg = document.getElementById('dlg');
-            dlg.innerHTML=window.katex.renderToString(formulaEl.dataset.latex,{})
+            dlg.innerHTML = window.katex.renderToString(formulaEl.dataset.latex, {})
             dlg.showModal()
         }
     })
-    
+
     const dlg = document.getElementById('dlg');
     dlg.addEventListener('click', (e) => {
         // dialog 本身是遮罩层，点击内容区不会触发
@@ -384,7 +396,7 @@ syncToView()
 bindInputs()
 initEvents()
 
-const tree = {
+const tree2 = {
     root: {
         text: 'root',
         children: [
@@ -412,7 +424,35 @@ const tree = {
     }
 }
 
-const t = new Tree('#outline', tree)
+const t = new Tree('#outline', data.tree)
+let lastXID = null
 t.addEventListener('click', (e) => {
     console.log('node clicked:', e.detail.node)
+    const number = e.detail.node.number
+    if(typeof number=='number'){
+        document.querySelector(`.page[data-number="${number}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+    }
+    const xid = e.detail.node.xid
+    const els = document.querySelectorAll(`[data-xid="${xid}"]`)
+    if (lastXID !== xid) {
+        document.querySelectorAll(`[data-xid="${lastXID}"]`).forEach(el => {
+            el.classList.remove('object-highlight')
+        })
+    }
+    lastXID = xid
+    if (els.length > 0) {
+        els[0].scrollIntoView({ behavior: 'smooth', block: 'start' })
+        els.forEach(el => {
+            //可以添加一个class，如：object-selected
+            el.classList.toggle('object-highlight')
+        })
+
+       
+    }
+
 })
+
+if(!CSS.supports('selector(&)')){
+  alert('您的浏览器不支持最新的css语法，请使用新版本的浏览器，Chrome 112+、Firefox 117+、Safari 16.5+')
+}

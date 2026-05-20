@@ -34,7 +34,7 @@ class TableBuilder:
         tq = _bbox_to_quad(*table_bbox)
         if not cells:
             table= KTable(page, tq, row_num=1, col_num=1)
-            table.cells.append(KCell(page,tq,row_index=1,col_index=1))
+            table.cells.append(KCell(page,tq,row_index=0,col_index=0))
             return table
 
         heights = [y1 - y0 for _, y0, _, y1 in cells]

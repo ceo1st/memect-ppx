@@ -45,7 +45,8 @@ dependencies = [
     "pyclipper>=1.4.0",
     "rapidfuzz>=3.14.5",
     "huggingface_hub",
-    "modelscope"
+    "modelscope",
+    "anthropic"
 ]
 
 [project.scripts]
