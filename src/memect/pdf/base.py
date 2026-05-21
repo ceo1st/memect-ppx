@@ -1418,14 +1418,15 @@ class KPage:
             bbox=section.bbox
             objs = bbox.get(self.objects,ratio=0.8)
             objs.sort(key=lambda obj:obj.bbox.y1,reverse=True)
-            y0=None
+            idx=0
             for i,obj in enumerate(objs):
                 if obj.bbox.x1>=x+5:
-                    y0=obj.bbox.y1
+                    idx=i
                     break
             
-            if y0 is None:
+            if idx==0:
                 return []
+            y0=objs[idx].bbox.y1
             left_bbox=bbox.adjust(x1=x,y0=y0+1)
             bottom_bbox=bbox.adjust(y1=y0)
             section1 = KSection(self,[left_bbox])
@@ -1447,12 +1448,10 @@ class KPage:
                 return
             
             if self.number<=1:
-                print('aaaa',self.number)
                 return
             
             prev_page = self.doc.get_working_page(self.number-1)
             if prev_page is None or len(prev_page.sections)<1 or abs(prev_page.width-self.width)>=5:
-                print('jjjj',self.number,prev_page)
                 return
             
             section = sections[0]
@@ -1460,7 +1459,6 @@ class KPage:
 
             #TODO 目前仅仅支持双栏的
             if not (prev_section.col_num==2 and section.col_num<prev_section.col_num):
-                print('ccccc',self.number)
                 return
             
             #a1|a2
@@ -1479,10 +1477,8 @@ class KPage:
                 #目前仅仅支持双栏且左右相等
                 new_sections = cut(section,self.bbox.cx)
                 if len(new_sections)!=2:
-                    print('jjjxx',self.number)
                     return
-                
-                
+
                 del sections[0]
                 sections.insert(0,new_sections[0])
                 sections.insert(1,new_sections[1])
