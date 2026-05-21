@@ -88,6 +88,8 @@ class Deepseek:
         self._model.parse(self._llm_key,doc)
         for page in doc.working_pages:
             self._parse_page(page)
+            
+        #TODO 可以建立分栏的信息，章节树需要
 
     def _parse_page(self,page:KPage):
         debugger:Final=self._debugger.bind(page=page.number)
@@ -178,7 +180,7 @@ class Deepseek:
                     #使用一个无效的BBox，仍然保留文本
                     #输出markdown不影响，输出html就不知道在哪里显示了
                     self._logger.warning('第%s页，没有获得bbox',page.number)
-                    page.objects.append(KText.from_markdown(page,text,BBox(0,0,0,0)))
+                    page.objects.append(KText.from_markdown(page,BBox(0,0,0,0),text))
                 return
             
             type_ = normalize_type(m.group(2))
@@ -186,7 +188,7 @@ class Deepseek:
             if len(bboxes)==0:
                 #输出markdown不影响，输出html就不知道在哪里显示了
                 self._logger.warning('第%s页，没有获得bbox:%s',page.number,m.group())
-                page.objects.append(KText.from_markdown(page,text,BBox(0,0,0,0) ))
+                page.objects.append(KText.from_markdown(page,BBox(0,0,0,0),text))
             else:
                 if len(bboxes)>1:
                     self._logger.warning('第%s页，返回的bboxes有多个:%s',page.number,bboxes)
@@ -216,7 +218,7 @@ class Deepseek:
                         #---b1-------
                         #--b2--   <图片> 
                         #所以使用合并后的bbox
-                        page.objects.append(KText.from_markdown(page,text,BBox.join(bboxes)))
+                        page.objects.append(KText.from_markdown(page,BBox.join(bboxes),text))
 
 
         def case1(text:str,bboxes:Sequence[BBox])->bool:
@@ -240,8 +242,8 @@ class Deepseek:
             t2 = lines[-1].strip()
 
             self._logger.warning('第%s页，一个文本返回2个bbox，所以切成2个返回:t1=%s,t2=%s',page.number,t1,t2)
-            page.objects.append(KText.from_markdown(page,t1,b1 ))
-            page.objects.append(KText.from_markdown(page,t2,b2))
+            page.objects.append(KText.from_markdown(page,b1,t1 ))
+            page.objects.append(KText.from_markdown(page,b2,t2))
             return True
 
 

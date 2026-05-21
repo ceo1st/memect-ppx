@@ -4,10 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Concatenate,
     Final,
     Mapping,
     NotRequired,
+    Protocol,
+    Self,
     Sequence,
     TypedDict,
 )
@@ -32,7 +35,7 @@ from memect.pdf.base import (
     KObject,
     KPage,
     KSpan,
-    KTextbox,
+    KText,
     OCRMode,
     PageType,
     ParseMode,
@@ -49,7 +52,7 @@ from .footnote import PageFootnoteParser
 from .header import PageHeaderParser
 from .pdf import PdfParser, PdfParserArgs
 from .table.parser import TableParser
-from .tree.parser import TreeParser
+
 
 
 class _OCRSpan(TypedDict):
@@ -74,18 +77,21 @@ class DefaultParserArgs(MyBaseModel):
     # image: ImageParserArgs = Field(default_factory=ImageParserArgs)
     pdf: PdfParserArgs = Field(default_factory=PdfParserArgs)
 
+class _A(Protocol):
+    _logger:logging.Logger
 
-def log[**P,T](fn:Callable[Concatenate[Any,KDocument,P],T]):
+
+def log[S:_A,**P,T](fn:Callable[Concatenate[S,KDocument,P],T])->Callable[Concatenate[S, KDocument, P], T]:
 
     @functools.wraps(fn)
-    def wrapper(self,doc:KDocument,*args:P.args,**kwargs:P.kwargs)->T:
+    def wrapper(self:S,doc:KDocument,*args:P.args,**kwargs:P.kwargs)->T:
         name = fn.__name__
         timer = utils.Timer.start()
         try:
-            self._logger.info(f'start {name}',stacklevel=2)
+            self._logger.info('start %s',name,stacklevel=2)
             return fn(self,doc,*args,**kwargs)
         finally:
-            self._logger.info(f'end {name},elapsed=%.3f',timer.elapsed(),stacklevel=2)
+            self._logger.info('end %s,elapsed=%.3f',name,timer.elapsed(),stacklevel=2)
             doc.state[name]={
                 'elapsed':timer.elapsed()
             }
@@ -119,8 +125,6 @@ class DefaultParser:
         self._footnote_parser: Final = PageFootnoteParser()
         self._block_parser:Final = BlockParser()
 
-        self._tree_parser: Final = TreeParser()
-
     def parse(self, doc: KDocument):
         timer = utils.Timer.start()
 
@@ -145,19 +149,17 @@ class DefaultParser:
             self._footnote_parser.parse(doc)
             self._block_parser.parse(doc)
             self._sort(doc)
-            # TODO 如果有些排版是使用大表格的，这里也尝试还原？
-            if doc.params.mode == ParseMode.TREE:
-                # 按页然后再解析章节树
-                self._tree_parser.parse(doc)
-            else:
-                #
+            #TODO 再考虑跨栏/跨页的情况，对齐表格，或者把某些文本转换为表格
+            #因为后续章节树分析，合并跨页表格需要
+            #TODO 不管后续是否需要解析章节树，都需要做处理的
+            if doc.params.mode==ParseMode.TREE:
                 pass
     
     @log
     def _parse_layout(self, doc: KDocument):
         """版面分析"""
         debugger = self._debugger.bind()
-        self._layout_model.parse(doc, self._layout_key)
+        self._layout_model.parse(doc, self._layout_key,batch_size=10)
         for page in doc.working_pages:
             page.load_layout(page.cache.pop(self._layout_key))
             if debugger.allow("draw", page=page.number):
@@ -504,6 +506,7 @@ class DefaultParser:
             self._ocr_key,
             multi=method == 2,
             handler=lambda page: handler(page, method),
+            batch_size=10
         )
         if method == 1:
             # 解析为对象
@@ -517,7 +520,7 @@ class DefaultParser:
         debugger = self._debugger.bind()
         verbose = True
 
-        def parse_underline(tb:KTextbox):
+        def parse_underline(tb:KText):
             lines = tb.bbox.adjust(y0=tb.bbox.y0-3).get(tb.page.pdf_lines,ratio=0.9)
             tls = tb.lines
             for i,tl in enumerate(tls):
@@ -560,7 +563,7 @@ class DefaultParser:
                 return
             # TODO 如果包含有ocr chars，全部或者部分，可以调整一下ocr chars的bbox，对齐和美观（因为ocr识别
             # 即使在同一行，同样的字体，大小等，识别出来的bbox还是不一定一致）
-            tb = KTextbox.from_objects(objs)
+            tb = KText.from_objects(objs)
             if tb is not None:
                 tb.vobject = vobj
                 parse_underline(tb)

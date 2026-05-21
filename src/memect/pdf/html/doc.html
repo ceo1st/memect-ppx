@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+Mono:wght@400;700&display=swap"
         rel="stylesheet">
-   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
     <style>
         :root {
@@ -57,82 +57,79 @@
             border-bottom: 1px solid #e4e7eb;
             box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
             user-select: none;
-        }
 
-        .toolbar>div {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
+            &>div {
+                display: flex;
+                align-items: center;
+                gap: 6px;
 
-        .toolbar>div>span {
-            color: #6b7280;
-        }
+                &>span {
+                    color: #6b7280;
+                }
+            }
 
-        .toolbar input[type="number"] {
-            width: 76px;
-            height: 28px;
-            padding: 0 4px 0 8px;
-            box-sizing: border-box;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            background: #fff;
-            font: inherit;
-            color: inherit;
-            text-align: left;
-            transition: border-color 0.15s, box-shadow 0.15s;
-        }
+            & input[type="number"] {
+                width: 76px;
+                height: 28px;
+                padding: 0 4px 0 8px;
+                padding-right: 4px;
+                box-sizing: border-box;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                background: #fff;
+                font: inherit;
+                color: inherit;
+                text-align: left;
+                transition: border-color 0.15s, box-shadow 0.15s;
 
-        .toolbar input[type="number"]:hover {
-            border-color: #9ca3af;
-        }
+                &:hover {
+                    border-color: #9ca3af;
+                }
 
-        .toolbar input[type="number"]:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-        }
+                &:focus {
+                    outline: none;
+                    border-color: #3b82f6;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+                }
 
-        /* 让 spinner 始终显示且更易点击 */
-        .toolbar input[type="number"] {
-            padding-right: 4px;
-        }
+                /* 让 spinner 始终显示且更易点击 */
+                &::-webkit-inner-spin-button {
+                    opacity: 1;
+                    cursor: pointer;
+                    height: 22px;
+                }
+            }
 
-        .toolbar input[type="number"]::-webkit-inner-spin-button {
-            opacity: 1;
-            cursor: pointer;
-            height: 22px;
-        }
+            & input[type="color"] {
+                width: 32px;
+                height: 28px;
+                padding: 2px;
+                box-sizing: border-box;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                background: #fff;
+                cursor: pointer;
+                transition: border-color 0.15s, box-shadow 0.15s;
 
-        .toolbar input[type="color"] {
-            width: 32px;
-            height: 28px;
-            padding: 2px;
-            box-sizing: border-box;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            background: #fff;
-            cursor: pointer;
-            transition: border-color 0.15s, box-shadow 0.15s;
-        }
+                &:hover {
+                    border-color: #9ca3af;
+                }
 
-        .toolbar input[type="color"]:hover {
-            border-color: #9ca3af;
-        }
+                &:focus {
+                    outline: none;
+                    border-color: #3b82f6;
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+                }
 
-        .toolbar input[type="color"]:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-        }
+                &::-webkit-color-swatch-wrapper {
+                    padding: 0;
+                }
 
-        .toolbar input[type="color"]::-webkit-color-swatch-wrapper {
-            padding: 0;
-        }
-
-        .toolbar input[type="color"]::-webkit-color-swatch {
-            border: none;
-            border-radius: 3px;
+                &::-webkit-color-swatch {
+                    border: none;
+                    border-radius: 3px;
+                }
+            }
         }
 
         .workspace {
@@ -160,11 +157,11 @@
             background: #e4e7eb;
             flex: 0 0 auto;
             transition: background 0.15s;
-        }
 
-        .splitter:hover,
-        .splitter.dragging {
-            background: #3b82f6;
+            &:hover,
+            &.dragging {
+                background: #3b82f6;
+            }
         }
 
         .viewer {
@@ -185,11 +182,30 @@
             /*border: 4px solid red;*/
             box-sizing: border-box;
             margin: auto;
-
+            justify-content: center;
+            align-items: center;
             display: flex;
             flex-direction: column;
             gap: 10px;
             padding: 10px;
+
+            &[data-show-layout] {
+                & .page>.body> :is(.textbox, .figure, .table, .formula, .text, .markdown) {
+                    outline: 2px solid #cd8c77;
+                }
+
+                & .read-order {
+                    display: block;
+                }
+            }
+
+            &[data-show-page-number] .page-number {
+                display: block;
+            }
+
+            &[data-show-page-section] .section {
+                display: block;
+            }
         }
 
         .page {
@@ -198,6 +214,11 @@
             box-sizing: content-box;
             content-visibility: auto;
 
+            scroll-margin-top: 20px;
+            
+            &>.body>* {
+                scroll-margin-top: 20px;
+            }
         }
 
         .page-number {
@@ -209,16 +230,16 @@
             font-size: 16px;
             font-family: monospace;
             border-radius: 2px;
-        }
 
-        .page-number[data-position="top"] {
-            left: 5px;
-            top: 5px;
-        }
+            &[data-position="top"] {
+                left: 5px;
+                top: 5px;
+            }
 
-        .page-number[data-position="bottom"] {
-            left: 5px;
-            bottom: 5px;
+            &[data-position="bottom"] {
+                left: 5px;
+                bottom: 5px;
+            }
         }
 
         .table {
@@ -226,53 +247,51 @@
             position: absolute;
             table-layout: fixed;
 
-        }
+            & td {
+                border: 1px solid gray;
+                box-sizing: border-box;
 
-        .table td {
-            border: 1px solid gray;
-            box-sizing: border-box;
-        }
+                & .text {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                }
+            }
 
-        .table td .text {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-        }
+            &[data-subtype="wbk"] td {
+                border-style: dashed;
+            }
 
-        .table[data-subtype="wbk"] td {
-            border-style: dashed;
-        }
-
-        .table:hover {
-            outline: 2px solid sandybrown;
+            &:hover {
+                outline: 2px solid sandybrown;
+            }
         }
 
         .figure {
             position: absolute;
             display: block;
-        }
 
-        .figure:hover {
-            outline: 2px solid sandybrown;
+            &:hover {
+                outline: 2px solid sandybrown;
+            }
         }
 
         .formula {
             position: absolute;
-            display: block;
-            overflow: hidden;
             display: flex;
+            overflow: hidden;
             justify-content: center;
             align-items: center;
-        }
 
-        .formula > img{
-            width: 100%;
-            height: 100%;
-        }
+            &>img {
+                width: 100%;
+                height: 100%;
+            }
 
-        .formula:hover {
-            outline: 2px solid sandybrown;
+            &:hover {
+                outline: 2px solid sandybrown;
+            }
         }
 
         .text {
@@ -282,15 +301,22 @@
             overflow: hidden;
         }
 
-        .markdown {
-            position: absolute;
-            font-family: var(--font-mono);
-            font-size: 10px;
-            overflow: hidden;
-        }
+
 
         .textbox {
             position: absolute;
+
+            &:hover {
+                outline: 2px solid sandybrown;
+
+                & .textline:not(:last-child) {
+                    box-shadow: 0 2px 0 0 #ccc;
+                }
+
+                & .span:not(:last-child) {
+                    box-shadow: 2px 0 0 0 yellow;
+                }
+            }
         }
 
         .textline {
@@ -305,39 +331,29 @@
             word-break: keep-all;
             line-height: 1em;
             color: #000000;
-        }
 
-        .span-monospace {
-            font-family: var(--font-mono);
-        }
+            &.span-monospace {
+                font-family: var(--font-mono);
+            }
 
-        .span-serif {
-            font-family: var(--font-serif);
-        }
+            &.span-serif {
+                font-family: var(--font-serif);
+            }
 
-        .span-sans {
-            font-family: var(--font-sans);
-        }
-
-
-        .textbox:hover {
-            outline: 2px solid sandybrown;
-        }
-
-
-
-        .textbox:hover .textline:not(:last-child) {
-            box-shadow: 0 2px 0 0 #ccc;
-        }
-
-        .textbox:hover .span:not(:last-child) {
-            box-shadow: 2px 0 0 0 yellow;
+            &.span-sans {
+                font-family: var(--font-sans);
+            }
         }
 
         .body {
             position: absolute;
             width: max-content;
             height: max-content;
+            box-sizing: border-box;
+        }
+
+        .block {
+            position: absolute;
             box-sizing: border-box;
         }
 
@@ -359,7 +375,7 @@
         .unknown {
             position: absolute;
             box-sizing: border-box;
-            border: 2px solid yellow
+            border: 2px solid yellow;
         }
 
         .read-order {
@@ -374,17 +390,25 @@
             display: none;
         }
 
-        .doc[data-show-layout] .page>.body> :is(.textbox, .figure, .table, .formula, .text, .markdown) {
-            outline: 2px solid #cd8c77;
+        .object-highlight {
+            /*选择节点的时候，同步高亮对应的页面对象*/
+            outline: 2px solid blueviolet !important;
         }
 
-        .doc[data-show-layout] .read-order {
-            display: block;
+        .section{
+            display: none;
+            position: absolute;
+            box-sizing: border-box;
+            outline: 2px solid grey;
+        }
+        .column{
+            position: absolute;
+            box-sizing: border-box;
+            background-color: rebeccapurple;
+            opacity: 0.1;
         }
 
-        .doc[data-show-page-number] .page-number {
-            display: block;
-        }
+        
     </style>
 
     <style>
@@ -403,18 +427,41 @@
             font-size: 13px;
             color: var(--tree-color);
             width: max-content;
+
+            &,
+            & ul {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+
+            & ul {
+                /* 子节点缩进 */
+                padding-left: var(--tree-indent);
+            }
         }
 
-        .tree,
-        .tree ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
+        .tree-node {
+            &.active>.tree-node-row {
+                background: var(--tree-active);
+                color: var(--tree-active-color);
+            }
 
-        .tree ul {
-            /* 子节点缩进 */
-            padding-left: var(--tree-indent);
+            &.expanded>.tree-node-row>.tree-toggle {
+                transform: rotate(90deg);
+            }
+
+            &.leaf>.tree-node-row>.tree-toggle {
+                visibility: hidden;
+            }
+
+            &>ul {
+                display: none;
+            }
+
+            &.expanded>ul {
+                display: block;
+            }
         }
 
         .tree-node-row {
@@ -426,15 +473,10 @@
             cursor: pointer;
             user-select: none;
             gap: 4px;
-        }
 
-        .tree-node-row:hover {
-            background: var(--tree-hover);
-        }
-
-        .tree-node.active>.tree-node-row {
-            background: var(--tree-active);
-            color: var(--tree-active-color);
+            &:hover {
+                background: var(--tree-hover);
+            }
         }
 
         .tree-toggle {
@@ -446,19 +488,11 @@
             color: var(--tree-muted);
             flex: 0 0 auto;
             transition: transform 0.15s;
-        }
 
-        .tree-toggle::before {
-            content: '▶';
-            font-size: 9px;
-        }
-
-        .tree-node.expanded>.tree-node-row>.tree-toggle {
-            transform: rotate(90deg);
-        }
-
-        .tree-node.leaf>.tree-node-row>.tree-toggle {
-            visibility: hidden;
+            &::before {
+                content: '▶';
+                font-size: 9px;
+            }
         }
 
         .tree-label {
@@ -466,14 +500,6 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-        }
-
-        .tree-node>ul {
-            display: none;
-        }
-
-        .tree-node.expanded>ul {
-            display: block;
         }
     </style>
 
@@ -496,6 +522,9 @@
             </div>
             <div class="toolbar-page-layout">
                 <label><input type="checkbox" id="layout-input"> 布局</label>
+            </div>
+            <div class="toolbar-show-page-section">
+                <label><input type="checkbox" id="show-page-section-input">分栏</label>
             </div>
             <div class="toolbar-show-page-number">
                 <label><input type="checkbox" id="show-page-number-input"> 页码</label>
