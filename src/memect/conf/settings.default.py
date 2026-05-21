@@ -637,6 +637,20 @@ settings: dict[str, Any] = {
             "image": {},
             "table": {"ybk": {}, "wbk": {}, "llm": {}},
         },
+        "tree":{
+            "llm":{
+                #or anthropic
+                "provider":"openai",
+                "base_url":"",
+                "api_key":"",
+                "model":"",
+                "tempeature":0,
+                "max_tokens":2000
+            },
+            'default':{
+                
+            }
+        }
     },
     "pdf_service": {
         # 上传的文件的保存目录
