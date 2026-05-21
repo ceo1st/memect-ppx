@@ -51,7 +51,7 @@ dependencies = [
     "huggingface_hub",
     "modelscope",
     "anthropic",
-    "tokenizers>=0.23.1",
+    "tokenizers>=0.22.2"
 ]
 
 [project.urls]
