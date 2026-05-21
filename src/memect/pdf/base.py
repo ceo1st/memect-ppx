@@ -664,7 +664,7 @@ class KDocument:
             data['pages']=[page.jsonify(lite=True) for page in self.pages]
             data['tree']=self.tree.jsonify()
         else:
-            data['pages']=[page.jsonify(lite=True) for page in self.pages]
+            data['pages']=[page.jsonify() for page in self.pages]
         
         #data['execute']={}
         return data
@@ -1499,17 +1499,17 @@ class KPage:
             section = parse_section(new_blocks)
             sections.append(section)
         
-        ok=True
-        for fn in [check1,check2]:
-            if not fn(sections):
-                ok=False
-                break
-        
-        if ok:
+        if len(sections)>0 and all(fn(sections) for fn in [check1,check2]):
             fix1(sections)
             self._sections=tuple(sections)
         else:
-            self._sections=tuple()
+            #如果不能够分节成功，就仅仅作为一节，不影响阅读理解，章节树分析
+            #只是影响docx的生成
+            if blocks:
+                default_section=KSection(self,[BBox.join(blocks)])
+                self._sections=(default_section,)
+            else:
+                self._sections=tuple()
             
 
 
