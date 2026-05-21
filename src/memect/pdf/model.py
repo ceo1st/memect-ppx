@@ -705,6 +705,9 @@ class RapidOCRModel(Model):
         return results
 
 
+
+
+
     def _shrink_bbox_any_bg(
         self,
         image: np.ndarray,
@@ -716,20 +719,56 @@ class RapidOCRModel(Model):
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
 
-        # ── 用梯度检测文字边缘，不依赖背景颜色 ──────────────────
-        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        # 用边缘像素中位数估计背景色，适配任意背景颜色
+        border = np.concatenate([gray[0, :], gray[-1, :], gray[:, 0], gray[:, -1]])
+        bg_value = int(np.median(border))
+        diff = cv2.absdiff(gray, np.full_like(gray, bg_value))
+
+        # 检测并遮盖表格线（细长的水平/垂直连通区域），避免其梯度干扰文字bbox
+        _, line_bin = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        line_mask = np.zeros_like(line_bin)
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(line_bin, connectivity=8)
+        for i in range(1, n):
+            cw, ch = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+            if cw > 0 and ch > 0 and (cw / ch > 8 or ch / cw > 8):
+                line_mask[labels == i] = 255
+        gray_masked = gray.copy()
+        gray_masked[line_mask > 0] = bg_value
+        # 消除紧贴边缘的竖线/横线梯度
+        gray_masked[:, :2] = bg_value
+        gray_masked[:, -2:] = bg_value
+        gray_masked[:2, :] = bg_value
+        gray_masked[-2:, :] = bg_value
+
+        grad_x = cv2.Sobel(gray_masked, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray_masked, cv2.CV_32F, 0, 1, ksize=3)
         grad   = cv2.magnitude(grad_x, grad_y)
         grad   = cv2.normalize(grad, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-        # 自动阈值保留强边缘
         _, binary = cv2.threshold(grad, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # 连接断开的笔画
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
 
+        # 清除binary边缘残留（Sobel+morphology会让边缘梯度向内扩散）
+        edge = 3
+        binary[:edge, :] = 0
+        binary[-edge:, :] = 0
+        binary[:, :edge] = 0
+        binary[:, -edge:] = 0
+
         coords = cv2.findNonZero(binary)
+
+        # DEBUG
+        if False:
+            import os, hashlib
+            dbg_dir = "./local/shrink_debug"
+            os.makedirs(dbg_dir, exist_ok=True)
+            key = hashlib.md5(bbox.tobytes()).hexdigest()[:6]
+            cv2.imwrite(f"{dbg_dir}/{key}_roi.png", roi)
+            cv2.imwrite(f"{dbg_dir}/{key}_gray_masked.png", gray_masked)
+            cv2.imwrite(f"{dbg_dir}/{key}_binary.png", binary)
+
         if coords is None:
             return bbox
 
@@ -743,6 +782,7 @@ class RapidOCRModel(Model):
         x2, y2 = x + rx + rw, y + ry + rh
 
         return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]], dtype=np.float32)
+
 
 
 class FormulaPPModel(Model):
