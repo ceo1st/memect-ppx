@@ -4,13 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
-    ClassVar,
     Concatenate,
     Final,
     Mapping,
     NotRequired,
     Protocol,
-    Self,
     Sequence,
     TypedDict,
 )

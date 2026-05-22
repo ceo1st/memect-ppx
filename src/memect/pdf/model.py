@@ -1,13 +1,13 @@
-from enum import StrEnum, auto
 import logging
 import math
 import multiprocessing as mp
 import threading
 import time
+import weakref
 from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
+from enum import StrEnum, auto
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Final, Mapping, Sequence, final, override
-import weakref
 
 import cv2
 import httpx
@@ -17,15 +17,14 @@ import PIL.Image
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from memect.base import lists
-from memect.base import utils
+from memect.base import lists, utils
 from memect.base.api import ApiError
 from memect.base.config import MPInit, get_settings
 from memect.base.debug import XDebugger
 from memect.base.job import Scheduler, SchedulerArgs
 from memect.base.sdk import Api
 from memect.base.task import Runner, Task
-from memect.base.utils import MyBaseModel, SafeExecutor, Timer
+from memect.base.utils import MyBaseModel, SafeExecutor
 
 from .base import KDocument, KPage, KTable
 from .commons import FileInfo
@@ -761,7 +760,8 @@ class RapidOCRModel(Model):
 
         # DEBUG
         if False:
-            import os, hashlib
+            import hashlib
+            import os
             dbg_dir = "./local/shrink_debug"
             os.makedirs(dbg_dir, exist_ok=True)
             key = hashlib.md5(bbox.tobytes()).hexdigest()[:6]
@@ -884,8 +884,9 @@ class TableDetModel(Model):
     _use_lock=False
     def __init__(self,*,model_path: str|Path|None=None,**kwargs:Any):
         super().__init__()
-        from .table_det import RTDETRTableCellDet
         from memect.models import get_model_path
+
+        from .table_det import RTDETRTableCellDet
         if not model_path:
             model_path=get_model_path('table_det.onnx')
         else:
