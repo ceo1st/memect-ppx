@@ -233,6 +233,7 @@ def parse(
     docx: Annotated[bool | None, typer.Option(help="")] = None,
     pptx: Annotated[bool | None, typer.Option(help="")] = None,
     md: Annotated[bool | None, typer.Option(help="")] = None,
+    html: Annotated[bool | None, typer.Option(help="")] = None,
     doc_json: Annotated[bool | None, typer.Option("--json", help="")] = None,
     cpu: Annotated[
         Literal["all", "ocr", "layout","table","formula"] | None,
@@ -372,6 +373,9 @@ def parse(
         params.markdown = md
     if doc_json is not None:
         params.doc_json = doc_json
+    
+    if html is not None:
+        params.html = html
 
     # 表示为多个文件，需要并行吗？可能需要比较多的内存
     def get_docs(dir_: Path):
