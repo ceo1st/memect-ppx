@@ -1,6 +1,6 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum
-import logging
 from typing import Any, Callable, Final, Sequence, TypeGuard
 
 from memect.base import images
@@ -13,18 +13,18 @@ from memect.pdf.base import (
     KFigure,
     KLine,
     KObject,
-    KPDFFigure,
     KPage,
+    KPDFFigure,
     KTable,
-    KTextbox,
+    KText,
     VObject,
 )
-
-from .ybk import YBKMode
 from memect.pdf.model import ModelManager
 from memect.pdf.sort import Sorter
+
 from .builder import TableBuilder
 from .filler import TableFiller
+from .ybk import YBKMode
 
 
 class _Item:
@@ -160,10 +160,13 @@ class Parser:
         raw_cells: Final = list(cells)
         # 避免重叠
         cells = self._adjust_cells(cells)
+        adjusted_cells = list(cells)
         result = TableFiller().get_objects(vobj)
         self._expand_cells(cells, result.chars, [0.7, 0.5])
         self._expand_cells(cells, result.pdf_figures, [0.7, 0.5])
         self._expand_cells(cells, result.vobjects, [0.7, 0.5])
+        #在expand后，可能又存在重叠
+        cells = self._adjust_cells(cells,clean=False)
         if cells:
             bbox = bbox.union(BBox.join(cells))
         table = TableBuilder().build(page, bbox, cells)
@@ -183,6 +186,7 @@ class Parser:
                     (f"removed_pdf_figures={len(result.removed_pdf_figures)}", result.removed_pdf_figures),
                     (f"vobjects={len(result.vobjects)}", result.vobjects, True),
                     (f"raw_cells={len(raw_cells)}", raw_cells),
+                    (f"adjusted_cells={len(adjusted_cells)}", adjusted_cells),
                     (f"cells={len(cells)}", cells),
                     (f"wbk=({table.row_num},{table.col_num})",table.get_lines())
                 ]
@@ -204,87 +208,6 @@ class Parser:
                 if not objs:
                     break
 
-    def _fill_cells(self, table: KTable, objs: list[KObject | VObject]):
-        def remove_spaces(objs: Sequence[KObject]) -> list[KObject]:
-            new_objs: list[KObject] = []
-            for obj in objs:
-                if isinstance(obj, KChar) and obj.text.isspace():
-                    pass
-                else:
-                    new_objs.append(obj)
-            return new_objs
-
-        # >=3.13才能够使用TypeIs
-        def is_chars(objs: Sequence[Any]) -> TypeGuard[Sequence[KChar]]:
-            return all(isinstance(obj, KChar) for obj in objs)
-
-        def is_figures(objs: Sequence[Any]) -> TypeGuard[Sequence[KFigure]]:
-            return all(isinstance(obj, KFigure) for obj in objs)
-
-        def is_vobjects(objs: Sequence[Any]) -> TypeGuard[Sequence[VObject]]:
-            return all(isinstance(obj, VObject) for obj in objs)
-
-        for cell in table.cells:
-            if not objs:
-                break
-            assert cell.bbox is not None
-            # TODO 单元格也可以存在复杂的布局，如果是这样，又需要进行一个单元格的版面分析
-            # 目前仅仅支持简单的格式，要么为纯文本，要么为图片
-            # 如果是文本和图片混合，如
-            # --text1----
-            # --figure1--
-            # --figure2--
-            # --text2----
-            cell_objs = cell.bbox.get(objs, ratio=0.7, remove=True)
-            if not cell_objs:
-                continue
-
-            new_cell_objs: list[KObject] = []
-            for obj in cell_objs:
-                if isinstance(obj, KPDFFigure | VObject):
-                    # 都使用图片即可，如果是vobject的，可以再考虑公式等？
-                    obj = obj.make_figure()
-                new_cell_objs.append(obj)
-
-            # 空格先暂时去掉，混合在图片中，没有意义
-            valid_objs = remove_spaces(new_cell_objs)
-            if is_chars(new_cell_objs):
-                # 全部都是字符
-                tb = KTextbox.from_objects(new_cell_objs)
-                if tb is not None:
-                    cell.objects.append(tb)
-                    cell.text = tb.text
-            elif is_figures(valid_objs):
-                # 都是图片
-                for obj in valid_objs:
-                    cell.objects.append(obj)
-            else:
-                # 图文并茂，简单的从上到下分行即可
-                groups: list[tuple[str, list[KObject]]] = []
-                for line in Sorter.get_lines(new_cell_objs):
-                    # 先去掉前后的空格字符
-                    valid_line = remove_spaces(line)
-                    if is_figures(valid_line):
-                        groups.append(("figure", list(valid_line)))
-                    else:
-                        if not groups or groups[-1][0] != "char":
-                            groups.append(("char", list(line)))
-                        else:
-                            groups[-1][1].extend(line)
-
-                for group in groups:
-                    if group[0] == "figure":
-                        cell.objects.extend(group[1])
-                    else:
-                        tb = KTextbox.from_objects(group[1])
-                        if tb is not None:
-                            cell.objects.append(tb)
-                            cell.text += tb.text
-
-    def _get_cells(self, page: KPage, index: int, vobj: VObject) -> list[BBox]:
-        if not vobj.ocr_chars:
-            pass
-        pass
 
     def _get_cells_by_model(self, page: KPage, index: int, vobj: VObject) -> list[BBox]:
         # debugger = self._debugger.bind(page=page.number)
@@ -308,10 +231,10 @@ class Parser:
             cells.append(BBox.from_list(cell_bbox, matrix=m))
         return cells
 
-    def _adjust_cells(self, cells: Sequence[BBox]) -> list[BBox]:
+    def _adjust_cells(self, cells: Sequence[BBox],*,clean:bool=True) -> list[BBox]:
         # 先删除完全包含的？
 
-        def clean(cells: Sequence[BBox]) -> list[BBox]:
+        def clean_cells(cells: Sequence[BBox]) -> list[BBox]:
             cells = list(cells)
             cells.sort(key=lambda cell: cell.y1, reverse=True)
             i = 0
@@ -338,9 +261,11 @@ class Parser:
                     i += 1
             return cells
 
-        cells = clean(cells)
+        if clean:
+            cells = clean_cells(cells)
         items: list[_Item] = [_Item(cell) for cell in cells]
         self._adjust_items(items)
+        #self._align_items(items)
         return [item.bbox for item in items]
 
     def _adjust_items(self, cells: Sequence[_Item]):
@@ -398,31 +323,52 @@ class Parser:
 
         adjust(cells)
 
-    def _get_lines(self, table: KTable):
-        pdf_lines = table.bbox.get(table.page.pdf_lines, ratio=0.7)
-        if len(pdf_lines) > 0:
-            return pdf_lines
-        # 表示为图片，识别页面的线？
-        from .lineparser import TableLineParser
+    def _align_items(self, items: Sequence[_Item], ratio: float = 0.3):
+        """按行/列对齐相近的cell边界，避免出现错位对齐
+        例如：
+            ------ |----
+            cell-a |cell-b
+                    -----
+            ------ |cell-c
+            cell-d |
+            -----------------
+        a/d之间的分隔线与b/c之间的分隔线不在同一y坐标，需要snap到一起
+        """
+        if not items:
+            return
 
-        # TableLineParser().parse()
-        page = table.page
-        p = table.bbox.transform(page.to_lt())
-        tx = -p[0]
-        ty = -p[1]
-        sw = page.image.width / page.width
-        sh = page.image.height / page.height
-        m = page.to_lt().translate(tx, ty).scale(sw, sh)
-        img = page.crop(table.bbox)
-        assert img is not None
-        content_bboxes: list[tuple[float, float, float, float]] = []
-        assert table.vobject is not None
-        for cell in table.cells:
-            if cell.objects:
-                content_bboxes.append(BBox.join2(cell.objects).transform(m).to_tuple())
-        TableLineParser().parse(
-            images.pil_to_cv2(img), content_bboxes=content_bboxes, debug=True
-        )
+        heights = sorted(item.bbox.height for item in items)
+        widths = sorted(item.bbox.width for item in items)
+        h_threshold = heights[len(heights) // 2] * ratio
+        w_threshold = widths[len(widths) // 2] * ratio
+
+        def snap(values: list[tuple[float, _Item, str]], threshold: float):
+            if not values or threshold <= 0:
+                return
+            values.sort(key=lambda v: v[0])
+            i = 0
+            while i < len(values):
+                j = i + 1
+                while j < len(values) and values[j][0] - values[i][0] <= threshold:
+                    j += 1
+                if j - i > 1:
+                    avg = sum(v[0] for v in values[i:j]) / (j - i)
+                    for _, item, attr in values[i:j]:
+                        item.bbox = item.bbox.adjust(**{attr: avg})
+                i = j
+
+        y_values: list[tuple[float, _Item, str]] = []
+        for item in items:
+            y_values.append((item.bbox.y0, item, "y0"))
+            y_values.append((item.bbox.y1, item, "y1"))
+        snap(y_values, h_threshold)
+
+        x_values: list[tuple[float, _Item, str]] = []
+        for item in items:
+            x_values.append((item.bbox.x0, item, "x0"))
+            x_values.append((item.bbox.x1, item, "x1"))
+        snap(x_values, w_threshold)
+
 
     def _beautify(self, table: KTable):
         pass

@@ -22,8 +22,9 @@ from memect.base import utils
 from memect.base.config import MPInit, get_settings
 from memect.base.task import Runner, StoppedError, Task
 from memect.base.utils import MyBaseModel, SafeExecutor
+from memect.pdf.x.xtree import XTreeParser, XTreeParserArgs
 
-from .base import Backend, KDocument, KDocumentFactory
+from .base import Backend, KDocument, KDocumentFactory, ParseMode
 from .default.parser import DefaultParser, DefaultParserArgs
 from .llm.deepseek import Deepseek, DeepseekArgs
 from .llm.glm import GLM, GLMArgs
@@ -39,6 +40,7 @@ class ParserArgs(MyBaseModel):
     paddle: PaddleArgs = Field(default_factory=PaddleArgs)
     glm: GLMArgs = Field(default_factory=GLMArgs)
     default: DefaultParserArgs = Field(default_factory=DefaultParserArgs)
+    tree: XTreeParserArgs = Field(default_factory=XTreeParserArgs)
 
 
 class Parser:
@@ -67,6 +69,8 @@ class Parser:
         self._glm = GLM(self._manager, args.glm)
         self._default = DefaultParser(self._manager, args.default)
         self._watermark = Watermark()
+        #==============
+        self._tree_parser = XTreeParser(args.tree)
 
     def parse(self, doc: KDocument, *, runner: Runner | None = None):
         try:
@@ -105,10 +109,13 @@ class Parser:
             elif backend == Backend.GLM:
                 self._glm.parse(doc)
             elif backend == Backend.DEFAULT:
-                # 先判断页面使用什么方式解析
                 self._default.parse(doc)
             else:
                 raise ValueError(f"不支持的backend={backend}")
+            
+
+            if doc.params.mode==ParseMode.TREE:
+                self._tree_parser.parse(doc)
 
             # 解析完毕，按要求输出
             if doc.params.pptx:

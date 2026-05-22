@@ -2,16 +2,16 @@ import re
 from dataclasses import dataclass, field
 
 from memect.base.bbox import BBox
-from memect.pdf.base import KFigure, KObject, KPage, KTable, KTextbox
+from memect.pdf.base import KFigure, KObject, KPage, KTable, KText
 
 _KContent = KFigure | KTable
 
 
 @dataclass
 class FigureBlock:
-    title: KTextbox | None = None
+    title: KText | None = None
     figures: list[_KContent] = field(default_factory=list[_KContent])
-    source: KTextbox | None = None
+    source: KText | None = None
 
     @property
     def objects(self) -> list[KObject]:
@@ -71,11 +71,11 @@ class FigureParser:
                 validated.append(block)
         return validated
 
-    def _find_title(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KTextbox | None:
+    def _find_title(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KText | None:
         """在figure上方找title候选：y0>=fig.y1，x方向有重叠，且最近。"""
-        candidates: list[tuple[float, KTextbox]] = []
+        candidates: list[tuple[float, KText]] = []
         for o in objs:
-            if id(o) in used or not isinstance(o, KTextbox):
+            if id(o) in used or not isinstance(o, KText):
                 continue
             if not self._is_title(o):
                 continue
@@ -90,11 +90,11 @@ class FigureParser:
         candidates.sort(key=lambda x: x[0])
         return candidates[0][1]
 
-    def _find_source(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KTextbox | None:
+    def _find_source(self, fig: _KContent, objs: list[KObject], used: set[int]) -> KText | None:
         """在figure下方找source候选：y1<=fig.y0，x方向有重叠，且最近。"""
-        candidates: list[tuple[float, KTextbox]] = []
+        candidates: list[tuple[float, KText]] = []
         for o in objs:
-            if id(o) in used or not isinstance(o, KTextbox):
+            if id(o) in used or not isinstance(o, KText):
                 continue
             if not self._is_source(o):
                 continue
@@ -124,10 +124,10 @@ class FigureParser:
                 return b
         return FigureBlock(figures=list(block.figures))
 
-    def _is_title(self, obj: KTextbox) -> bool:
+    def _is_title(self, obj: KText) -> bool:
         return bool(self._title_re.match(obj.text.strip()))
 
-    def _is_source(self, obj: KTextbox) -> bool:
+    def _is_source(self, obj: KText) -> bool:
         return bool(self._source_re.match(obj.text.strip()))
 
     def _x_overlap(self, a: BBox, b: BBox) -> bool:

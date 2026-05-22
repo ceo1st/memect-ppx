@@ -190,11 +190,10 @@ class Paddle:
         #第二步，切割页面对象调用llm识别获得结果
         self._llm_model.parse(self._llm_key,doc)
 
-        #根据两步的结果进行处理
-        buf: list[str] = []
         for page in doc.working_pages:
-            text = self._parse_page(page)
-            buf.append(text)
+            self._parse_page(page)
+        
+        #TODO 还需要建立分栏的信息page.columns=[]
         
     def _parse_layout(self,doc:KDocument):
         debugger = self._debugger.bind()
@@ -202,8 +201,9 @@ class Paddle:
         self._layout_model.parse(doc,name)
         for page in doc.working_pages:
             page.load_layout(page.cache.pop(name))
+        
             
-    def _parse_page(self, page: KPage) -> str:
+    def _parse_page(self, page: KPage):
         doc: Final = page.doc
         debugger: Final = self._debugger.bind(page=page.number)
         # 必须存在，如果不存在，不应该执行到这里
@@ -234,8 +234,6 @@ class Paddle:
                 #TODO 需要对文本做处理吗？
                 inline = vobj.type=='inline_formula'
                 formula = KFormula(page,vobj.quad,inline=inline,latex=KFormula.normalize(text),filename=figure.filename)
-                formula.llm_text=text
-                formula.raw_text=raw_text
                 formula.vobject=vobj
                 page.objects.append(formula)
             else:
@@ -243,9 +241,7 @@ class Paddle:
         
         def parse_text(vobj:VObject,text:str,raw_text:str):
             #根据vobj.raw_type设计markdown的level？
-            md = KText(page,vobj.quad,text=text)
-            md.raw_text=raw_text
-            md.llm_text=text
+            md = KText.from_markdown(page,vobj.quad,text)
             md.vobject=vobj
             page.objects.append(md)
 
@@ -283,7 +279,6 @@ class Paddle:
         if debugger.allow("draw"):
             page.draw(('raw_vobjects',page.raw_vobjects),('vobjects',page.vobjects),('objects',page.objects),dir=f"debug/{self.name}")
 
-        return page.markdown()
     
     def _clean_text(self,vobj:VObject,result_str:str)->str:
         #https://github.com/PaddlePaddle/PaddleX/blob/release/3.4/paddlex/inference/pipelines/paddleocr_vl/pipeline.py
