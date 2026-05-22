@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 📝 Documentation
 
 - Update CHANGELOG for 0.2.5
+- Update CHANGELOG for 0.2.5
 - Add --html usage examples
 
 ### 🔨 Chore
