@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Merge branch 'main' into dev/github
 - 完善了wbk
 
+### 📝 Documentation
+
+- Update CHANGELOG for 0.2.7
+
 ## [0.2.6] - 2026-05-21
 
 ### ✨ Features
