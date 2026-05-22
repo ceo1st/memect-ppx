@@ -66,7 +66,7 @@ class RTDETRTableCellDet:
         for det in detections:
             score = float(det[1])
             if score >= self._score_threshold:
-                cells.append((float(det[2]), float(det[3]), float(det[4]), float(det[5])))
+                cells.append((round(float(det[2]),1),round(float(det[3]),1),round(float(det[4]),1), round(float(det[5]),1)))
         return cells
 
     def __call__(self, image: np.ndarray,*,show_gui:bool=False) -> _Result:

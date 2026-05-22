@@ -1,40 +1,37 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum
-from typing import Any, Callable, Final, Sequence, TypeGuard
+from typing import Any, Callable, Final, Literal, Sequence
 
-from memect.base import images
 from memect.base.bbox import BBox
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
 from memect.pdf.base import (
-    KChar,
+    KCell,
     KDocument,
-    KFigure,
     KLine,
-    KObject,
     KPage,
     KPDFFigure,
     KTable,
-    KText,
     VObject,
 )
 from memect.pdf.model import ModelManager
-from memect.pdf.sort import Sorter
 
-from .builder import TableBuilder
 from .filler import TableFiller
 from .ybk import YBKMode
 
 
-class _Item:
+class _Cell:
     """目的是为了方便调整bbox，而且知道原对象"""
 
     def __init__(self, source: Any):
         super().__init__()
 
         self.bbox: BBox = source.bbox.large if hasattr(source, "bbox") else source
+        self.content_bbox:BBox|None=None
+        """如果设置了，表示为单元格的内容bbox"""
         self.source: Final = source
+
 
 
 class WBKMode(StrEnum):
@@ -157,19 +154,23 @@ class Parser:
         #debugger = self._debugger.bind(page=page.number)
         bbox = vobj.bbox
         cells = self._get_cells_by_model(page, index, vobj)
-        raw_cells: Final = list(cells)
+        raw_cells: Final = [c.bbox for c in cells]
         # 避免重叠
         cells = self._adjust_cells(cells)
-        adjusted_cells = list(cells)
+        adjusted_cells:Final=[c.bbox for c in cells]
         result = TableFiller().get_objects(vobj)
-        self._expand_cells(cells, result.chars, [0.7, 0.5])
-        self._expand_cells(cells, result.pdf_figures, [0.7, 0.5])
-        self._expand_cells(cells, result.vobjects, [0.7, 0.5])
-        #在expand后，可能又存在重叠
-        cells = self._adjust_cells(cells,clean=False)
+        chars=list(result.chars[:])
+        self._expand_cells(cells, chars, [0.7, 0.5])
+        self._expand_cells(cells, list(result.pdf_figures), [0.7, 0.5])
+        self._expand_cells(cells, list(result.vobjects), [0.7, 0.5])
+        #有时候识别的区域过小，丢失一部分字符，这里再次纠正
+        #self._expand_cells(cells,chars,[0.7],dx=10,dy=0)
+        expanded_cells:Final=[c.bbox for c in cells]
+        self._adjust_items(cells)
+        cells = Builder().build(cells)
         if cells:
-            bbox = bbox.union(BBox.join(cells))
-        table = TableBuilder().build(page, bbox, cells)
+            bbox = bbox.union(BBox.join2(cells))
+        table = Builder().make_table(page,bbox,cells)
         table.vobject = vobj
         table.subtype = "wbk"
         table.cache["result"] = result
@@ -187,6 +188,7 @@ class Parser:
                     (f"vobjects={len(result.vobjects)}", result.vobjects, True),
                     (f"raw_cells={len(raw_cells)}", raw_cells),
                     (f"adjusted_cells={len(adjusted_cells)}", adjusted_cells),
+                    (f'expanded_cells={len(expanded_cells)}',expanded_cells),
                     (f"cells={len(cells)}", cells),
                     (f"wbk=({table.row_num},{table.col_num})",table.get_lines())
                 ]
@@ -194,28 +196,34 @@ class Parser:
         return table
 
     def _expand_cells(
-        self, cells: list[BBox], objs: Sequence[Any], ratios: Sequence[float]
+        self, cells: list[_Cell], objs: list[Any], ratios: Sequence[float],dx:float=0,dy:float=0
     ):
         """确保cell能够塞入对象"""
-        objs = list(objs)
         for ratio in ratios:
             if not objs:
                 break
-            for i, cell in enumerate(cells):
-                cell_objs = cell.get(objs, ratio=ratio, remove=True)
+            for cell in cells:
+                cell_bbox = cell.bbox.expand(dx=dx,dy=dy)
+                cell_objs = cell_bbox.get(objs, ratio=ratio, remove=True)
                 if cell_objs:
-                    cells[i] = cell.union(BBox.join2(cell_objs))
+                    cb = BBox.join2(cell_objs)
+                    cell.bbox = cell.bbox.union(cb)
+                    if cell.content_bbox is None:
+                        cell.content_bbox=cb
+                    else:
+                        cell.content_bbox = cell.content_bbox.union(cb)
+
                 if not objs:
                     break
 
 
-    def _get_cells_by_model(self, page: KPage, index: int, vobj: VObject) -> list[BBox]:
+    def _get_cells_by_model(self, page: KPage, index: int, vobj: VObject) -> list[_Cell]:
         # debugger = self._debugger.bind(page=page.number)
         bbox = vobj.bbox
         result = vobj.cache.pop(self._table_det_key, None)
         if not result:
             # 表示无法截图？
-            return [vobj.bbox]
+            return [_Cell(vobj.bbox)]
 
         # 获得的结果是相对截图的，还需要进行转化
         width = result["width"]
@@ -226,24 +234,24 @@ class Parser:
         tx = bbox.x0
         ty = bbox.y0
         m = Matrix().lt_to_lb((width, height)).scale(sw, sh).translate(tx, ty)
-        cells: list[BBox] = []
+        cells: list[_Cell] = []
         for cell_bbox in result["cells"]:
-            cells.append(BBox.from_list(cell_bbox, matrix=m))
+            cells.append(_Cell(BBox.from_list(cell_bbox, matrix=m)))
         return cells
 
-    def _adjust_cells(self, cells: Sequence[BBox],*,clean:bool=True) -> list[BBox]:
+    def _adjust_cells(self, cells: Sequence[_Cell]) -> list[_Cell]:
         # 先删除完全包含的？
 
-        def clean_cells(cells: Sequence[BBox]) -> list[BBox]:
+        def clean_cells(cells: Sequence[_Cell]) -> list[_Cell]:
             cells = list(cells)
-            cells.sort(key=lambda cell: cell.y1, reverse=True)
+            cells.sort(key=lambda cell: cell.bbox.y1, reverse=True)
             i = 0
             while i < len(cells):
-                c1 = cells[i]
+                c1 = cells[i].bbox
                 j = i + 1
                 c1_removed = False
                 while j < len(cells):
-                    c2 = cells[j]
+                    c2 = cells[j].bbox
                     if c2.y1 <= c1.y0:
                         break
                     xb = c1.intersect(c2)
@@ -261,18 +269,18 @@ class Parser:
                     i += 1
             return cells
 
-        if clean:
-            cells = clean_cells(cells)
-        items: list[_Item] = [_Item(cell) for cell in cells]
-        self._adjust_items(items)
-        #self._align_items(items)
-        return [item.bbox for item in items]
+        cells = clean_cells(cells)
+        self._adjust_items(cells)
+        return cells
 
-    def _adjust_items(self, cells: Sequence[_Item]):
+
+
+
+    def _adjust_items(self, cells: Sequence[_Cell]):
         # debugger=self._debugger.bind(page=self.table.pages[0].number)
         strict = False
 
-        def adjust(cells: Sequence[_Item]):
+        def adjust(cells: Sequence[_Cell]):
             cells = sorted(cells, key=lambda cell: cell.bbox.y1, reverse=True)
             for i in range(len(cells)):
                 c1 = cells[i]
@@ -323,51 +331,6 @@ class Parser:
 
         adjust(cells)
 
-    def _align_items(self, items: Sequence[_Item], ratio: float = 0.3):
-        """按行/列对齐相近的cell边界，避免出现错位对齐
-        例如：
-            ------ |----
-            cell-a |cell-b
-                    -----
-            ------ |cell-c
-            cell-d |
-            -----------------
-        a/d之间的分隔线与b/c之间的分隔线不在同一y坐标，需要snap到一起
-        """
-        if not items:
-            return
-
-        heights = sorted(item.bbox.height for item in items)
-        widths = sorted(item.bbox.width for item in items)
-        h_threshold = heights[len(heights) // 2] * ratio
-        w_threshold = widths[len(widths) // 2] * ratio
-
-        def snap(values: list[tuple[float, _Item, str]], threshold: float):
-            if not values or threshold <= 0:
-                return
-            values.sort(key=lambda v: v[0])
-            i = 0
-            while i < len(values):
-                j = i + 1
-                while j < len(values) and values[j][0] - values[i][0] <= threshold:
-                    j += 1
-                if j - i > 1:
-                    avg = sum(v[0] for v in values[i:j]) / (j - i)
-                    for _, item, attr in values[i:j]:
-                        item.bbox = item.bbox.adjust(**{attr: avg})
-                i = j
-
-        y_values: list[tuple[float, _Item, str]] = []
-        for item in items:
-            y_values.append((item.bbox.y0, item, "y0"))
-            y_values.append((item.bbox.y1, item, "y1"))
-        snap(y_values, h_threshold)
-
-        x_values: list[tuple[float, _Item, str]] = []
-        for item in items:
-            x_values.append((item.bbox.x0, item, "x0"))
-            x_values.append((item.bbox.x1, item, "x1"))
-        snap(x_values, w_threshold)
 
 
     def _beautify(self, table: KTable):
@@ -386,3 +349,271 @@ class Parser:
             ) as executor:
                 for _ in executor.map(fn, pages):
                     pass
+
+
+class Builder:
+    def __init__(self):
+        super().__init__()
+
+    def build(self, cells: list[_Cell]) -> list[_Cell]:
+        """把模型检测出的cell规整到一个矩形表格网格中。
+
+        处理目标：
+        1. 轻微漂移的边界吸附到全局网格线。
+        2. 孤立的错误边界如果落在两条稳定网格线之间，吸附到前/后稳定线。
+        3. 保留跨行跨列cell，因为它们自然覆盖多个网格区间。
+        4. 对网格中没有被任何cell覆盖的位置补空cell。
+        """
+        cells = [
+            cell for cell in cells if cell.bbox.width > 0 and cell.bbox.height > 0
+        ]
+        if len(cells) < 2:
+            return cells
+
+        self._snap_outlier_edges(cells, axis="x")
+        self._snap_outlier_edges(cells, axis="y")
+        self._snap_to_grid(cells, axis="x")
+        self._snap_to_grid(cells, axis="y")
+        self._fill_missing(cells)
+        return cells
+
+    def make_table(
+        self,
+        page: KPage,
+        table_bbox: BBox,
+        cells: Sequence[_Cell],
+    ) -> KTable:
+        cells = [cell for cell in cells if cell.bbox.width > 0 and cell.bbox.height > 0]
+        table = KTable(page, table_bbox, row_num=1, col_num=1)
+        if not cells:
+            table.cells.append(KCell(page, table_bbox, row_index=0, col_index=0))
+            return table
+
+        x_lines = self._axis_lines(cells, axis="x")
+        y_lines = self._axis_lines(cells, axis="y")
+        if len(x_lines) < 2 or len(y_lines) < 2:
+            bbox = BBox.join2(cells)
+            table = KTable(page, bbox, row_num=1, col_num=1)
+            table.cells.append(KCell(page, bbox, row_index=0, col_index=0))
+            return table
+
+        col_num = len(x_lines) - 1
+        row_num = len(y_lines) - 1
+        table = KTable(page, table_bbox, row_num=row_num, col_num=col_num)
+
+        kcells: list[KCell] = []
+        for cell in cells:
+            col0 = self._nearest_index(cell.bbox.x0, x_lines)
+            col1 = self._nearest_index(cell.bbox.x1, x_lines)
+            y0 = self._nearest_index(cell.bbox.y0, y_lines)
+            y1 = self._nearest_index(cell.bbox.y1, y_lines)
+            if col1 <= col0:
+                col1 = col0 + 1
+            if y1 <= y0:
+                y1 = y0 + 1
+            col0 = max(0, min(col0, col_num - 1))
+            col1 = max(col0 + 1, min(col1, col_num))
+            y0 = max(0, min(y0, row_num - 1))
+            y1 = max(y0 + 1, min(y1, row_num))
+
+            row_index = row_num - y1
+            row_span = y1 - y0
+            col_span = col1 - col0
+            bbox = BBox(x_lines[col0], y_lines[y0], x_lines[col1], y_lines[y1])
+            kcells.append(
+                KCell(
+                    page,
+                    bbox,
+                    row_index=row_index,
+                    col_index=col0,
+                    row_span=row_span,
+                    col_span=col_span,
+                )
+            )
+
+        kcells.sort(key=lambda cell: (cell.row_index, cell.col_index))
+        table.cells.extend(kcells)
+        return table
+
+    def _snap_outlier_edges(self, cells: list[_Cell], *, axis: Literal["x", "y"]):
+        """把孤立边界吸附到相邻稳定边界，避免形成很窄的伪行/列。"""
+        lo_attr, hi_attr = self._axis_attrs(axis)
+        tol = self._edge_tolerance(cells, axis)
+        clusters = self._cluster_edges(
+            [(getattr(cell.bbox, lo_attr), cell, lo_attr) for cell in cells]
+            + [(getattr(cell.bbox, hi_attr), cell, hi_attr) for cell in cells],
+            tol,
+        )
+        if len(clusters) < 3:
+            return
+
+        stable = [
+            i
+            for i, cluster in enumerate(clusters)
+            if i == 0 or i == len(clusters) - 1 or len(cluster[1]) >= 2
+        ]
+        # 如果票数不足以判断稳定线，就不要猜。
+        if len(stable) < 2:
+            return
+
+        stable_set = set(stable)
+        for i, (value, members) in enumerate(clusters):
+            if i in stable_set:
+                continue
+            prev_indexes = [j for j in stable if j < i]
+            next_indexes = [j for j in stable if j > i]
+            if not prev_indexes or not next_indexes:
+                continue
+
+            prev_value = clusters[prev_indexes[-1]][0]
+            next_value = clusters[next_indexes[0]][0]
+            if next_value <= prev_value:
+                continue
+
+            ratio = (value - prev_value) / (next_value - prev_value)
+            target = next_value if ratio > 0.5 else prev_value
+            for _, cell, attr in members:
+                self._adjust_edge(cell, attr, target)
+
+    def _snap_to_grid(self, cells: list[_Cell], *, axis: Literal["x", "y"]):
+        """把所有边界吸附到聚类后的网格线。"""
+        lo_attr, hi_attr = self._axis_attrs(axis)
+        tol = self._edge_tolerance(cells, axis)
+        clusters = self._cluster_edges(
+            [(getattr(cell.bbox, lo_attr), cell, lo_attr) for cell in cells]
+            + [(getattr(cell.bbox, hi_attr), cell, hi_attr) for cell in cells],
+            tol,
+        )
+        if len(clusters) < 2:
+            return
+
+        lines = [value for value, _ in clusters]
+        for cell in cells:
+            lo = getattr(cell.bbox, lo_attr)
+            hi = getattr(cell.bbox, hi_attr)
+            new_lo = min(lines, key=lambda line: abs(line - lo))
+            new_hi = min(lines, key=lambda line: abs(line - hi))
+            self._adjust_edge(cell, lo_attr, new_lo)
+            self._adjust_edge(cell, hi_attr, new_hi)
+
+    def _fill_missing(self, cells: list[_Cell]):
+        x_lines = self._axis_lines(cells, axis="x")
+        y_lines = self._axis_lines(cells, axis="y")
+        if len(x_lines) < 2 or len(y_lines) < 2:
+            return
+
+        rows = len(y_lines) - 1
+        cols = len(x_lines) - 1
+        covered = [[False] * cols for _ in range(rows)]
+
+        for cell in cells:
+            c0 = self._nearest_index(cell.bbox.x0, x_lines)
+            c1 = self._nearest_index(cell.bbox.x1, x_lines)
+            r0 = self._nearest_index(cell.bbox.y0, y_lines)
+            r1 = self._nearest_index(cell.bbox.y1, y_lines)
+            if c1 <= c0:
+                c1 = c0 + 1
+            if r1 <= r0:
+                r1 = r0 + 1
+            c0 = max(0, min(c0, cols - 1))
+            c1 = max(c0 + 1, min(c1, cols))
+            r0 = max(0, min(r0, rows - 1))
+            r1 = max(r0 + 1, min(r1, rows))
+            cell.bbox = BBox(x_lines[c0], y_lines[r0], x_lines[c1], y_lines[r1])
+            for r in range(r0, r1):
+                for c in range(c0, c1):
+                    covered[r][c] = True
+
+        visited = [[False] * cols for _ in range(rows)]
+        for r in range(rows):
+            for c in range(cols):
+                if covered[r][c] or visited[r][c]:
+                    continue
+                c_end = c
+                while (
+                    c_end < cols
+                    and not covered[r][c_end]
+                    and not visited[r][c_end]
+                ):
+                    c_end += 1
+                r_end = r + 1
+                while r_end < rows:
+                    if any(
+                        covered[r_end][cc] or visited[r_end][cc]
+                        for cc in range(c, c_end)
+                    ):
+                        break
+                    r_end += 1
+
+                for rr in range(r, r_end):
+                    for cc in range(c, c_end):
+                        visited[rr][cc] = True
+                cells.append(
+                    _Cell(
+                        BBox(x_lines[c], y_lines[r], x_lines[c_end], y_lines[r_end])
+                    )
+                )
+
+    def _axis_attrs(self, axis: Literal["x", "y"]) -> tuple[str, str]:
+        if axis == "x":
+            return "x0", "x1"
+        return "y0", "y1"
+
+    def _axis_lines(
+        self, cells: list[_Cell], *, axis: Literal["x", "y"]
+    ) -> list[float]:
+        lo_attr, hi_attr = self._axis_attrs(axis)
+        clusters = self._cluster_edges(
+            [(getattr(cell.bbox, lo_attr), cell, lo_attr) for cell in cells]
+            + [(getattr(cell.bbox, hi_attr), cell, hi_attr) for cell in cells],
+            self._edge_tolerance(cells, axis),
+        )
+        return [value for value, _ in clusters]
+
+    def _adjust_edge(self, cell: _Cell, attr: str, target: float):
+        if cell.content_bbox is not None:
+            if attr in ("x0", "y0"):
+                target = min(target, getattr(cell.content_bbox, attr))
+            else:
+                target = max(target, getattr(cell.content_bbox, attr))
+        bbox = cell.bbox.adjust(**{attr: target})
+        if bbox.width > 0 and bbox.height > 0:
+            cell.bbox = bbox
+
+    def _edge_tolerance(self, cells: list[_Cell], axis: Literal["x", "y"]) -> float:
+        lo_attr, hi_attr = self._axis_attrs(axis)
+        sizes = sorted(
+            getattr(cell.bbox, hi_attr) - getattr(cell.bbox, lo_attr)
+            for cell in cells
+            if getattr(cell.bbox, hi_attr) > getattr(cell.bbox, lo_attr)
+        )
+        if not sizes:
+            return 2.0
+        base = sizes[len(sizes) // 4]
+        median = sizes[len(sizes) // 2]
+        return max(2.0, min(base * 0.25, median * 0.12))
+
+    def _cluster_edges(
+        self,
+        values: list[tuple[float, _Cell, str]],
+        tolerance: float,
+    ) -> list[tuple[float, list[tuple[float, _Cell, str]]]]:
+        if not values:
+            return []
+        values = sorted(values, key=lambda item: item[0])
+        clusters: list[list[tuple[float, _Cell, str]]] = [[values[0]]]
+        for item in values[1:]:
+            if item[0] - clusters[-1][-1][0] <= tolerance:
+                clusters[-1].append(item)
+            else:
+                clusters.append([item])
+
+        result: list[tuple[float, list[tuple[float, _Cell, str]]]] = []
+        for cluster in clusters:
+            cluster_values = [item[0] for item in cluster]
+            value = sum(cluster_values) / len(cluster_values)
+            result.append((value, cluster))
+        return result
+
+    def _nearest_index(self, value: float, lines: list[float]) -> int:
+        return min(range(len(lines)), key=lambda i: abs(lines[i] - value))

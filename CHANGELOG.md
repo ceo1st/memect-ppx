@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 📌 Miscellaneous
+
+- Merge branch 'dev/github' into github-main-clean
+- Merge branch 'main' into dev/github
+- 完善了wbk
+
+### 📝 Documentation
+
+- Update CHANGELOG for 0.2.7
+
+## [0.2.6] - 2026-05-21
+
+### ✨ Features
+
+- Add new two-column PDF samples for Chinese and English
+- Update dependencies and version to 0.2.6
+- Support two cols.
+
+### 🐛 Fixes
+
+- Enhance jsonify method precision and adjust cell handling in Parser
+
+### 📌 Miscellaneous
+
+- Merge branch 'dev/github' into github-main-clean
+- Merge branch 'main' into dev/github
+- 完善了ocr字符识别，也就是bbox的计算
+- Merge branch 'main' into dev/github
+- 解决无边框表格的问题
+- 添加依赖
+- Merge branch 'dev/github' into github-main-clean
+- 修正输出
+- 完善分栏
+- 修改一个重构后的import
+- 完成了分栏
+
+## [0.2.5] - 2026-05-15
+
 ### ✨ Features
 
 - **skill**: Rename to memect-ppx, bump to 0.2.5, add --html option
@@ -22,7 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 📝 Documentation
 
-- Update CHANGELOG for 0.2.5
 - Update CHANGELOG for 0.2.5
 - Add --html usage examples
 

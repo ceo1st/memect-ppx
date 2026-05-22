@@ -1,21 +1,12 @@
 from enum import StrEnum, auto
-import json
-import logging
 import re
-import threading
 from typing import Any, Final, Mapping, Self, Sequence, override
 
-from anthropic import Anthropic
-from openai import OpenAI
 
-from memect.base.pattern import XPattern
 from memect.base.utils import MyBaseModel
-from memect.pdf.base import KDocument, KObject, KText, TreeBackend
+from memect.pdf.base import KDocument
 from memect.pdf.x.xchapter import XChapterParser
 from .xbase import XNo, XNode, XObject, XText, XTree
-from .xgroup import XGroupParser
-from .xtable import XTableParser
-from .xtext import XTextParser
 
 
 class ParserArgs(MyBaseModel):
@@ -80,6 +71,39 @@ class Parser(XChapterParser):
 # <目录> 0-n个，可能在中间出现
 # <正文> 0-n个
 # <免责声明> 0-1个，最后面
+
+template={
+    #有固定的模版，就是1-2为第一章，2-3为第二章，3-结尾为第三章
+    "chapters":[
+        {
+            "title":"<1>",
+            "pages":[1]
+        },{
+            "title":"<2>",
+            "pages":[2]
+        },{
+            "title":"<3>",
+            "pages":[3]
+        }
+    ]
+}
+
+# 划分章节的几种方式
+# 1. 指定页面范围，如：有固定格式的文档
+# 2. 有大概的格式，页面范围不固定，如：研报
+# 3. 页面范围从标题1-标题2，如：第一章...第二章
+# 4. 如果没有下一个标题，有些上一个标题只是某几页的内容，如：
+#第二种是没有固定的形式，有些有章节标题的，如：
+#前言｜目录｜第一章等
+#找到标题，找到结尾（有些有结尾，有些结尾为下一章的开始），如：
+#前言(到目录)
+#目录(可能只是几页而已，然后是没有明确章节标题的内容，所以使用<正文>表示)
+#<正文>
+#第一章(有明确标题的)
+#第二章(有明确标题的)
+
+#问题来了：
+#1.如何知道某个章节的结尾，或者说，如何知道没有明确章节标题的开始
 
 template = {
     # <封面>
