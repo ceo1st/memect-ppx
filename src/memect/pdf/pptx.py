@@ -24,7 +24,7 @@ from memect.base.bbox import BBox
 
 
 
-from .base import KColor, KDocument, KFigure, KFormula, KLine, KObject, KPage, KRect, KTable, KText, KTextbox, KTextline
+from .base import KColor, KDocument, KFigure, KFormula, KLine, KMarkdown, KObject, KPage, KRect, KTable, KText, KTextbox, KTextline
 
 
 class PptxBuilder:
@@ -96,7 +96,7 @@ class PptxBuilder:
                 #但是无法在pptx中渲染，因为不知道坐标
                 self._logger.warning('第%s页，对象的bbox无效，不显示该对象,object=%s,bbox=%s',obj,obj.bbox)
                 continue
-            if isinstance(obj,KText):
+            if isinstance(obj, (KText,KMarkdown)):
                 #文本，没有每个字符的坐标
                 self._render_text(slide,obj)
             elif isinstance(obj,KTextbox):
@@ -138,7 +138,7 @@ class PptxBuilder:
         shape.line.color.rgb = self._to_color(line.color)
         shape.line.width = Pt(line.width)
 
-    def _render_text(self,slide:Slide,text:KText,*,text_frame:TextFrame|None=None):
+    def _render_text(self,slide:Slide,text:KText|KMarkdown,*,text_frame:TextFrame|None=None):
         
         def get_fontsize(bbox:BBox,text:str,ratio:float=1.5)->float:
             """
@@ -200,7 +200,11 @@ class PptxBuilder:
 
             return best_size
 
-        s = text.text
+        if isinstance(text,KMarkdown):
+            s = text.plaintext()
+        else:
+            s = text.text
+        
         m:Final=text.page.to_lt()
         bbox:Final= text.bbox.transform(m)
         if text_frame is None:

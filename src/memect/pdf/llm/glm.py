@@ -9,7 +9,7 @@ from pydantic import Field
 from memect.base import images
 from memect.base.debug import XDebugger
 from memect.base.utils import MyBaseModel
-from memect.pdf.base import KDocument, KFormula, KPage, KTable, KText, VObject
+from memect.pdf.base import KDocument, KFormula, KMarkdown, KPage, KTable, VObject
 from memect.pdf.model import ModelManager
 
 from .llm import Model, ModelArgs, Task
@@ -210,8 +210,7 @@ class GLM:
 
         def parse_text(vobj: VObject, text: str,raw_text:str):
             # 根据vobj.raw_type设计markdown的level？
-            #返回的是markdown，如：#xxx$xxx$，还有行内公式
-            md = KText.from_markdown(page,text,vobj.quad)
+            md = KMarkdown(page, vobj.quad, text=text)
             md.llm_text=text
             md.raw_text=text
             md.vobject=vobj

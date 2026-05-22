@@ -391,8 +391,6 @@ settings: dict[str, Any] = {
                     "Global.width_height_ratio": -1,
                     # 容易把正常的文本识别为旋转了180度
                     "Global.use_cls": False,
-                    #需要的内存和显存也更大
-                    "Global.max_side_len":7000,
                     "Det.engine_type": _ocr_device["engine"],
                     "Cls.engine_type": _ocr_device["engine"],
                     "Rec.engine_type": _ocr_device["engine"],
@@ -584,7 +582,7 @@ settings: dict[str, Any] = {
         },
     },
     "pdf_parser": {
-        "pdf2image": {"max_workers": 4, "max_size": (2000, 6000), "max_scale": 2},
+        "pdf2image": {"max_workers": 4, "max_size": (2000, 2000), "max_scale": 2},
         "deepseek": {
             "model": {
                 "base_url": get_value("ppx_deepseek_url", "http://127.0.0.1:4000/v1"),

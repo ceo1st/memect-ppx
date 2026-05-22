@@ -50,10 +50,10 @@ done
 
 case "${MODE}" in
     full)
-        git-cliff --config cliff.toml --output CHANGELOG.md ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+        git-cliff --config cliff.toml --output CHANGELOG.md "${EXTRA_ARGS[@]}"
         echo "CHANGELOG.md updated."
         ;;
     unreleased)
-        git-cliff --config cliff.toml --unreleased ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+        git-cliff --config cliff.toml --unreleased "${EXTRA_ARGS[@]}"
         ;;
 esac

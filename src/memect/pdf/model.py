@@ -666,8 +666,6 @@ class RapidOCRModel(Model):
             # 但是，如果设置了一次，就会直接改变配置的值，所以，要么都不设置，要么每次都设置
 
             # 代码是支持PIL.Image.Image，但是接口的类型注释没有
-
-            #TODO 对于超长或者超宽的图片，需要分成多个图片进行识别   
             cv2_img = file.cv2_image
             output: RapidOCROutput = self._model(cv2_img)            
             objs: list[Any] = []

@@ -1,22 +1,14 @@
 import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import (
-    Any,
-    Callable,
-    Concatenate,
-    Final,
-    Mapping,
-    NotRequired,
-    Sequence,
-    TypedDict,
-)
+from typing import Any, Callable, Concatenate, Final, Mapping, NotRequired, Sequence, TypedDict
 
 import PIL
 import PIL.Image
 from pydantic import Field
 
-from memect.base import images, lists, utils
+from memect.base import images, lists
+from memect.base import utils
 from memect.base.bbox import BBox, Quad
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
@@ -48,6 +40,7 @@ from .footer import PageFooterParser
 from .footnote import PageFootnoteParser
 from .header import PageHeaderParser
 from .pdf import PdfParser, PdfParserArgs
+
 from .table.parser import TableParser
 from .tree.parser import TreeParser
 
@@ -323,7 +316,6 @@ class DefaultParser:
                             quads.append(area.transform(m))
                         else:
                             bboxes.append(area.transform(m))
-                #TODO 对于很大的图片，需要分成多个区域识别
                 img = images.make_image(page.image, quads=quads, bboxes=bboxes)
                 # 这种做法结果设置到page.cache
                 items.append((img, page.cache))

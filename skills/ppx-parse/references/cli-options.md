@@ -26,7 +26,6 @@ Use these defaults unless the user requests something more specific.
 
 - `--mode page|tree|ppt`: Select parse mode. Use `page` unless a different downstream structure is required.
 - `--workers N`: Parallelize directory parsing.
-- `--html`: Emit `doc.html` in the output directory for HTML preview/export.
 - `--json`: Emit JSON-focused output.
 - `--cpu`: Force CPU mode.
 - `--debug` or `-x`: Keep extra debug output.

@@ -1607,33 +1607,43 @@ class KText(KObject):
 
     type = "text"
 
-    def __init__(self, page: KPage, quad: Quad|BBox, *, text: str,md_text:str|None=None):
+    def __init__(self, page: KPage, quad: Quad, *, text: str):
         super().__init__(page, quad)
         self.text: Final = text
-        self._md_text:Final=md_text
-        """表示原始的markdown"""
 
     def markdown(self) -> str:
-        #如果有原始的markdown，就返回，如：##xxxx，或者xxx*zz*vvvv
-        if self._md_text:
-            return self._md_text
         return _md_escape(self.text)
 
     def jsonify(self):
         return {"type": "text", "bbox": self.bbox.jsonify(), "text": self.text}
-    
-    @classmethod
-    def from_markdown(cls,page:KPage,md:str,bbox:BBox|Quad)->Self:
-        """根据markdown构造"""
-        text = cls.md_unescape(md)
-        return cls(page,bbox,text=text,md_text=md)
+
+
+class KMarkdown(KObject):
+    """表示markdown的文本"""
+
+    type = "markdown"
+
+    def __init__(self, page: KPage, quad: Quad, text: str):
+        super().__init__(page, quad)
+        self.text = text
+        """markdown"""
+
+    def jsonify(self) -> Any:
+        return {"type": self.type, "bbox": self.bbox.jsonify(), "text": self.text}
+
+    def markdown(self) -> str:
+        return self.text
+
+    def plaintext(self) -> str:
+        """纯文本"""
+        return self.unescape(self.text)
 
     @classmethod
-    def md_escape(cls, text: str) -> str:
+    def escape(cls, text: str) -> str:
         return _md_escape(text)
 
     @classmethod
-    def md_unescape(cls, text: str) -> str:
+    def unescape(cls, text: str) -> str:
         """将 markdown 文本还原为纯文本"""
         # TODO 将来复杂的情况，如：可以为代码，html，或者公式，这些如何处理？
         # ```code```
@@ -1666,12 +1676,7 @@ class KText(KObject):
         # 8. 移除转义符 (\* \# 等)
         text = re.sub(r"\\([`*_+\-!{}#.\\])", r"\1", text)
 
-        # 9. 行内公式（$xxx$）
-        # 如何转换为文本？把公式扔了？或者不做改变？
-        
         return text
-
-
 
 
 class KSpan(KObject):
@@ -2361,8 +2366,6 @@ class KTable(KObject):
         self.filename: str = ""
         """对应的截图的文件名，在llm且只需要获得markdown下，不一定需要截图"""
         self.grid: list[list[KCell]] = []
-        self.subtype='wbk'
-        """默认都是无边框表格，除非是直接使用线解析的"""
 
     @cached_property
     def fullpath(self) -> Path:
@@ -2599,33 +2602,18 @@ class KTable(KObject):
         self.fill(self.parse_otsl(text))
 
     def fill(self, data: Mapping[str, Any]):
-        from .table_builder import Builder
-        #计算表格的结构
-        x_axis,y_axis = Builder().build(self.bbox,data)
         self.row_num = data["row_num"]
         self.col_num = data["col_num"]
         self.cells.clear()
-
         for cell in data["cells"]:
-            row_index:int = cell['row_index']
-            col_index:int = cell['col_index']
-            row_span:int = cell['row_span']
-            col_span:int = cell['col_span']
-            x0 = x_axis[col_index]
-            x1 = x_axis[col_index+col_span]
-            y0 = y_axis[row_index]
-            y1 = y_axis[row_index+row_span]
-            cell_bbox = BBox(x0,y0,x1,y1)
-            text_bbox = BBox(x0,y0,x1,y1)
-            ktext = KText(self.page,text_bbox,text=cell['text'])
             kcell = KCell(
                 self.page,
-                cell_bbox,
-                row_index=row_index,
-                col_index=col_index,
-                row_span=row_span,
-                col_span=col_span,
-                objects=[ktext]
+                None,
+                row_index=cell["row_index"],
+                col_index=cell["col_index"],
+                row_span=cell["row_span"],
+                col_span=cell["col_span"],
+                text=cell["text"],
             )
             self.cells.append(kcell)
 
