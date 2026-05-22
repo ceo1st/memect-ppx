@@ -258,6 +258,9 @@ class XTree:
         self.xobjects:Final[list[XObject]]=[]
         """获得该树的对象，可以添加/删除，因为需要跨页表格，跨页文本合并等"""
         self.root: Final = XText.create_title('<doc>').node
+        """根节点"""
+        self.layout_tables:Final[list[Any]]=[]
+        """记录用来布局的表格，目的是在生成docx的，需要使用表格的方式来布局"""
         for page in doc.working_pages:
             for obj in page.objects:
                 self.xobjects.append(XObject.from_objects([obj]))
@@ -290,7 +293,19 @@ class XTree:
             'root':self.root.jsonify()
         }
         
-
+class LayoutTable:
+    def __init__(self):
+        super().__init__()
+        self.row_num:int=0
+        self.col_num:int=0
+        self.cells:list[XNode]=[]
+    
+    def jsonify(self)->Any:
+        data:dict[str,Any]={}
+        data['row_num']=self.row_num
+        data['col_num']=self.col_num
+        
+        return data
 class XColumn:
     def __init__(self):
         super().__init__()
@@ -462,6 +477,9 @@ class XCell:
         self.cells: list[KCell] = []
         # TODO 严格的说，单元格内包含的也是xobjects
         # 如：2个单元格合并，t1+t2，那么，也需要合并为一个xtextbox才更加合理
+        # 这样才能够在生成docx更加准确
+        self.xobjects:list[XObject]=[]
+
 
 
     @property
