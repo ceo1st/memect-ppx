@@ -59,7 +59,7 @@ class Parser:
                     anchors[text]=obj2
             
             vobj.cache['anchors']=anchors
-            # img.show()
+            #img.show()
 
         def resolve_anchors(table:KTable,anchors:dict[str,VObject]):
             names:list[str]=list(anchors.keys())
