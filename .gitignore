@@ -10,11 +10,31 @@
 !/docker-entrypoint.sh
 !/Dockerfile
 !/README.md
+!/README_zh-CN.md
+!/docs/
+!/LICENSE
+!/PPX_CLA.md
+!/README_zh-CN.md
+!/docs/
+!/LICENSE
+!/PPX_CLA.md
 !/pyproject.toml
 !/.gitignore
+!/.claude/
 !/.dockerignore
 !/install
 !/.gitattributes
+!/CONTRIBUTING.md
+!/THIRD_PARTY_LICENSES.md
+!/NOTICE
+!/CHANGELOG.md
+!/cliff.toml
+/scripts/
+!.github
+!example
+!/skills/
+!/skills/ppx-parse/
+!/skills/ppx-parse/**
 
 
 **/.DS_Store
@@ -29,5 +49,4 @@
 
 !/docker-compose.yaml
 !/.env.sample
-
-
+**/**/others

@@ -467,8 +467,8 @@ class BBox(tuple[float,float,float,float]):
     def to_list(self)->list[float]:
         return list(self)
         
-    def jsonify(self,*,precision:int=1)->Any:
-        return (round(self[0],precision),round(self[1],precision),round(self[2],precision),round(self[3],precision))
+    def jsonify(self)->Any:
+        return (self[0],self[1],self[2],self[3])
 
     @classmethod
     def from_points(cls, points: Sequence[_Point]) -> "BBox":
