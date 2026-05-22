@@ -24,7 +24,7 @@ from memect.base.bbox import BBox
 
 
 
-from .base import KColor, KDocument, KFigure, KFormula, KLine, KObject, KPage, KRect, KTable, KText, KTextbox, KTextline
+from .base import KColor, KDocument, KFigure, KFormula, KLine, KObject, KPage, KRect, KTable, KText,  KTextline
 
 
 class PptxBuilder:
@@ -97,10 +97,7 @@ class PptxBuilder:
                 self._logger.warning('第%s页，对象的bbox无效，不显示该对象,object=%s,bbox=%s',obj,obj.bbox)
                 continue
             if isinstance(obj,KText):
-                #文本，没有每个字符的坐标
                 self._render_text(slide,obj)
-            elif isinstance(obj,KTextbox):
-                pass
             elif isinstance(obj, KFigure):
                 self._render_figure(slide,obj)
             elif isinstance(obj, KFormula):
@@ -242,7 +239,7 @@ class PptxBuilder:
         run.text = s
         
 
-    def _render_textbox(self, slide: Slide, text:KTextbox,*,text_frame:TextFrame|None=None):
+    def _render_textbox(self, slide: Slide, text:KText,*,text_frame:TextFrame|None=None):
         # Textbox with formatted text
 
         #为了简化，对于Text，仅仅识别一个字体即可，即使多行，因为对于复杂的情况，可能每一个字符都使用不同的字体

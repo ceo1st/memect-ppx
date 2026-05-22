@@ -14,7 +14,7 @@ from memect.pdf.base import (
     KObject,
     KPage,
     KTable,
-    KTextbox,
+    KText,
 )
 from memect.pdf.sort import Sorter
 
@@ -46,9 +46,6 @@ class ReadingOrder:
 
         debugger = self._debugger.bind(page=page.number)
         raw_objects = list(page.objects)
-        #columns = XYCut().layout(page.objects)
-        #from .order2 import ReadingOrder as A
-        #columns = A().sort(page.objects)
         method:str='towcolumn'
         columns = _TowCut().sort(page)
         if len(columns)==1:
@@ -61,12 +58,13 @@ class ReadingOrder:
             column_bboxes.append(bbox)
             #TODO 需要在这里就展开了吗？应该在章节树解析后
             page.objects.extend(expand_objects(column))
-        
-        page.columns = column_bboxes
+
+        page.set_blocks(column_bboxes)
         if debugger.allow('draw'):
             page.draw(
                 ('page',None),
-                (f'columns={method}',column_bboxes,'number'),
+                (f'columns={method},{len(column_bboxes)}',column_bboxes,'number'),
+                ('sections',page.sections,'number'),
                 (f'raw_objects={len(raw_objects)}',raw_objects,'number'),
                 (f'objects={len(page.objects)}',page.objects,'number'),
                 show_type=False,
@@ -234,9 +232,6 @@ class _TowCut:
             bottom = column[0:end]
             return Group[KObject](top),Group[KObject](bottom)
 
-
-
-
         def split_columns(objs:Sequence[KObject])->tuple[list[Group[KObject]],list[KObject]]:
             """快速的左右分栏"""
             #如何处理特别的情况，如：
@@ -346,7 +341,7 @@ class _TowCut:
             new_lines:list[list[KObject]]=[]
             while i<len(lines):
                 line = lines[i]
-                if len(line)==2 and isinstance(line[0],KTextbox) and line[-1].bbox.height>=50 and isinstance(line[-1],(KBlock,KTable,KFigure)):
+                if len(line)==2 and isinstance(line[0],KText) and line[-1].bbox.height>=50 and isinstance(line[-1],(KBlock,KTable,KFigure)):
                     #TODO 可以不限制高度的
                     #[text] | [table] or [figure]
                     right_object = line[-1]
@@ -390,10 +385,8 @@ class _TowCut:
             groups.append(Group(objs))
         else:
             #如果能够划分2列，表示为典型的双栏
-            #setup_columns(columns)
             for column in columns:
-                #按y1降序排序（坐标原点左下角，y1大=顶部），cut需要
-                column.sort(key=lambda obj:obj.bbox.y1, reverse=True)
+                column.sort(key=lambda obj:obj.bbox.y0)
             
             other_objs.sort(key=lambda obj:obj.bbox.y1,reverse=True)
 

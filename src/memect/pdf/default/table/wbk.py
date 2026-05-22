@@ -16,7 +16,7 @@ from memect.pdf.base import (
     KPDFFigure,
     KPage,
     KTable,
-    KTextbox,
+    KText,
     VObject,
 )
 
@@ -250,7 +250,7 @@ class Parser:
             valid_objs = remove_spaces(new_cell_objs)
             if is_chars(new_cell_objs):
                 # 全部都是字符
-                tb = KTextbox.from_objects(new_cell_objs)
+                tb = KText.from_objects(new_cell_objs)
                 if tb is not None:
                     cell.objects.append(tb)
                     cell.text = tb.text
@@ -276,7 +276,7 @@ class Parser:
                     if group[0] == "figure":
                         cell.objects.extend(group[1])
                     else:
-                        tb = KTextbox.from_objects(group[1])
+                        tb = KText.from_objects(group[1])
                         if tb is not None:
                             cell.objects.append(tb)
                             cell.text += tb.text
@@ -421,7 +421,7 @@ class Parser:
             if cell.objects:
                 content_bboxes.append(BBox.join2(cell.objects).transform(m).to_tuple())
         TableLineParser().parse(
-            images.pil_to_cv2(img), content_bboxes=content_bboxes, debug=True
+            images.pil_to_cv2(img), content_bboxes=content_bboxes, debug=False
         )
 
     def _beautify(self, table: KTable):

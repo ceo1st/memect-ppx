@@ -8,6 +8,7 @@ from typing import Any, Final, Iterable, Sequence
 
 from memect.base.bbox import BBox
 from memect.pdf.base import (
+    KBlock,
     KCell,
     KDocument,
     KFigure,
@@ -17,17 +18,13 @@ from memect.pdf.base import (
     KSpan,
     KTable,
     KText,
-    KTextbox,
     KTextline,
 )
+from memect.pdf.xbase import XNode
 
 type _BBox = Sequence[float]  # tuple[float,float,float,float,float,float]
 type _Offset = tuple[float, float]
 type _Object = dict[str, Any]
-
-
-
-
 
 
 class _Html:
@@ -197,210 +194,6 @@ class _Tag:
 
 
 
-
-
-
-
-class OutlineBuilder:
-    def __init__(self):
-        super().__init__()
-
-    def build(self, doc: KDocument):
-
-        nodes: list[Mapping[str, Any]] = []
-        if False:
-            if doc.get("pdf"):
-                # 表示解析的是pdf文件，才有outline
-                nodes.append(self._build_pages_node(doc))
-                nodes.append(self._build_pdf_node(doc))
-
-        if False:
-            # 如果是解析了章节树
-            nodes.append(
-                {
-                    "title": "页面",
-                    "type": "pages",
-                    "children": [
-                        {
-                            "title": "1",
-                            "type": "page",
-                            "children": [
-                                {"title": "页眉", "type": "header"},
-                                {"title": "页脚", "type": "footer"},
-                                {"type": "脚注", "type": "footnotes", "children": []},
-                                {"type": "内容", "type": "body"},
-                            ],
-                        }
-                    ],
-                }
-            )
-
-        if doc.tree:
-            if True:
-                nodes.append(doc.tree.root.to_outline())
-            else:
-                nodes.append(
-                    {
-                        "title": "章节树",
-                        "type": "xdoc",
-                        "children": [doc.tree.root.to_outline()],
-                    }
-                )
-            pass
-
-        return nodes
-
-    def _build_pages_node(self, doc: Mapping[str, Any]) -> Mapping[str, Any]:
-
-        def build_table_nodes(doc):
-            nodes = []
-
-            for page in doc["pages"]:
-                if "body" in page:
-                    for block_index, block in enumerate(page["body"]["blocks"]):
-                        for table in block["tables"]:
-                            nodes.append(
-                                {
-                                    "id": table["id"],
-                                    "type": "table",
-                                    "title": f"[{page['number']}-{block_index}]",
-                                }
-                            )
-
-            return nodes
-
-        def build_tags(tags: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-            nodes: list[Mapping[str, Any]] = []
-            for tag in tags:
-                title: str = f"{tag['name']}:{tag['path']}"
-                if tag.get("props"):
-                    title = (
-                        f"{title}:{json.dumps(tag.get('props'), ensure_ascii=False)}"
-                    )
-
-                node = {
-                    #'id':f'',
-                    "type": "page.tag",
-                    "title": title,
-                    "tag": tag["path"],
-                    "children": build_tags(tag.get("tags") or []),
-                }
-                nodes.append(node)
-            return nodes
-
-        def build_block(block: Mapping[str, Any], type: str) -> Mapping[str, Any]:
-            if type == "page":
-                title = f"{block['number']}"
-            else:
-                title = f"{block['objid']}_{block['number']}({block['name']})"
-
-            node: dict[str, Any] = {
-                #'id':f'page-{page['number']}',
-                "title": title,
-                "type": type,
-                # 页面的没有
-                "path": block.get("path"),
-                "children": [
-                    {
-                        "title": "forms",
-                        "type": "forms",
-                        "children": [
-                            build_block(form, "form") for form in block.get("forms", [])
-                        ],
-                    },
-                    {
-                        "title": "tags",
-                        "type": "tags",
-                        "children": build_tags(block.get("tags", [])),
-                    },
-                ],
-            }
-            return node
-
-        node: dict[str, Any] = {
-            #'id':'pages',
-            "title": "页面",
-            "type": "pages",
-            "children": [build_block(p, "page") for p in doc["pages"]],
-        }
-        return node
-
-    def _build_pdf_node(self, doc: Mapping[str, Any]) -> Mapping[str, Any]:
-
-        def get_tags(node: Mapping[str, Any], tags: list[str]) -> list[str]:
-            if node.get("type") == "item":
-                tags.append(node.get("tag"))
-            else:
-                for child in node.get("children") or []:
-                    get_tags(child, tags)
-            return tags
-
-        def build_element_title(node: Mapping[str, Any]) -> str:
-            name: str = node["name"]
-            path: str | None = node.get("path")
-            # 开始页码
-            number: int | None = node.get("page_number")
-            if path and number:
-                # 表示没有输出这两个，可能在生产的时候
-                # P(1,/a/b)
-                return f"{name}({number},{path})"
-            else:
-                return name
-
-        def build_struct_tree_node(
-            node: Mapping[str, Any], seq: int = 0, is_root: bool = False
-        ) -> dict[str, Any]:
-            obj: dict[str, Any] = {
-                "id": f"pdf-node-{seq}",
-                "type": "st.element",
-                # path不一定输出
-                "title": build_element_title(node),
-                "children": [],
-                # 为了减少json的大小，并不会输出tags，需要动态计算
-                "tags": None,  # if is_root else get_tags(node,[])
-            }
-            if is_root:
-                obj["root"] = is_root
-
-            seq += 1
-            children: list[Mapping[str, Any]] = []
-            tags: list[str] = []
-            for n in node["children"]:
-                if n.get("type", "element") == "element":
-                    children.append(build_struct_tree_node(n, seq))
-                    seq += 1
-                elif n.get("type") == "item" and n.get("tag"):
-                    # item就不输出了，仅仅计算其的tag
-                    tags.append(n.get("tag"))
-                else:
-                    pass
-
-            # 仅仅输出item的tags即可，如果需要包括子的，js中动态计算
-            obj["tags"] = tags
-            obj["children"] = children
-            return obj
-
-        node: dict[str, Any] = {
-            #'id':'pdf',
-            "title": "PDF",
-            "type": "pdf",
-            "children": [
-                {
-                    #'id':'pdf-struct-tree',
-                    "title": "struct tree",
-                    "type": "st.tree",
-                    "children": [],
-                }
-            ],
-        }
-        st = doc["pdf"].get("struct_tree")
-        if st and st.get("root"):
-            node["children"] = [build_struct_tree_node(st.get("root"), is_root=True)]
-        return node
-
-
-
-
 class HtmlRenderer:
     _template = (
         importlib.resources.files(__package__).joinpath("doc.html").read_text("utf-8")
@@ -418,7 +211,8 @@ class HtmlRenderer:
             'scale':1,
             'total':doc.page_count,
             'currentNumber':doc.working_pages[0].number if doc.working_pages else 1,
-            'bgColor':'#ffffff'
+            'bgColor':'#ffffff',
+            'tree': self._build_tree(doc)
         }
         values={
             '"{{doc_data}}"':json.dumps(data),
@@ -426,6 +220,47 @@ class HtmlRenderer:
             '"{{doc_html}}"':self._render_doc(doc,scale=scale)
         }
         return self._render_template(self._template,values)
+    
+    def _build_tree(self,doc:KDocument):
+        if doc.tree is not None:
+            def build_node(node:XNode)->Any:
+                data:dict[str,Any]={}
+                page_numbers = node.object.page_numbers
+                if not page_numbers:
+                    page_numbers=[-1,-1]
+                if node.is_title():
+                    #data['text']=node.text.text
+                    data['text']=f'[{page_numbers[0]},{page_numbers[-1]},{len(node.object.objects)}]{node.text.text}'
+                else:
+                    #[页码1,页码2][1][type]
+                    page_numbers = node.object.page_numbers
+                    data['text']=f'[{page_numbers[0]},{page_numbers[-1]},{len(node.object.objects)}][{node.type}]'
+                
+                if node.size>0:
+                    data['children']=[build_node(child) for child in node.children]
+                
+                #xid表示节点的id
+                #ids表示在页面渲染的对象的id，目的是点击后可以滚动到目标节点
+                data['xid']=node.id
+                data['ids']=[]
+                return data
+            tree={
+                'root':build_node(doc.tree.root)
+            }
+        else:
+            tree={
+                'root':{
+                        'text':'页面',
+                        'number':1,
+                        'children':[
+                            {
+                                'text':f'第{page.number}页',
+                                'number':page.number
+                            } for page in doc.pages
+                        ]
+                    }
+            }
+        return tree
 
     def _render_template(self,template: str, values: dict[str, Any]) -> str:
         replaces: list[dict[str, Any]] = []
@@ -531,9 +366,35 @@ class HtmlRenderer:
         def render_body(tag:_Tag):
             body = _Tag("div")
             body.classes.append("body")
-            body.children.extend(self._render_objects(page.objects, offset=None))
+            for obj in page.objects:
+                tags = self._render_object(obj)
+                for t in tags:
+                    self._set_xid(t,obj)
+                body.children.extend(tags)
+            #body.children.extend(self._render_objects(page.objects, offset=None))
+            body.children.extend(render_sections())
             body.children.extend(render_read_order())
+            
             tag.children.append(body)
+
+        def render_sections():
+            m=page.to_lt()
+            tags:list[_Tag]=[]
+            for section in page.sections:
+                bbox = section.bbox.transform(m)
+                section_tag = _Tag('div')
+                section_tag.classes.append('section')
+                section_tag.set_bbox(bbox,scale=self._scale)
+                if len(section.columns)>1:
+                    for column in section.columns:
+                        column_tag = _Tag('div')
+                        column_tag.classes.append('column')
+                        column_tag.set_bbox(column.transform(m),scale=self._scale,offset=(bbox[0],bbox[1]))
+                        section_tag.children.append(column_tag)
+                tags.append(section_tag)
+            return tags
+                
+
 
         scale = self._scale
         m = page.to_lt()
@@ -565,6 +426,7 @@ class HtmlRenderer:
         tag = _Tag("img")
         tag.classes.append("figure")
         tag.set_bbox(figure.bbox.transform(m), offset=offset, scale=self._scale)
+        tag.set_data({'type':figure.type})
         tag.attrs["src"] = figure.filename
         return [tag]
 
@@ -575,7 +437,7 @@ class HtmlRenderer:
         tag = _Tag('div')
         tag.classes.append('formula')
         tag.set_bbox(formula.bbox.transform(m), offset=offset, scale=self._scale)
-        tag.set_data({'latex':formula.latex,'image':formula.filename})
+        tag.set_data({'type':formula.type,'latex':formula.latex,'image':formula.filename})
         use_img = False
         if use_img:
             img = _Tag('img')
@@ -585,14 +447,13 @@ class HtmlRenderer:
         return [tag]
 
     def _render_table(self, table: KTable, offset: _Offset | None = None):
-
-
+        table.validate()
         m: Final = table.page.to_lt()
         bbox: Final = table.bbox.transform(m)
         tag = _Tag("table")
         tag.classes.append("table")
         tag.set_bbox(bbox, offset=offset, scale=self._scale)
-        tag.set_data({'subtype':table.subtype or 'wbk'})
+        tag.set_data({'type':table.type,'subtype':table.subtype or 'wbk'})
 
         # <table classe="table" style=""></table>
 
@@ -669,14 +530,7 @@ class HtmlRenderer:
 
         return [tag]
 
-    def _render_textbox(self, tb: KTextbox, offset: _Offset | None = None)->list[_Tag]:
-        m = tb.page.to_lt()
-        bbox = tb.bbox.transform(m)
-        tag = _Tag("div")
-        tag.classes.append("textbox")
-        tag.set_bbox(bbox, offset=offset, scale=self._scale)
-        tag.children.extend(self._render_objects(tb.lines, offset=(bbox[0], bbox[1])))
-        return [tag]
+
 
     def _render_textline(
         self, tl: KTextline, offset: _Offset | None = None
@@ -686,6 +540,7 @@ class HtmlRenderer:
         tag = _Tag("div")
         tag.classes.append("textline")
         tag.set_bbox(bbox, offset=offset, scale=self._scale)
+        tag.set_data({'type':tl.type})
         tag.children.extend(self._render_objects(tl.split(), offset=(bbox[0], bbox[1])))
         return [tag]
 
@@ -782,11 +637,28 @@ class HtmlRenderer:
 
     def _render_text(self, text: KText, offset: _Offset | None = None) -> list[_Tag]:
         m = text.page.to_lt()
+        bbox = text.bbox.transform(m)
         tag = _Tag("div")
-        tag.classes.append("text")
-        tag.set_bbox(text.bbox.transform(m), offset=offset, scale=self._scale)
-        # TODO 如何分行，如何计算字体大小？
-        tag.children.append(text.text)
+        
+        tag.set_bbox(bbox, offset=offset, scale=self._scale)
+        tag.set_data({'type':text.type})
+        if text.lines:
+            #使用另外的class名字
+            tag.classes.append("textbox")
+            tag.children.extend(self._render_objects(text.lines, offset=(bbox[0], bbox[1])))
+        else:
+            tag.classes.append("text")
+            tag.children.append(text.text)
+        return [tag]
+    
+    def _render_block(self,block:KBlock,offset:_Offset|None=None):
+        m = block.page.to_lt()
+        bbox = block.bbox.transform(m)
+        tag=_Tag('div')
+        tag.classes.append('block')
+        tag.set_data({'type':block.type})
+        tag.set_bbox(bbox,offset=offset,scale=self._scale)
+        tag.children.extend(self._render_objects(block.objects,offset=(bbox[0],bbox[1])))
         return [tag]
 
     def _render_unknown(
@@ -808,14 +680,15 @@ class HtmlRenderer:
             return self._render_figure(obj, offset)
         elif isinstance(obj, KFormula):
             return self._render_formula(obj, offset)
-        elif isinstance(obj, KTextbox):
-            return self._render_textbox(obj, offset)
         elif isinstance(obj, KTable):
             return self._render_table(obj, offset)
         elif isinstance(obj, KText):
             return self._render_text(obj, offset)
+        elif isinstance(obj,KBlock):
+            return self._render_block(obj,offset)
         else:
             return self._render_unknown(obj, offset)
+
 
     def _render_objects(
         self, objs: Sequence[KObject], offset: _Offset | None = None
@@ -824,3 +697,9 @@ class HtmlRenderer:
         for obj in objs:
             tags.extend(self._render_object(obj, offset=offset))
         return tags
+    
+    def _set_xid(self,tag:_Tag,obj:KObject):
+        if obj.doc.tree is not None:
+            node = obj.doc.tree.root.lookup(obj)
+            if node is not None:
+                tag.set_data({'xid':node.id})

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>doc</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <style>
+        :root {
+            --font-sans: "Noto Sans SC", sans-serif;
+            --font-serif: "Noto Serif SC", serif;
+            --font-mono: "Noto Sans Mono", monospace;
+        }
+
+        html,
+        body {
+            padding: 0px;
+            border: none;
+            margin: 0px;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .app {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .toolbar {
+            width: 100%;
+            height: 44px;
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: row;
+            box-sizing: border-box;
+            padding: 0 16px;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            font-family: var(--font-sans);
+            font-size: 13px;
+            color: #2c3e50;
+            background: #fafbfc;
+            border-bottom: 1px solid #e4e7eb;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            user-select: none;
+        }
+
+        .toolbar>div {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toolbar>div>span {
+            color: #6b7280;
+        }
+
+        .toolbar input[type="number"] {
+            width: 76px;
+            height: 28px;
+            padding: 0 4px 0 8px;
+            box-sizing: border-box;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+            font: inherit;
+            color: inherit;
+            text-align: left;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .toolbar input[type="number"]:hover {
+            border-color: #9ca3af;
+        }
+
+        .toolbar input[type="number"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        /* 让 spinner 始终显示且更易点击 */
+        .toolbar input[type="number"] {
+            padding-right: 4px;
+        }
+
+        .toolbar input[type="number"]::-webkit-inner-spin-button {
+            opacity: 1;
+            cursor: pointer;
+            height: 22px;
+        }
+
+        .toolbar input[type="color"] {
+            width: 32px;
+            height: 28px;
+            padding: 2px;
+            box-sizing: border-box;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+            cursor: pointer;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .toolbar input[type="color"]:hover {
+            border-color: #9ca3af;
+        }
+
+        .toolbar input[type="color"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .toolbar input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+
+        .toolbar input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 3px;
+        }
+
+        .workspace {
+            width: 100%;
+            flex: 1;
+            overflow: hidden;
+            box-sizing: border-box;
+            /*border: 4px solid saddlebrown;*/
+            display: flex;
+            flex-direction: row;
+        }
+
+        .outline {
+            width: 200px;
+            height: 100%;
+            box-sizing: border-box;
+            /*border: 4px solid yellow;*/
+            overflow: auto;
+        }
+
+        .splitter {
+            width: 4px;
+            height: 100%;
+            cursor: col-resize;
+            background: #e4e7eb;
+            flex: 0 0 auto;
+            transition: background 0.15s;
+        }
+
+        .splitter:hover,
+        .splitter.dragging {
+            background: #3b82f6;
+        }
+
+        .viewer {
+            --bg-color: #ffffff;
+            flex: 1;
+            height: 100%;
+            box-sizing: border-box;
+            /*border: 4px solid blue;*/
+            display: flex;
+            flex-direction: column;
+            overflow: auto;
+            background: var(--bg-color, #ffffff);
+        }
+
+        .doc {
+            width: max-content;
+            height: max-content;
+            /*border: 4px solid red;*/
+            box-sizing: border-box;
+            margin: auto;
+
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .page {
+            position: relative;
+            outline: 2px solid #dfd1d1;
+            box-sizing: content-box;
+            content-visibility: auto;
+
+        }
+
+        .page-number {
+            display: none;
+            position: absolute;
+            padding: 0px 4px;
+            color: #ffffff;
+            background-color: #8e78e0;
+            font-size: 16px;
+            font-family: monospace;
+            border-radius: 2px;
+        }
+
+        .page-number[data-position="top"] {
+            left: 5px;
+            top: 5px;
+        }
+
+        .page-number[data-position="bottom"] {
+            left: 5px;
+            bottom: 5px;
+        }
+
+        .table {
+            border-collapse: collapse;
+            position: absolute;
+            table-layout: fixed;
+
+        }
+
+        .table td {
+            border: 1px solid gray;
+            box-sizing: border-box;
+        }
+
+        .table td .text {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .table[data-subtype="wbk"] td {
+            border-style: dashed;
+        }
+
+        .table:hover {
+            outline: 2px solid sandybrown;
+        }
+
+        .figure {
+            position: absolute;
+            display: block;
+        }
+
+        .figure:hover {
+            outline: 2px solid sandybrown;
+        }
+
+        .formula {
+            position: absolute;
+            display: block;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .formula > img{
+            width: 100%;
+            height: 100%;
+        }
+
+        .formula:hover {
+            outline: 2px solid sandybrown;
+        }
+
+        .text {
+            position: absolute;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            overflow: hidden;
+        }
+
+        .markdown {
+            position: absolute;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            overflow: hidden;
+        }
+
+        .textbox {
+            position: absolute;
+        }
+
+        .textline {
+            position: absolute;
+            /*使用这个，span就可以设置width，height不需要inline-block或者block*/
+            display: flex;
+        }
+
+        .span {
+            position: absolute;
+            white-space: pre;
+            word-break: keep-all;
+            line-height: 1em;
+            color: #000000;
+        }
+
+        .span-monospace {
+            font-family: var(--font-mono);
+        }
+
+        .span-serif {
+            font-family: var(--font-serif);
+        }
+
+        .span-sans {
+            font-family: var(--font-sans);
+        }
+
+
+        .textbox:hover {
+            outline: 2px solid sandybrown;
+        }
+
+
+
+        .textbox:hover .textline:not(:last-child) {
+            box-shadow: 0 2px 0 0 #ccc;
+        }
+
+        .textbox:hover .span:not(:last-child) {
+            box-shadow: 2px 0 0 0 yellow;
+        }
+
+        .body {
+            position: absolute;
+            width: max-content;
+            height: max-content;
+            box-sizing: border-box;
+        }
+
+        .header {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .footer {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .footnote {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        .unknown {
+            position: absolute;
+            box-sizing: border-box;
+            border: 2px solid yellow
+        }
+
+        .read-order {
+            position: absolute;
+            padding: 2px;
+            border-radius: 2px;
+            background-color: #81d784;
+            color: #ffffff;
+            box-sizing: border-box;
+            font-size: 8px;
+            font-family: monospace;
+            display: none;
+        }
+
+        .doc[data-show-layout] .page>.body> :is(.textbox, .figure, .table, .formula, .text, .markdown) {
+            outline: 2px solid #cd8c77;
+        }
+
+        .doc[data-show-layout] .read-order {
+            display: block;
+        }
+
+        .doc[data-show-page-number] .page-number {
+            display: block;
+        }
+
+        .object-highlight{
+            outline: 2px solid blueviolet !important;
+        }
+
+        .page > .body > *{
+            scroll-margin-top: 20px;
+        }
+    </style>
+
+    <style>
+        :root {
+            --tree-row-h: 26px;
+            --tree-indent: 16px;
+            --tree-color: #2c3e50;
+            --tree-muted: #9ca3af;
+            --tree-hover: #f3f4f6;
+            --tree-active: #e0ecff;
+            --tree-active-color: #1d4ed8;
+        }
+
+        .tree {
+            font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            font-size: 13px;
+            color: var(--tree-color);
+            width: max-content;
+        }
+
+        .tree,
+        .tree ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .tree ul {
+            /* 子节点缩进 */
+            padding-left: var(--tree-indent);
+        }
+
+        .tree-node-row {
+            display: flex;
+            align-items: center;
+            height: var(--tree-row-h);
+            padding: 0 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            gap: 4px;
+        }
+
+        .tree-node-row:hover {
+            background: var(--tree-hover);
+        }
+
+        .tree-node.active>.tree-node-row {
+            background: var(--tree-active);
+            color: var(--tree-active-color);
+        }
+
+        .tree-toggle {
+            width: 14px;
+            height: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--tree-muted);
+            flex: 0 0 auto;
+            transition: transform 0.15s;
+        }
+
+        .tree-toggle::before {
+            content: '▶';
+            font-size: 9px;
+        }
+
+        .tree-node.expanded>.tree-node-row>.tree-toggle {
+            transform: rotate(90deg);
+        }
+
+        .tree-node.leaf>.tree-node-row>.tree-toggle {
+            visibility: hidden;
+        }
+
+        .tree-label {
+            flex: 1 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tree-node>ul {
+            display: none;
+        }
+
+        .tree-node.expanded>ul {
+            display: block;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="app">
+        <div class="toolbar">
+            <div class="toolbar-page-number">
+                <input type="number" id="page-input" min="1" />
+                <span>/ <span id="page-total"></span></span>
+            </div>
+            <div class="toolbar-page-scale">
+                <span>缩放</span>
+                <input type="number" id="scale-input" min="0.1" step="0.1" />
+            </div>
+            <div class="toolbar-page-bg">
+                <span>背景</span>
+                <input type="color" id="bg-input" />
+            </div>
+            <div class="toolbar-page-layout">
+                <label><input type="checkbox" id="layout-input"> 布局</label>
+            </div>
+            <div class="toolbar-show-page-number">
+                <label><input type="checkbox" id="show-page-number-input"> 页码</label>
+            </div>
+        </div>
+        <div class="workspace">
+            <div class="outline" id="outline"></div>
+            <div class="splitter" id="splitter"></div>
+            <div class="viewer">
+                "{{doc_html}}"
+            </div>
+        </div>
+
+    </div>
+
+
+    <dialog id="dlg"></dialog>
+    <script type="module">
+        const data = "{{doc_data}}";
+        "{{doc_js}}"
+    </script>
+</body>
+
+</html>

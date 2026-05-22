@@ -16,7 +16,7 @@ from memect.pdf.base import (
     KObject,
     KPage,
     KTable,
-    KTextbox,
+    KText,
 )
 from memect.pdf.sort import Sorter
 
@@ -181,7 +181,7 @@ class BlockParser:
         # ----------------分页
         # [source]|[xxx]
 
-        def is_title(text: Text) -> bool:
+        def is_title(text: KText) -> bool:
             if self._title_pattern.fullmatch(text.text2) is not None:
                 return True
             else:
@@ -561,7 +561,7 @@ class BlockParser:
         objs = sorted(objs, key=lambda obj: obj.bbox.y1, reverse=True)
         checked_objs: list[KObject] = []
         for obj in objs:
-            if not isinstance(obj, KTextbox):
+            if not isinstance(obj, KText):
                 continue
             # [title][unit]
             #    [unit]
@@ -596,7 +596,7 @@ class BlockParser:
             title = checked_objs[k - 1]
             if (
                 k - 1 >= 0
-                and isinstance(title, KTextbox)
+                and isinstance(title, KText)
                 and self._is_title(title, main_bbox.union_all(sources))
             ):
                 self._logger.warning(
@@ -1038,7 +1038,7 @@ class BlockParser:
 
         return table
 
-    def _is_title(self, text: KTextbox, bbox: BBox) -> bool:
+    def _is_title(self, text: KText, bbox: BBox) -> bool:
         """判断是否为标题"""
         # 判断规则
         # 1.位置关系
@@ -1074,7 +1074,7 @@ class BlockParser:
         else:
             return False
 
-    def _is_unit(self, text: KTextbox, bbox: BBox) -> bool:
+    def _is_unit(self, text: KText, bbox: BBox) -> bool:
         if not (text.bbox.over("x", bbox, d=20) and -2 <= text.bbox.y0 - bbox.y1 <= 30):
             return False
         if self._unit_pattern.fullmatch(text.text2):
@@ -1083,7 +1083,7 @@ class BlockParser:
             return False
 
     def _is_source(
-        self, text: KTextbox, bbox: BBox, sources: Sequence[KObject]
+        self, text: KText, bbox: BBox, sources: Sequence[KObject]
     ) -> bool:
         # 可能有多个source（也就是备注）
         # 第一种
@@ -1099,7 +1099,7 @@ class BlockParser:
         # 第四种
         # 数据来源：xxxx   注：xxx
 
-        def has_no(text: KTextbox) -> bool:
+        def has_no(text: KText) -> bool:
             s = text.text2
             m = re.match(r"注[:]?(?P<text>.+)", s)
             if m is not None:
@@ -1119,7 +1119,7 @@ class BlockParser:
         elif (
             len(sources) > 0
             and sources[-1].bbox.y0 - text.bbox.y1 <= 10
-            and isinstance(sources[0], KTextbox)
+            and isinstance(sources[0], KText)
             and has_no(sources[0])
             and has_no(text)
         ):
