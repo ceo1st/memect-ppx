@@ -24,6 +24,10 @@ function initPage(page) {
         scrollWidth: el.scrollWidth,
     }))
     widths.forEach(({ el, dataWidth, scrollWidth }) => {
+        const s = el.textContent
+        if (['•', '●'].includes(s)) {
+            return
+        }
         const scale = Math.round(dataWidth / scrollWidth * 1000) / 1000
         el.style.transformOrigin = 'left center'
         el.style.transform = `scaleX(${scale})`
@@ -156,6 +160,7 @@ const bgInput = document.getElementById('bg-input')
 const layoutInput = document.getElementById('layout-input')
 const showPageNumberInput = document.getElementById('show-page-number-input')
 const showPageSectionInput = document.getElementById('show-page-section-input')
+const treeFilterInput = document.getElementById('tree-filter-input')
 const viewer = document.querySelector('.viewer')
 
 // 程序化滚动期间，屏蔽 observer 对 currentNumber 的反向更新
@@ -231,9 +236,25 @@ function bindInputs() {
         else delete doc.dataset.showPageNumber
     })
 
-        showPageSectionInput.addEventListener('change', () => {
+    showPageSectionInput.addEventListener('change', () => {
         if (showPageSectionInput.checked) doc.dataset.showPageSection = ''
         else delete doc.dataset.showPageSection
+    })
+
+    treeFilterInput.addEventListener('change', () => {
+        //console.log('filter', treeFilterInput.value)
+        const value = treeFilterInput.value
+        for (const el of document.querySelectorAll('.tree-node')) {
+            const type = el.dataset.type
+            if (['xtext', 'xtable', 'xfigure', 'xformula'].includes(type)) {
+                if (value == 'all' || type==value) {
+                    el.style.display = ''
+                }else {
+                    el.style.display = 'none'
+                }
+            }
+
+        }
     })
 }
 
@@ -347,6 +368,7 @@ class Tree extends EventTarget {
         const li = document.createElement('li')
         const hasChildren = Array.isArray(node.children) && node.children.length > 0
         li.className = 'tree-node' + (hasChildren ? '' : ' leaf')
+        li.dataset.type = node.type
         if (this._defaultExpanded && hasChildren) li.classList.add('expanded')
 
         const row = document.createElement('div')
@@ -424,12 +446,12 @@ const tree2 = {
     }
 }
 
-const t = new Tree('#outline', data.tree)
+const t = new Tree('#outline', data.tree,{defaultExpanded:false})
 let lastXID = null
 t.addEventListener('click', (e) => {
     console.log('node clicked:', e.detail.node)
     const number = e.detail.node.number
-    if(typeof number=='number'){
+    if (typeof number == 'number') {
         document.querySelector(`.page[data-number="${number}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' })
         return
     }
@@ -448,11 +470,11 @@ t.addEventListener('click', (e) => {
             el.classList.toggle('object-highlight')
         })
 
-       
+
     }
 
 })
 
-if(!CSS.supports('selector(&)')){
-  alert('您的浏览器不支持最新的css语法，请使用新版本的浏览器，Chrome 112+、Firefox 117+、Safari 16.5+')
+if (!CSS.supports('selector(&)')) {
+    alert('您的浏览器不支持最新的css语法，请使用新版本的浏览器，Chrome 112+、Firefox 117+、Safari 16.5+')
 }

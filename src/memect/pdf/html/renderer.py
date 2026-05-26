@@ -243,6 +243,7 @@ class HtmlRenderer:
                 #ids表示在页面渲染的对象的id，目的是点击后可以滚动到目标节点
                 data['xid']=node.id
                 data['ids']=[]
+                data['type']=node.type
                 return data
             tree={
                 'root':build_node(doc.tree.root)
@@ -250,10 +251,12 @@ class HtmlRenderer:
         else:
             tree={
                 'root':{
+                        'type':'page-root',
                         'text':'页面',
                         'number':1,
                         'children':[
                             {
+                                'type':'page',
                                 'text':f'第{page.number}页',
                                 'number':page.number
                             } for page in doc.pages

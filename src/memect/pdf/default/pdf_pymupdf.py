@@ -8,18 +8,21 @@ import PIL.ImageDraw
 import pymupdf
 
 from memect.base import images, utils
-from memect.base.bbox import BBox, Quad
+from memect.base.bbox import BBox, Point, Quad
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
 from memect.pdf.base import (
     CharSource,
     KChar,
     KColor,
+    KDest,
     KDocument,
     KFont,
     KLine,
     KPage,
     KPDFFigure,
+    PDFLink,
+    PDFNode,
 )
 
 
@@ -68,9 +71,12 @@ class Parser:
             # 在一个文档中，使用的字体和颜色不会太多，如果相同的使用同一个对象即可
             for kpage in kdoc.working_pages:
                 self._parse_page(doc, kpage)
+            
+            self._parse_toc(doc,kdoc)
 
     def _parse_page(self, doc: pymupdf.Document, kpage: KPage):
         self._parse_rawdict(doc, kpage)
+        self._parse_links(doc,kpage)
 
     def _parse_rawdict(self, doc: pymupdf.Document, kpage: KPage):
         page: Final = doc[kpage.number - 1]
@@ -585,9 +591,65 @@ class Parser:
                 return img
             lines=h_lines+v_lines
             page.draw(('page',None),('vobjects',page.vobjects),(f'raw paths={len(raw_paths)}',draw_paths(raw_paths)),(f'rect paths={len(rect_paths)}',draw_paths(rect_paths)),('rects',[]),(f'line paths={len(line_paths)}',draw_paths(line_paths)),(f'lines={len(h_lines)},{len(v_lines)}',lines),dir='debug/default/pymupdf')
+
+    def _parse_toc(self,doc:pymupdf.Document,kdoc:KDocument):
+        items = doc.get_toc(simple=False)
+        root = PDFNode()
+        for item in items:
+            node=PDFNode()
+            node.level=item[0]
+            node.title=item[1]
+            #1表示第一页，-1表示没有
+            node.page_number=item[2]
+            dest = item[3]
+            if dest['kind']==1:
+                #指向当前文档的某个页面的某个位置
+                #页码，0表示第一页
+                dest['page']
+                #为没有应用page.rotation前的坐标，如果页面应用了，这个也需要跟着变化
+                #pdf原始的值使用左下角坐标，但是pymupdf转换为左上角坐标，这里再转回来
+                page = kdoc.pages[node.page_number-1]
+                #TODO 后续还需要应用旋转
+                m=page.to_lb()
+                to=dest['to']
+                node.point=Point(to.x,to.y).transform(m)
+            elif dest['kind']==4:
+                #指向一个命名位置
+                dest['nameddest']
+                node.type='other'
+            else:
+                #其他的都是打开文件/跳转到其他pdf/或者打开uri
+                node.type='other'
+            root.get_last_node(node.level-1).add(node)
         
+        #最后去掉没有意义的
+        def clean(node:PDFNode):
+            if node.type!='title':
+                node.detach()
+            else:
+                for child in node.children:
+                    clean(child)
+        
+        clean(root)
+        kdoc.pdf_toc=root
 
+    def _parse_links(self,doc: pymupdf.Document, kpage: KPage):
+        page = doc.load_page(kpage.number-1)
+        #Annots中Subtype=Link
+        link = page.first_link
+        m = kpage.to_lb()
+        links:list[PDFLink]=[]
+        while link is not None:
+            dest = link.dest
+            if dest.kind==1:
+                #pymupdf已经转换为原点为左上角，现在需要转换为左下角
+                rect = link.rect.transform(m)
+                point = dest.lt.transform(m)
+                #print(link.xref,rect,dest.page,point)
+                links.append(PDFLink(BBox(rect.x0,rect.y0,rect.x1,rect.y1),dest.page,Point(point.x,point.y)))
 
+            link = link.next
+        kpage.pdf_links = tuple(links)
 
 class _Parser2:
     def _parse_texttrace(self, doc: pymupdf.Document, kpage: KPage):

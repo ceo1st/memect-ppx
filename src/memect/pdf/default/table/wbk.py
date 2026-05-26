@@ -167,6 +167,7 @@ class Parser:
         expanded_cells:Final=[c.bbox for c in cells]
         self._adjust_items(cells)
         cells = Builder().build(cells)
+        self._adjust_items(cells)
         if cells:
             bbox = bbox.union(BBox.join2(cells))
         table = Builder().make_table(page,bbox,cells)

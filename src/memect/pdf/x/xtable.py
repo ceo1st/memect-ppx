@@ -25,7 +25,7 @@ class XTableParser:
         """"""
         #这里只需要判断表格是否可以合并，然后进行合并即可
         #表格在按页解析的时候，已经对齐
-        if index + 1 < len(xobjects):
+        if index + 1 >= len(xobjects):
             return -1
         xobj1 = xobjects[index]
         xobj2 = xobjects[index + 1]

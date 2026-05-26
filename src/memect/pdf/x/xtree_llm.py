@@ -8,7 +8,6 @@ from openai import OpenAI
 
 from memect.base.utils import MyBaseModel
 from memect.pdf.base import KDocument, KObject, KText
-from memect.pdf.x.xchapter import XChapterParser
 from .xbase import XNode, XObject, XText, XTree
 
 
@@ -27,7 +26,7 @@ class ParserArgs(MyBaseModel):
     """可以配置特定的参数，在调用的时候"""
 
 
-class Parser(XChapterParser):
+class Parser:
     _logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     def __init__(self, args: Mapping[str, Any] | ParserArgs|None=None):
@@ -149,7 +148,7 @@ class Parser(XChapterParser):
         else:
             raise RuntimeError()
 
-    def _build(self, root: XNode, objects: Sequence[KObject], result: Sequence[Any]):
+    def _build(self, root: XNode, objects: Sequence[XObject], result: Sequence[Any]):
         # result=[{},{},1]
 
         used_idx: list[int] = []

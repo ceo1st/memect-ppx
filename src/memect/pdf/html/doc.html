@@ -508,6 +508,17 @@
 <body>
     <div class="app">
         <div class="toolbar">
+            <div>
+                <span>章节树显示</span>
+                <select class="toolbar-tree-filter" id="tree-filter-input">
+                    <option value="all" selected>全部</option>
+                    <option value="xtitle">标题</option>
+                    <option value="xtext">文本</option>
+                    <option value="xtable">表格</option>
+                    <option value="xfigure">图片</option>
+                    <option value="xformula">公式</option>
+                </select>
+            </div>
             <div class="toolbar-page-number">
                 <input type="number" id="page-input" min="1" />
                 <span>/ <span id="page-total"></span></span>

@@ -44,8 +44,19 @@ class DefaultParserArgs(MyBaseModel):
 class XTreeParserArgs(MyBaseModel):
     llm: Mapping[str, Any] | None = None
     default: Mapping[str, Any] | None = None
+    toc:Mapping[str,Any]|None=None
+    outline:Mapping[str,Any]|None=None
+    
+    text:Mapping[str,Any]|None=None
+    table:Mapping[str,Any]|None=None
+    group:Mapping[str,Any]|None=None
 
-
+class XParser:
+    def __init__(self):
+        super().__init__()
+    
+    def parse(self,xtree:XTree):
+        pass
 class XTreeParser:
     _logger = logging.getLogger(f"{__module__}.{__qualname__}")
     _debugger = XDebugger(f"{__module__}.{__qualname__}")
@@ -56,29 +67,28 @@ class XTreeParser:
         self._text_parser = XTextParser()
         self._table_parser = XTableParser()
         self._group_parser = XGroupParser()
-        self._chapter_parsers: Final[dict[TreeBackend, XChapterParser]] = {}
+        self._parsers: Final[dict[TreeBackend, XChapterParser]] = {}
         self._lock: Final = threading.RLock()
 
-    def _get_chapter_parser(self, backend: TreeBackend) -> XChapterParser:
+    def _get_parser(self, backend: TreeBackend) -> XParser:
         with self._lock:
-            parser = self._chapter_parsers.get(backend)
+            parser = self._parsers.get(backend)
             if parser is None:
                 if backend == TreeBackend.DEFAULT:
-                    from .xchapter_default import Parser
-
+                    from .xtree_default import Parser
                     parser = Parser(self._args.default)
                 elif backend == TreeBackend.LLM:
-                    from .xchapter_llm import Parser
-
+                    from .xtree_llm import Parser
                     parser = Parser(self._args.llm)
                 else:
                     raise ValueError(f"不支持的backend={backend}")
-                self._chapter_parsers[backend] = parser
+                self._parsers[backend] = parser
             return parser
 
     def parse(self, doc: KDocument):
         debugger: Final = self._debugger.bind()
         xtree = XTree(doc)
+        doc.tree=xtree
         # 跨页/跨栏文本合并
         self._text_parser.parse(xtree)
         # 跨页/跨栏表格合并
@@ -86,11 +96,45 @@ class XTreeParser:
         # 引用等的处理，也就是把某些局部内容先分成一个组，不需要再细分
         self._group_parser.parse(xtree)
 
-        self._get_chapter_parser(doc.params.tree.backend).parse(xtree)
+        #轻量级对象，每次生成？
+        if doc.params.tree.backend==TreeBackend.DEFAULT:
+            from .xtree_default import Parser
+            Parser(self._args.default).parse(xtree)
+        elif doc.params.tree.backend == TreeBackend.LLM:
+            from .xtree_llm import Parser
+            Parser(self._args.llm).parse(xtree)
+        elif doc.params.tree.backend==TreeBackend.OUTLINE:
+            from .xtree_outline import Parser
+            Parser(self._args.outline).parse(xtree)
+        elif doc.params.tree.backend==TreeBackend.TOC:
+            from .xtree_default import Parser
+            Parser(self._args.toc).parse(xtree)
+        else:
+            pass
 
         xtree.root.setup_ids()
         
         if debugger.allow("save"):
             doc.write("debug/xtree.txt", xtree.root.stringify())
 
+    def _parse_outline(self, xtree: XTree) -> bool:
+        from .xtree_outline import Parser
+
+        Parser().parse(xtree)
+        return self._has_title_child(xtree)
+
+    def _parse_toc(self, xtree: XTree) -> bool:
+        from .xtree_toc import Parser
+
+        Parser().parse(xtree)
+        return self._has_title_child(xtree)
+
+    def _has_title_child(self, xtree: XTree) -> bool:
+        return any(child.is_title() for child in xtree.root.children)
+
+    def _clear_root(self, xtree: XTree):
+        for child in list(xtree.root.children):
+            child.deatch()
+
         
+

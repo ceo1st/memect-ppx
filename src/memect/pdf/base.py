@@ -32,7 +32,7 @@ from pydantic import ConfigDict, Field
 
 from memect.base import images, lists, pdfs
 from memect.base.api import ApiError
-from memect.base.bbox import BBox, Quad
+from memect.base.bbox import BBox, Point, Quad
 from memect.base.matrix import Matrix
 from memect.base.strs import NText
 from memect.base.utils import AutoCleaner, MyBaseModel, safe_write
@@ -104,10 +104,12 @@ class ParseMode(StrEnum):
 class TreeBackend(StrEnum):
     DEFAULT=auto()
     LLM=auto()
+    OUTLINE=auto()
+    TOC=auto()
 
 class TreeParams(MyBaseModel):
     backend:TreeBackend=TreeBackend.DEFAULT
-    chapters:Mapping[str,Any]|None=None
+    template:Mapping[str,Any]|None=None
 
 class ApiParams(MyBaseModel):
     model_config = ConfigDict(
@@ -371,6 +373,9 @@ class KDocument:
         self.state: dict[str, Any] = {}
         """执行统计"""
 
+        self.pdf_toc:PDFNode|None=None
+        """pdf的toc根节点"""
+        
         from .x.xbase import XTree
         self.tree:XTree|None=None
         """章节树解析的结果"""
@@ -830,6 +835,9 @@ class KPage:
 
         # self.ocr_spans:Final[list[KSpan]]=[]
         # """ocr识别的字符串，目的是用来去掉和pdf识别的且重叠的"""
+
+        self.pdf_links:Sequence[PDFLink]=tuple()
+        """表示页面上的pdf的annots(Subtype=Link)"""
 
         self.data: Final[dict[str, Any]] = {}
 
@@ -2509,7 +2517,7 @@ class KText(KObject):
 
     type = "text"
 
-    def __init__(self, page: KPage, quad: Quad, *, lines: Sequence[KTextline]|None=None, text: str|None=None,md_text:str|None=None):
+    def __init__(self, page: KPage, quad: Quad|BBox, *, lines: Sequence[KTextline]|None=None, text: str|None=None,md_text:str|None=None):
         super().__init__(page, quad)
 
         if lines and text is not None:
@@ -3604,3 +3612,76 @@ class Group[T](list[T]):
 
     def invalidate(self):
         self._bbox = None
+
+class KDest:
+    def __init__(self,page_number:int,point:Point):
+        super().__init__()
+        self.page_number = page_number
+        self.point=point
+        """页面的坐标"""
+
+
+class PDFNode:
+    """表示pdf的outline的一个节点"""
+    def __init__(self,parent:'PDFNode|None'=None):
+        super().__init__()
+        self.parent=parent
+        self.children:list[PDFNode]=[]
+        self.level=0
+        self.title:str=''
+        self.page_number:int=-1
+        """页面，1位第一页，-1表示没有"""
+        self.point:tuple[float,float]|None=None
+        """页面坐标，原点为左下角"""
+        self.type='title'
+        #self.target:Any={}
+    
+    @property
+    def size(self)->int:
+        return len(self.children)
+
+    def add(self,node:'PDFNode'):
+        node.parent=self
+        self.children.append(node)
+    
+
+    def get_last_node(self,level:int)->'PDFNode':
+        if level==0:
+            return self.get_root()
+        elif level>self.level:
+            #往下查找
+            node=self
+            while level>node.level:
+                node = node.children[-1]                
+            return node
+        else:
+            #往上查找
+            return self.get_root().get_last_node(level)
+    
+    def get_root(self)->'PDFNode':
+        if self.parent is None:
+            return self
+        else:
+            return self.parent.get_root()
+    
+    def detach(self):
+        if self.parent is not None:
+            self.parent.children.remove(self)
+    
+    def stringify(self)->str:
+        buf:list[str]=[]
+        indent = '    '*self.level
+        buf.append(f'{indent}[{self.level}]({self.page_number},{self.point}){self.title}\n')
+        for child in self.children:
+            buf.append(child.stringify())
+        return ''.join(buf)
+    
+class PDFLink:
+    def __init__(self,bbox:BBox,page_number:int,point:Point):
+        super().__init__()
+        self.bbox:Final=bbox
+        """表示在页面上的位置"""
+        self.page_number:Final=page_number
+        """表示点击后跳转到哪个页面"""
+        self.point:Final=point
+        """表示点击后跳转到页面的那个位置"""

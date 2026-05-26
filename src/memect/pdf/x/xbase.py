@@ -5,6 +5,7 @@ from logging import Logger
 from typing import Any, Final, Self, Sequence, cast, override
 
 from memect.base import strs
+from memect.base.bbox import BBox, Point
 from memect.base.pattern import XPattern
 from memect.pdf.base import (
     KBlock,
@@ -18,6 +19,14 @@ from memect.pdf.base import (
     KText,
 )
 
+class XDest:
+    def __init__(self,page_number:int,point:Point|BBox|None=None):
+        super().__init__()
+        self.page_number:Final=page_number
+        self.bbox:Final=point if isinstance(point,BBox) else None
+        """目标位置，可以为None"""
+        self.point:Final=point if isinstance(point,Point) else None
+        """目标位置，可以为None，通常为原文上一点的地方"""
 
 class XNode:
     def __init__(self, object: "XObject"):
@@ -103,6 +112,9 @@ class XNode:
         else:
             return None
         
+    def is_root(self)->bool:
+        return self.parent is None
+    
     def is_formula(self)->bool:
         return isinstance(self.object,XFormula)
     
@@ -572,6 +584,9 @@ class XText(XObject):
         self._text:Final[str|None]=text
         """自定义的文本，如：逻辑标题"""
         self.no:XNo|None=None
+        """如果为标题，可以设置序号"""
+        self.dest:XDest|None=None
+        """如果为标题，且出现在目录中，可以设置目标位置"""
         self._raw_text:str|None=None
     
     def is_title(self)->bool:
@@ -597,7 +612,8 @@ class XText(XObject):
             #XText or XTextbox
             self._raw_text=''.join(getattr(obj,'text') for obj in self.objects)
         return self._raw_text
-
+    
+    
     @override
     def invalidate(self):
         super().invalidate()
