@@ -1,5 +1,4 @@
 import logging
-import math
 import multiprocessing as mp
 import threading
 import time
@@ -10,7 +9,6 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Final, Mapping, Sequence, final, override
 
 import cv2
-import httpx
 import numpy as np
 import PIL
 import PIL.Image
@@ -18,13 +16,11 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from memect.base import lists, utils
-from memect.base.api import ApiError
 from memect.base.config import MPInit, get_settings
 from memect.base.debug import XDebugger
 from memect.base.job import Scheduler, SchedulerArgs
-from memect.base.sdk import Api
 from memect.base.task import Runner, Task
-from memect.base.utils import MyBaseModel, SafeExecutor
+from memect.base.utils import MyBaseModel, SafeExecutor, Timer
 
 from .base import KDocument, KPage, KTable
 from .commons import FileInfo
@@ -199,9 +195,9 @@ class ModelExecutor:
     def close(self):
         if self._finalizer.alive:
             self._finalizer()
-        self._executor=None
-        self._scheduler=None
-        self._model=None
+        del self._executor
+        del self._scheduler
+        del self._model
 
 
     def parse(
@@ -438,81 +434,24 @@ class ModelManager:
     
 
 
-
-class ApiModel(Model):
-    """标准的api，和本地执行的输出一致"""
-
-    def __init__(self, port: int = 9527):
-        super().__init__()
-        self._api = Api()
-
-        self._client = None
-        self._use_local = False
-        self._local_token: Final = ""
-        self._local_url = f"http://127.0.0.1:{port}"
-        if self._use_local:
-            self._client = httpx.Client()
-        else:
-            pass
-
-    @override
-    def _execute(self, files: Sequence[FileInfo]) -> list[Any]:
-        items: list[Any] = []
-        if self._use_local:
-            # 如果是本地的，就使用简单的方式
-            client = httpx.Client()
-            params = {"token": "", "files": files}
-            # 为了避免token在url中，显示在日志中，可以要求token在参数中，或者header中
-            resp = client.post("", json=params)
-            if resp.status_code == 200:
-                result = resp.json()
-                if result.get("error"):
-                    raise ApiError.from_dict(result.get("error"))
-                else:
-                    return result["data"]
-            else:
-                # 返回错误的代码，这里不应该使用ApiError，而是ModelError更好
-                raise ApiError(ApiError.ANY, "")
-        else:
-            for i, file in enumerate(files):
-                # TODO 现在还是传数据，后续可以简化为直接传递路径
-                # 问题就是需要考虑安全问题
-                # 另外一个就是如果有旋转，就需要对图片先进行处理
-                items.append((str(i), file.file, file.params))
-            results: list[Any] = []
-            for _, _, result in self._api.batch(items):
-                results.append(result)
-            return results
-
-    def _invoke_local(self, files: Sequence[FileInfo]):
-        # 如果是本地的，就使用简单的方式
-        assert self._client is not None
-        client = self._client
-        params = {"token": "", "files": files}
-        # 为了避免token在url中，显示在日志中，可以要求token在参数中，或者header中
-        resp = client.post("", json=params)
-        if resp.status_code == 200:
-            result = resp.json()
-            if result.get("error"):
-                raise ApiError.from_dict(result.get("error"))
-            else:
-                return result["data"]
-        else:
-            # 返回错误的代码，这里不应该使用ApiError，而是ModelError更好
-            raise ApiError(ApiError.ANY, "")
-
-
 class RapidLayoutModel(Model):
+    _logger = logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self, mapping: Mapping[str, str] | None = None, **kwargs: Any):
         super().__init__()
-        from rapid_layout import RapidLayout
-
         self._mapping: Final = mapping or {}
-        self._model = RapidLayout(**kwargs)
+        self._model:Any=None
+        self._model_kwargs=kwargs
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
+        with self._lock:
+            if self._model is None:
+                from rapid_layout import RapidLayout
+                timer = Timer.start()
+                self._model = RapidLayout(**self._model_kwargs)
+                self._logger.info('load layout model,elapsed=%.3f',timer.elapsed())
+
         results: list[Any] = []
         for file in files:
             output = self._model(file.file)
@@ -545,10 +484,10 @@ class RapidOCRModel(Model):
     _use_lock=False
     def __init__(self, **kwargs: Any):
         super().__init__()
-        from rapidocr import RapidOCR
+        
 
-        kwargs = self._normalize_kwargs(kwargs)
-        self._model: Final = RapidOCR(params=kwargs)
+        self._model_kwargs = self._normalize_kwargs(kwargs)
+        self._model:Any = None
         #self._unclip_ratio= self._model.text_det.postprocess_op.unclip_ratio
 
     def _normalize_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -580,6 +519,13 @@ class RapidOCRModel(Model):
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
+        with self._lock:
+            if self._model is None:
+                from rapidocr import RapidOCR
+                timer = Timer.start()
+                self._model = RapidOCR(params=self._model_kwargs)
+                self._logger.info('load ocr model,elapsed=%.3f',timer.elapsed())
+
         from rapidocr.utils.output import RapidOCROutput
 
         def to_point(p: Any) -> Any:
@@ -589,49 +535,6 @@ class RapidOCRModel(Model):
             p1, p2, p3, p4 = box
             return (to_point(p1), to_point(p2), to_point(p3), to_point(p4))
         
-        def to_quad2(box:Any,shrink_factor:float=0.9):
-            # item=[(lt,rt,rb,lb),'xxx',0.9]
-            if shrink_factor != 1:
-                center = np.mean(box, axis=0)
-                # 仅仅调整y区域
-                box = center + (box - center) * (1, shrink_factor)
-
-            x0, y0 = box[0]
-            x1, y1 = box[1]
-            x2, y2 = box[2]
-            x3, y3 = box[3]
-            # 为了能够json，需要从np.float => float
-            x0 = float(x0)
-            y0 = float(y0)
-            x1 = float(x1)
-            y1 = float(y1)
-            x2 = float(x2)
-            y2 = float(y2)
-            x3 = float(x3)
-            y3 = float(y3)
-
-            # 即使为书写准确的文字，也就是来自标准的pdf生成的图片，识别的box也经常有轻微的倾斜，这里稍微调整
-            # 也就是如果倾斜的度数很小，就调整为水平的矩形
-            if True and x1-x0 != 0 and x3-x2 != 0:
-                angle1 = math.degrees(math.atan((y1-y0)/(x1-x0)))
-                angle2 = math.degrees(math.atan((y3-y2)/(x3-x2)))
-                angle = max(abs(angle1), abs(angle2))
-                method = 1
-                if angle <= 4:
-                    if method == 1:
-                        y0 = y1 = max(y0, y1)
-                        y2 = y3 = max(y2, y3)
-                    elif method == 2:
-                        y0 = y1 = min(y0, y1)
-                        y2 = y3 = min(y2, y3)
-                    else:
-                        pass
-            # bbox:tuple[float,float,float,float]=(min(x0,x1,x2,x3),min(y0,y1,y2,y3),max(x0,x1,x2,x3),max(y0,y1,y2,y3))
-            # TODO 如果text的前后为全角字符串，需要增加一点空间，如：
-            # “（”，“）”，返回的bbox是不包含前后的空间的，这里就需要调整一下
-            # text = item[1]
-            return ((x0,y0),(x1,y1),(x2,y2),(x3,y3))
-
         def adjust_boxes(boxes: Any,texts:list[str], x_overlap_ratio: float = 0.7,min_overlap_y:float=1) -> Any:
             if boxes is None or len(boxes) < 2:
                 return boxes
@@ -702,9 +605,6 @@ class RapidOCRModel(Model):
                 pass
             results.append({"spans": objs, "width": size[0], "height": size[1]})
         return results
-
-
-
 
 
     def _shrink_bbox_any_bg(
@@ -813,26 +713,8 @@ class FormulaPPModel(Model):
             })
         return results
 
-class FormulaModel(Model):
-    _use_lock=False
-    def __init__(self, **kwargs: Any):
-        super().__init__()
-        from memect.pdf.formula import Parser
-        self._model: Final = Parser(**kwargs)
 
-    @override
-    def _execute(self, files: Sequence[FileInfo]):
-        results:list[Any]=[]
-        for file in files:
-            t1=time.monotonic()
-            res = self._model.parse(file.cv2_image)
-            results.append({
-                'latex':res,
-                'elapsed':time.monotonic()-t1
-            })
-        return results
-
-class MfrModel(Model):
+class FormulaMfrModel(Model):
     _logger=logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self, **kwargs: Any):
@@ -846,7 +728,7 @@ class MfrModel(Model):
         if self._model is None:
             with self._lock:
                 if self._model is None:
-                    from memect.pdf.mfr import Parser
+                    from memect.pdf.formula_mfr import Parser
                     timer = utils.Timer.start()
                     self._model = Parser(**self._model_kwargs)
                     self._logger.info('load formula elapsed=%.3f',timer.elapsed())
@@ -861,40 +743,36 @@ class MfrModel(Model):
             })
         return results
     
-class TableClsModel(Model):
-    _use_lock=False
-    def __init__(self, **kwargs: Any):
-        super().__init__()
-        from table_cls import TableCls
-
-        # TODO 也可以使用多个模型
-        self._model: Final = TableCls(**kwargs)
-
-    @override
-    def _execute(self, files: Sequence[FileInfo]):
-        results: list[str] = []
-        for file in files:
-            label, _ = self._model(file.file)
-            results.append(label)
-        return results
 
 
-
-class TableDetModel(Model):
+class TableModel(Model):
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
     _use_lock=False
     def __init__(self,*,model_path: str|Path|None=None,**kwargs:Any):
         super().__init__()
         from memect.models import get_model_path
 
-        from .table_det import RTDETRTableCellDet
+        
         if not model_path:
             model_path=get_model_path('table_det.onnx')
         else:
             model_path = Path(model_path)
-        self._model = RTDETRTableCellDet(model_path,**kwargs)
+
+        self._model_path = model_path
+        self._model_kwargs = kwargs
+        self._model:Any=None
+        #self._model = RTDETRTableCellDet(model_path,**kwargs)
+    
 
     @override
     def _execute(self, files: Sequence[FileInfo]):
+        with self._lock:
+            if self._model is None:
+                from .table_det import RTDETRTableCellDet
+                timer = utils.Timer.start()
+                self._model = RTDETRTableCellDet(self._model_path,**self._model_kwargs)
+                self._logger.info('load table model,elapsed=%.3f',timer.elapsed())
+
         results: list[Any] = []
         for file in files:
             result = self._model(file.cv2_image,show_gui=False)
@@ -994,7 +872,7 @@ class LLMTableModel(LLMModel):
             return KTable.parse_otsl(text)
 
 
-class TestModel(Model):
+class MockModel(Model):
     def __init__(self):
         super().__init__()
         self._use_lock = False

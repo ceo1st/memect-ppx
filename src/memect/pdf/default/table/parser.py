@@ -11,12 +11,6 @@ class TableParser:
     def __init__(self,manager:ModelManager):
         super().__init__()
         self._manager:Final = manager
-        #self._table_cls: Final = manager.get("table_cls")
-        #self._table_cls_key: Final = "cache/default/table_cls"
-        self._table_det: Final = manager.get("table_det")
-        self._table_det_key: Final = "cache/default/table_det"
-        self._table_llm = manager.get("table_llm")
-        self._table_llm_key: Final = "cache/default/table_llm"
 
     def _do(
         self, fn: Callable[[KPage], None], pages: Sequence[KPage], max_workers: int = 0
@@ -36,8 +30,8 @@ class TableParser:
         if doc.params.table == TableMode.NO:
             # 不用解析表格，全部作为图片
             self._parse_as_figures(doc, max_workers=max_workers)
-        elif doc.params.table == TableMode.LLM:
-            self._parse_llm(doc, max_workers=max_workers)
+        #elif doc.params.table == TableMode.LLM:
+            #self._parse_llm(doc, max_workers=max_workers)
         elif doc.params.table == TableMode.YBK:
             # 全部按有边框
             self._parse_ybk(doc, max_workers=max_workers)

@@ -48,8 +48,8 @@ class Parser:
         super().__init__()
         from .ybk import Parser
 
-        self._table_det: Final = manager.get("table_det")
-        self._table_det_key: Final = "cache/default/wbk/table_det"
+        self._table: Final = manager.get("table")
+        self._table_key: Final = "cache/default/wbk/table"
         self._ybk_parser: Final = Parser()
 
     def parse(
@@ -72,7 +72,7 @@ class Parser:
         def parse_page(page: KPage):
             return self._parse_page(page, mode=mode)
 
-        self._table_det.parse(doc, self._table_det_key, handler=get_tables)
+        self._table.parse(doc, self._table_key, handler=get_tables)
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
     def _parse_page(self, page: KPage, mode: WBKMode):
@@ -220,7 +220,7 @@ class Parser:
     def _get_cells_by_model(self, page: KPage, index: int, vobj: VObject) -> list[_Cell]:
         # debugger = self._debugger.bind(page=page.number)
         bbox = vobj.bbox
-        result = vobj.cache.pop(self._table_det_key, None)
+        result = vobj.cache.pop(self._table_key, None)
         if not result:
             # 表示无法截图？
             return [_Cell(vobj.bbox)]

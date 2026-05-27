@@ -1,18 +1,12 @@
-import json
 import logging
-import re
 import threading
-from typing import Any, Final, Mapping, Self, Sequence, override
+from typing import Any, Final, Mapping
 
-from anthropic import Anthropic
-from openai import OpenAI
 
 from memect.base.debug import XDebugger
-from memect.base.pattern import XPattern
 from memect.base.utils import MyBaseModel
-from memect.pdf.base import KDocument, KObject, KText, TreeBackend
-from memect.pdf.x.xchapter import XChapterParser
-from .xbase import XNo, XNode, XObject, XText, XTree
+from memect.pdf.base import KDocument, TreeBackend
+from .xbase import XTree
 from .xgroup import XGroupParser
 from .xtable import XTableParser
 from .xtext import XTextParser
@@ -67,7 +61,7 @@ class XTreeParser:
         self._text_parser = XTextParser()
         self._table_parser = XTableParser()
         self._group_parser = XGroupParser()
-        self._parsers: Final[dict[TreeBackend, XChapterParser]] = {}
+        self._parsers: Final[dict[TreeBackend, XParser]] = {}
         self._lock: Final = threading.RLock()
 
     def _get_parser(self, backend: TreeBackend) -> XParser:

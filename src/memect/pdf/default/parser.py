@@ -111,8 +111,6 @@ class DefaultParser:
         self._formula_key: Final = "cache/default/formula"
         self._ocr_model: Final = manager.get(self._args.ocr)
         self._ocr_key: Final = "cache/default/ocr"
-        # self._llm_model:Final=ModelExecutor.get(self._args.llm)
-        # self._llm_key:Final='cache/default/llm'
 
         self._pdf_parser: Final = PdfParser(self._args.pdf)
         self._table_parser: Final = TableParser(manager)

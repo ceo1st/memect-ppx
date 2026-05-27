@@ -1,13 +1,13 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum, auto
-import logging
 from typing import Callable, Sequence
-
 
 from memect.base.bbox import BBox
 from memect.base.debug import XDebugger
 from memect.pdf.base import KDocument, KLine, KPage, KTable, VObject
 from memect.pdf.default.table.filler import TableFiller
+
 from .line import Liner
 
 

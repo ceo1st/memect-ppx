@@ -89,8 +89,8 @@ class TableMode(StrEnum):
     """全部按无边框解析"""
     AUTO = auto()
     """自动按有边框或者无边框"""
-    LLM = auto()
-    """使用LLM解析"""
+    #LLM = auto()
+    #"""使用LLM解析"""
 
 
 class ParseMode(StrEnum):
