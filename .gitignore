@@ -29,5 +29,6 @@
 
 !/docker-compose.yaml
 !/.env.sample
+!/agent-sample.json
 
 

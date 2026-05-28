@@ -7,10 +7,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-from anthropic import Anthropic
-from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
+from memect.agent.chapter_doctor import (
+    ChapterDoctor,
+    ChapterDoctorArgs,
+    ChapterDoctorReport,
+    format_chapter_report_console,
+    should_run_chapter_doctor,
+)
 from memect.agent.doctor import Doctor, DoctorArgs, DoctorReport
 
 
@@ -151,6 +156,7 @@ class ParseDoctorReport(BaseModel):
     test_commands: list[TestCommand] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     agent: AgentResult | None = None
+    chapter: ChapterDoctorReport | None = None
     report_files: dict[str, Path] = Field(default_factory=dict)
 
 
@@ -206,11 +212,14 @@ class ParseDoctor:
         report.classification, report.confidence = self._classify(report)
         report.notes = self._notes(report)
 
-        agent_config = self._agent_config()
-        if isinstance(agent_config, AgentResult):
-            report.agent = agent_config
-        elif agent_config and agent_config.base_url:
-            report.agent = AgentClient(agent_config).diagnose(report)
+        if should_run_chapter_doctor(self.args.problem, self.args.mode):
+            report.chapter = self._run_chapter_doctor()
+        else:
+            agent_config = self._agent_config()
+            if isinstance(agent_config, AgentResult):
+                report.agent = agent_config
+            elif agent_config and agent_config.base_url:
+                report.agent = AgentClient(agent_config).diagnose(report)
 
         self._write_report(report)
         return report
@@ -236,6 +245,21 @@ class ParseDoctor:
                 cpu=self.args.cpu,
                 cuda=self.args.cuda,
                 check_network=self.args.check_network,
+            )
+        ).run()
+
+    def _run_chapter_doctor(self) -> ChapterDoctorReport:
+        return ChapterDoctor(
+            ChapterDoctorArgs(
+                problem=self.args.problem,
+                file=self.args.file,
+                out_dirs=self.args.out_dirs,
+                out_dir=self.args.out_dir,
+                pages=self.args.pages,
+                tree=self.args.tree,
+                params_snapshot=self.args.params_snapshot,
+                command=self.args.command,
+                agent_config=self.args.agent_config,
             )
         ).run()
 
@@ -635,7 +659,7 @@ class ParseDoctor:
 
     def _plan_test_commands(self) -> list[TestCommand]:
         pages = self.args.pages or "1-3"
-        base_out = self._default_out_dir() / "doctor"
+        base_out = self._default_out_dir() / "agent" / "doctor-tests"
         commands = [
             TestCommand(
                 id="ocr_yes",
@@ -792,8 +816,8 @@ class ParseDoctor:
 
     def _report_dir(self) -> Path:
         if self.args.out_dirs:
-            return self.args.out_dirs[0]
-        return self._default_out_dir()
+            return self.args.out_dirs[0] / "agent"
+        return self._default_out_dir() / "agent"
 
     def _default_out_dir(self) -> Path:
         if self.args.out_dir is not None:
@@ -1039,7 +1063,12 @@ class AgentClient:
     def _probe_timeout(self) -> float:
         return min(self.config.timeout, 10)
 
-    def _openai_client(self) -> OpenAI:
+    def _openai_client(self) -> Any:
+        try:
+            from openai import OpenAI
+        except ModuleNotFoundError as e:
+            raise RuntimeError("openai SDK is required for openai agent providers") from e
+
         kwargs: dict[str, Any] = dict(self.config.client or {})
         kwargs["base_url"] = self.config.base_url
         if self.config.api_key is not None:
@@ -1050,7 +1079,12 @@ class AgentClient:
             kwargs.setdefault("default_headers", self.config.headers)
         return OpenAI(**kwargs)
 
-    def _anthropic_client(self) -> Anthropic:
+    def _anthropic_client(self) -> Any:
+        try:
+            from anthropic import Anthropic
+        except ModuleNotFoundError as e:
+            raise RuntimeError("anthropic SDK is required for anthropic agent provider") from e
+
         kwargs: dict[str, Any] = dict(self.config.client or {})
         kwargs["base_url"] = self.config.base_url
         if self.config.api_key is not None:
@@ -1186,6 +1220,28 @@ def format_report_markdown(report: ParseDoctorReport) -> str:
             lines.append(report.agent.content)
             lines.append("")
 
+    if report.chapter:
+        lines.extend(["## chapter doctor", ""])
+        lines.append(f"- candidates: {len(report.chapter.candidates)}")
+        lines.append(
+            "- files: "
+            + ", ".join(
+                f"{name}={path}" for name, path in report.chapter.report_files.items()
+            )
+        )
+        lines.append("")
+        for index, candidate in enumerate(report.chapter.candidates[:20], start=1):
+            pages = ""
+            if candidate.page_start is not None and candidate.page_end is not None:
+                pages = f"{candidate.page_start}-{candidate.page_end}"
+            elif candidate.page_start is not None:
+                pages = str(candidate.page_start)
+            lines.append(
+                f"- {index}. {candidate.title} pages={pages} "
+                f"source={candidate.source} confidence={candidate.confidence}"
+            )
+        lines.append("")
+
     if report.failure:
         lines.extend(["## failure", ""])
         lines.append(f"- type: {report.failure.get('error_type')}")
@@ -1220,6 +1276,8 @@ def format_report_console(report: ParseDoctorReport) -> str:
                 lines.append(report.agent.content[:1200])
         else:
             lines.append(f"agent: {report.agent.error}")
+    if report.chapter:
+        lines.append(format_chapter_report_console(report.chapter))
     if report.report_files:
         lines.append(
             "report: "

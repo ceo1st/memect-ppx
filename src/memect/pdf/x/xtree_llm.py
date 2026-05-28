@@ -222,6 +222,7 @@ class Parser:
                 return objects[idx]
 
         def parse(parent: XNode, values: Sequence[Any]):
+            doc=parent.object.doc
             for value in values:
                 xobj: XObject | None = None
                 if isinstance(value, int):
@@ -232,7 +233,7 @@ class Parser:
                     children = value.get("children")
                     if title:
                         # 逻辑标题
-                        xobj = XText.create_title(f"<{title}>")
+                        xobj = XText.create_title(doc,f"<{title}>")
                     elif isinstance(idx, int):
                         xobj = get_xobject(idx)
                     else:

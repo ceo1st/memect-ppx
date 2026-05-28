@@ -678,6 +678,7 @@ class KDocument:
         buf: list[str] = []
         for page in self.working_pages:
             buf.append(page.markdown())
+        #TODO 需要添加分页符吗？如：----1----
         return "\n\n".join(buf)
 
 
@@ -2058,8 +2059,7 @@ class KTextline(KObject):
         
         return new_objects
 
-    def to_textbox(self) -> "KTextbox":
-        return KTextbox(self.page, self.quad, lines=[self])
+
 
     @override
     def markdown(self) -> str:
@@ -2136,53 +2136,56 @@ class KTextline(KObject):
             for group in split_groups(objects):
                 if isinstance(group[0], KChar):
                     s = "".join(c.text for c in cast(Sequence[KChar], group))
-                    # 前后的空格无法显示粗体，所以就先去掉空格
-                    m = re.search(r"^(\s*)(.*?)(\s*)$", s)
-                    if m:
-                        # 去掉前后空格
-                        prefix = m.group(1)
-                        suffix = m.group(3)
-                        s = m.group(2)
+                    if not s.strip():
+                        buf.append(s)
                     else:
-                        prefix = ""
-                        suffix = ""
+                        # 前后的空格无法显示粗体，所以就先去掉空格
+                        m = re.search(r"^(\s*)(.*?)(\s*)$", s)
+                        if m:
+                            # 去掉前后空格
+                            prefix = m.group(1)
+                            suffix = m.group(3)
+                            s = m.group(2)
+                        else:
+                            prefix = ""
+                            suffix = ""
 
-                    buf.append(prefix)
-                    has_style = False
-                    c = group[0]
-                    if c.underline:
-                        buf.append("<u>")
-                        has_style = True
-                    if c.strikeout:
-                        buf.append("~~")
-                        has_style = True
-                    if c.italic:
-                        buf.append("*")
-                        has_style = True
-                    if c.bold:
-                        buf.append("**")
-                        has_style = True
+                        buf.append(prefix)
+                        has_style = False
+                        c = group[0]
+                        if c.underline:
+                            buf.append("<u>")
+                            has_style = True
+                        if c.strikeout:
+                            buf.append("~~")
+                            has_style = True
+                        if c.italic:
+                            buf.append("*")
+                            has_style = True
+                        if c.bold:
+                            buf.append("**")
+                            has_style = True
+                        
+                        buf.append(_md_escape(s))
+                        if c.italic:
+                            buf.append("*")
+                        if c.bold:
+                            buf.append("**")
+                        if c.strikeout:
+                            buf.append("~~")
+                        if c.underline:
+                            buf.append("</u>")
 
-                    buf.append(_md_escape(s))
-                    if c.italic:
-                        buf.append("*")
-                    if c.bold:
-                        buf.append("**")
-                    if c.strikeout:
-                        buf.append("~~")
-                    if c.underline:
-                        buf.append("</u>")
-
-                    buf.append(suffix)
-                    if (
-                        has_style
-                        and len(s) > 0
-                        and buf[-1] != " "
-                        and is_punctuation(s[-1])
-                    ):
-                        # 如果最后为标点，需要添加一个空格才能够表示为加粗
-                        # 如：**abc:** => 不会被渲染为粗体，后面需要添加一个空格
-                        buf.append(" ")
+                        buf.append(suffix)
+                        if (
+                            has_style
+                            and len(s) > 0
+                            and buf[-1] != " "
+                            and is_punctuation(s[-1])
+                        ):
+                            # 如果最后为标点，需要添加一个空格才能够表示为加粗
+                            # 如：**abc:** => 不会被渲染为粗体，后面需要添加一个空格
+                            buf.append(" ")
                 else:
                     for obj in group:
                         buf.append(obj.markdown())
@@ -2692,8 +2695,8 @@ class KFigure(KObject):
         return self.doc.out_dir / self.filename
 
     def markdown(self) -> str:
-        name = self.fullpath.name
-        return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
+        name = _md_escape(self.fullpath.name)
+        return f"![{name}](./images/{name})"
 
     def jsonify(self):
         return {
@@ -3422,8 +3425,8 @@ class KFormula(KObject):
                 return f"$${self.latex}$$"
                 # return rf'\[{self.latex}\]'
         else:
-            name = self.fullpath.name
-            return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
+            name = _md_escape(self.fullpath.name)
+            return f"![{name}](./images/{name})"
 
     def jsonify(self):
         data = {

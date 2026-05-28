@@ -7,6 +7,7 @@ import platform
 import re
 import sys
 import tempfile
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
@@ -25,6 +26,16 @@ _OSC_RE = re.compile(r"\x1b\](?:.|\n)*?(?:\x07|\x1b\\)")
 _CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _ANSI_RE = re.compile(r"\x1b[@-Z\\-_]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_TITLE_CANDIDATE_RE = re.compile(
+    r"^\s*("
+    r"第[一二三四五六七八九十百千万0-9]+[章节篇部]|"
+    r"[0-9]+(?:\.[0-9]+)*[、.．\s]+.+|"
+    r"[一二三四五六七八九十]+[、.．].+|"
+    r"[（(]?[0-9一二三四五六七八九十]+[）)]\s*.+|"
+    r"附件\s*[:：0-9一二三四五六七八九十]*.*"
+    r")"
+)
 
 
 CheckStatus = Literal["ok", "warning", "error", "skipped"]
@@ -120,6 +131,7 @@ class Doctor:
         self._settings: Mapping[str, Any] | None = None
         self._llm_info: LLMInfo | None = None
         self._effective_backend: Backend | None = None
+        self._file_info: _FileInfo | None = None
 
     def run(self) -> DoctorReport:
         self._apply_device()
@@ -139,6 +151,7 @@ class Doctor:
             self._check_model_paths()
             self._check_providers()
             self._check_llm_configs()
+        self._write_tree_prediagnosis()
         return self.report
 
     def _apply_device(self) -> None:
@@ -317,6 +330,7 @@ class Doctor:
             return
 
         info = self._inspect_file(self.args.file)
+        self._file_info = info
         status: CheckStatus = "ok"
         message = "Input file is supported"
         if not info.exists:
@@ -418,12 +432,7 @@ class Doctor:
         return "unsupported"
 
     def _check_output_dir(self) -> None:
-        out_dir = self.args.out_dir
-        if out_dir is None:
-            if self.args.file is None:
-                out_dir = Path("./out")
-            else:
-                out_dir = Path(f"{self.args.file}.out")
+        out_dir = self._effective_out_dir()
 
         parent = self._nearest_existing_parent(out_dir)
         try:
@@ -449,6 +458,493 @@ class Doctor:
                     "error": str(e),
                 },
             )
+
+    def _write_tree_prediagnosis(self) -> None:
+        if self.args.file is None:
+            self.report.add(
+                "agent.tree_prediagnosis",
+                "skipped",
+                "input",
+                "Tree prediagnosis requires an input file",
+            )
+            return
+
+        try:
+            out_dir = self._effective_out_dir()
+            agent_dir = self._agent_dir()
+            data = self._build_tree_prediagnosis(out_dir, agent_dir)
+            file = self._write_agent_json("doctor-tree-prediagnosis.json", data)
+            self.report.summary["agent_dir"] = str(agent_dir)
+            self.report.add(
+                "agent.tree_prediagnosis",
+                "ok",
+                "input",
+                "Tree prediagnosis artifact written",
+                details={"file": str(file), "agent_dir": str(agent_dir)},
+            )
+        except Exception as e:
+            self.report.add(
+                "agent.tree_prediagnosis",
+                "warning",
+                "unknown",
+                "Tree prediagnosis artifact could not be written",
+                details={"error_type": type(e).__name__, "error": str(e)},
+            )
+
+    def _build_tree_prediagnosis(self, out_dir: Path, agent_dir: Path) -> dict[str, Any]:
+        params = self._params_payload()
+        params_data = params.get("data") if isinstance(params.get("data"), Mapping) else {}
+        effective = self._effective_parse_settings(params_data)
+        existing_output = self._inspect_existing_output(out_dir)
+
+        return {
+            "version": 1,
+            "input": self._input_summary(),
+            "output": {
+                "out_dir": str(out_dir),
+                "agent_dir": str(agent_dir),
+                "existing": existing_output,
+            },
+            "parse": {
+                "effective": effective,
+                "cli": self._parse_cli_summary(),
+                "params": params,
+            },
+            "config": self._tree_config_summary(effective),
+            "pdf_outline": self._inspect_pdf_outline(),
+            "chapter_signals": {
+                "from_doc_json": existing_output.get("doc_json", {}).get(
+                    "title_candidates", []
+                ),
+                "from_doc_tree": existing_output.get("doc_json", {}).get(
+                    "tree_title_candidates", []
+                ),
+                "from_markdown": existing_output.get("doc_md", {}).get("headings", []),
+            },
+            "suggested_next": {
+                "params_skeleton": {
+                    "mode": "tree",
+                    "tree": {
+                        "backend": effective["tree_backend"],
+                        "template": {"chapters": []},
+                    },
+                },
+                "note": (
+                    "Fill tree.template.chapters from pdf_outline, doc tree titles, "
+                    "markdown headings, or doc.json title candidates before rerunning parse."
+                ),
+            },
+        }
+
+    def _effective_out_dir(self) -> Path:
+        if self.args.out_dir is not None:
+            return self.args.out_dir
+        if self.args.file is None:
+            return Path("./out")
+        return Path(f"{self.args.file}.out")
+
+    def _agent_dir(self) -> Path:
+        return self._effective_out_dir() / "agent"
+
+    def _write_agent_json(self, name: str, data: Mapping[str, Any]) -> Path:
+        agent_dir = self._agent_dir()
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        file = agent_dir / name
+        file.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        return file
+
+    def _input_summary(self) -> dict[str, Any]:
+        info = self._file_info
+        if info is None and self.args.file is not None:
+            info = self._inspect_file(self.args.file)
+        data = info.model_dump(mode="json") if info is not None else {}
+        data["file"] = str(self.args.file) if self.args.file is not None else None
+        return data
+
+    def _parse_cli_summary(self) -> dict[str, Any]:
+        return {
+            "as_doc": self.args.as_doc,
+            "pages": self.args.pages,
+            "backend": self._option_value(self.args.backend),
+            "llm_present": bool(self.args.llm),
+            "mode": self._option_value(self.args.mode),
+            "ocr": self._option_value(self.args.ocr),
+            "table": self._option_value(self.args.table),
+            "formula": self.args.formula,
+            "tree": self._option_value(self.args.tree),
+            "conf_dir": str(self.args.conf_dir),
+            "custom_settings": self._redact(self.args.custom_settings),
+        }
+
+    def _params_payload(self) -> dict[str, Any]:
+        if self.args.params_file is not None:
+            payload: dict[str, Any] = {
+                "source": "file",
+                "file": str(self.args.params_file),
+                "text_present": False,
+            }
+            try:
+                payload["data"] = self._read_json(self.args.params_file)
+            except Exception as e:
+                payload["error"] = f"{type(e).__name__}: {e}"
+            return self._redact(payload)
+
+        if self.args.params_text:
+            payload = {
+                "source": "text",
+                "file": None,
+                "text_present": True,
+            }
+            try:
+                payload["data"] = json.loads(self.args.params_text)
+            except json.JSONDecodeError as e:
+                payload["error"] = str(e)
+            return self._redact(payload)
+
+        return {"source": None, "file": None, "text_present": False, "data": {}}
+
+    def _effective_parse_settings(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        tree_params = params.get("tree") if isinstance(params.get("tree"), Mapping) else {}
+        assert isinstance(tree_params, Mapping)
+        mode = self._option_value(self.args.mode) or params.get("mode") or ParseMode.PAGE.value
+        tree_backend = (
+            self._option_value(self.args.tree)
+            or tree_params.get("backend")
+            or TreeBackend.DEFAULT.value
+        )
+        template = tree_params.get("template")
+        return {
+            "mode": str(mode),
+            "tree_backend": str(tree_backend),
+            "template_present": isinstance(template, Mapping),
+            "template_chapter_count": len(template.get("chapters", []))
+            if isinstance(template, Mapping)
+            and isinstance(template.get("chapters"), Sequence)
+            and not isinstance(template.get("chapters"), (str, bytes))
+            else 0,
+        }
+
+    def _tree_config_summary(self, effective: Mapping[str, Any]) -> dict[str, Any]:
+        tree_cfg = self._get("pdf_parser.tree") if self._settings is not None else None
+        llm_cfg = (
+            self._get("pdf_parser.tree.llm") if self._settings is not None else None
+        )
+        render_max_size = self._get("pdf_parser.pdf2image.max_size")
+        ocr_max_side = self._get('model_manager.models.ocr.kwargs."Global.max_side_len"')
+        render_long_side = self._max_number(render_max_size)
+        ocr_max_side_num = self._as_int(ocr_max_side)
+        relation_status = "unknown"
+        if render_long_side is not None and ocr_max_side_num is not None:
+            relation_status = "ok" if render_long_side <= ocr_max_side_num else "warning"
+
+        return {
+            "loaded": self._settings is not None,
+            "tree": self._redact(tree_cfg) if isinstance(tree_cfg, Mapping) else None,
+            "tree_llm": self._tree_llm_summary(
+                llm_cfg,
+                required=effective.get("tree_backend") == TreeBackend.LLM.value,
+            ),
+            "related": {
+                "pdf_parser.pdf2image.max_size": render_max_size,
+                "pdf_parser.pdf2image.max_scale": self._get(
+                    "pdf_parser.pdf2image.max_scale"
+                ),
+                'model_manager.models.ocr.kwargs."Global.max_side_len"': ocr_max_side,
+                "render_long_side": render_long_side,
+                "render_size_vs_ocr_max_side": relation_status,
+            },
+        }
+
+    def _tree_llm_summary(self, cfg: Any, *, required: bool) -> dict[str, Any]:
+        if not isinstance(cfg, Mapping):
+            return {"present": False, "required": required}
+
+        base_url = cfg.get("base_url")
+        api_key = cfg.get("api_key")
+        model = cfg.get("model")
+        missing = [
+            name
+            for name, value in (
+                ("base_url", base_url),
+                ("api_key", api_key),
+                ("model", model),
+            )
+            if not isinstance(value, str) or not value
+        ]
+        return {
+            "present": True,
+            "required": required,
+            "provider": cfg.get("provider"),
+            "base_url": base_url,
+            "model": model,
+            "api_key_present": isinstance(api_key, str) and bool(api_key),
+            "temperature": cfg.get("temperature", cfg.get("tempeature")),
+            "max_tokens": cfg.get("max_tokens"),
+            "missing": missing,
+        }
+
+    def _inspect_pdf_outline(self) -> dict[str, Any]:
+        if self.args.file is None:
+            return {"available": False, "reason": "no input file"}
+        info = self._file_info or self._inspect_file(self.args.file)
+        if info.type != "pdf":
+            return {"available": False, "reason": f"input type is {info.type}"}
+
+        try:
+            try:
+                import pymupdf
+            except ModuleNotFoundError:
+                import fitz as pymupdf  # type: ignore
+
+            with pymupdf.open(self.args.file) as doc:
+                toc = doc.get_toc(simple=False)
+        except Exception as e:
+            return {
+                "available": False,
+                "error_type": type(e).__name__,
+                "error": str(e),
+            }
+
+        items: list[dict[str, Any]] = []
+        max_depth = 0
+        for row in toc:
+            if len(row) < 3:
+                continue
+            level, title, page = row[:3]
+            level_num = self._as_int(level, default=0) or 0
+            max_depth = max(max_depth, level_num)
+            if len(items) < 200:
+                items.append(
+                    {
+                        "level": level_num,
+                        "title": str(title),
+                        "page": self._as_int(page),
+                    }
+                )
+        return {
+            "available": bool(items),
+            "count": len(toc),
+            "max_depth": max_depth,
+            "items": items,
+        }
+
+    def _inspect_existing_output(self, out_dir: Path) -> dict[str, Any]:
+        doc_json = out_dir / "doc.json"
+        doc_md = out_dir / "doc.md"
+        state_json = out_dir / "state.json"
+        result: dict[str, Any] = {
+            "exists": out_dir.exists(),
+            "files": {
+                "doc.json": doc_json.is_file(),
+                "doc.md": doc_md.is_file(),
+                "state.json": state_json.is_file(),
+            },
+        }
+
+        if doc_json.is_file():
+            try:
+                data = self._read_json(doc_json)
+                result["doc_json"] = self._doc_json_summary(data)
+            except Exception as e:
+                result["doc_json"] = {
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+
+        if doc_md.is_file():
+            try:
+                text = doc_md.read_text("utf-8")
+                result["doc_md"] = self._markdown_summary(text)
+            except Exception as e:
+                result["doc_md"] = {
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+
+        if state_json.is_file():
+            try:
+                result["state"] = self._redact(self._read_json(state_json))
+            except Exception as e:
+                result["state"] = {
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+        return result
+
+    def _doc_json_summary(self, data: Any) -> dict[str, Any]:
+        if not isinstance(data, Mapping):
+            return {"valid": False, "reason": "doc.json is not a JSON object"}
+
+        pages = data.get("pages")
+        page_items = (
+            list(pages)
+            if isinstance(pages, Sequence) and not isinstance(pages, (str, bytes))
+            else []
+        )
+        object_types: Counter[str] = Counter()
+        title_candidates: list[dict[str, Any]] = []
+        for page in page_items:
+            if not isinstance(page, Mapping):
+                continue
+            number = self._as_int(page.get("number"))
+            objects = page.get("objects")
+            if isinstance(objects, Sequence) and not isinstance(objects, (str, bytes)):
+                for obj in objects:
+                    self._collect_doc_object_summary(
+                        obj,
+                        page_number=number,
+                        object_types=object_types,
+                        title_candidates=title_candidates,
+                        limit=200,
+                    )
+
+        tree = data.get("tree")
+        root = tree.get("root") if isinstance(tree, Mapping) else None
+        tree_stats = self._tree_stats(root) if isinstance(root, Mapping) else {}
+        tree_titles: list[dict[str, Any]] = []
+        if isinstance(root, Mapping):
+            self._collect_tree_titles(root, tree_titles, depth=1, limit=200)
+
+        return {
+            "valid": True,
+            "page_count": len(page_items),
+            "has_tree": isinstance(root, Mapping),
+            "tree_node_count": tree_stats.get("node_count", 0),
+            "tree_max_depth": tree_stats.get("max_depth", 0),
+            "tree_title_candidates": tree_titles,
+            "object_types": dict(object_types),
+            "title_candidates": title_candidates,
+        }
+
+    def _markdown_summary(self, text: str) -> dict[str, Any]:
+        headings: list[dict[str, Any]] = []
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            match = _MD_HEADING_RE.match(line)
+            if not match:
+                continue
+            headings.append(
+                {
+                    "line": lineno,
+                    "level": len(match.group(1)),
+                    "text": match.group(2).strip()[:200],
+                }
+            )
+            if len(headings) >= 200:
+                break
+        return {
+            "char_count": len(re.sub(r"\s+", "", text)),
+            "heading_count": len(headings),
+            "headings": headings,
+        }
+
+    def _collect_doc_object_summary(
+        self,
+        obj: Any,
+        *,
+        page_number: int | None,
+        object_types: Counter[str],
+        title_candidates: list[dict[str, Any]],
+        limit: int,
+    ) -> None:
+        if not isinstance(obj, Mapping):
+            return
+
+        typ = obj.get("type")
+        if isinstance(typ, str):
+            object_types[typ] += 1
+
+        text = self._object_text(obj)
+        if text and len(title_candidates) < limit and self._is_title_candidate(typ, text):
+            item: dict[str, Any] = {
+                "page": page_number,
+                "type": typ,
+                "text": text[:200],
+            }
+            bbox = obj.get("bbox")
+            if bbox is not None:
+                item["bbox"] = bbox
+            title_candidates.append(item)
+
+        for key in ("objects", "cells", "children", "lines"):
+            children = obj.get(key)
+            if isinstance(children, Sequence) and not isinstance(children, (str, bytes)):
+                for child in children:
+                    self._collect_doc_object_summary(
+                        child,
+                        page_number=page_number,
+                        object_types=object_types,
+                        title_candidates=title_candidates,
+                        limit=limit,
+                    )
+
+    def _collect_tree_titles(
+        self,
+        node: Mapping[str, Any],
+        titles: list[dict[str, Any]],
+        *,
+        depth: int,
+        limit: int,
+    ) -> None:
+        typ = node.get("type")
+        data = node.get("data")
+        text = self._object_text(data) if isinstance(data, Mapping) else ""
+        if text and len(titles) < limit and typ in ("xtitle", "title"):
+            titles.append({"depth": depth, "type": typ, "text": text[:200]})
+        children = node.get("children")
+        if isinstance(children, Sequence) and not isinstance(children, (str, bytes)):
+            for child in children:
+                if isinstance(child, Mapping):
+                    self._collect_tree_titles(
+                        child, titles, depth=depth + 1, limit=limit
+                    )
+
+    def _tree_stats(self, node: Mapping[str, Any]) -> dict[str, int]:
+        children = node.get("children")
+        node_count = 1
+        max_depth = 1
+        if isinstance(children, Sequence) and not isinstance(children, (str, bytes)):
+            for child in children:
+                if not isinstance(child, Mapping):
+                    continue
+                child_stats = self._tree_stats(child)
+                node_count += child_stats["node_count"]
+                max_depth = max(max_depth, child_stats["max_depth"] + 1)
+        return {"node_count": node_count, "max_depth": max_depth}
+
+    def _object_text(self, obj: Mapping[str, Any]) -> str:
+        text = obj.get("text")
+        if isinstance(text, str):
+            return re.sub(r"\s+", " ", text).strip()
+
+        parts: list[str] = []
+        for key in ("objects", "cells", "children", "lines"):
+            children = obj.get(key)
+            if not isinstance(children, Sequence) or isinstance(children, (str, bytes)):
+                continue
+            for child in children:
+                if isinstance(child, Mapping):
+                    child_text = self._object_text(child)
+                    if child_text:
+                        parts.append(child_text)
+        return re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+    def _is_title_candidate(self, typ: Any, text: str) -> bool:
+        if not text or len(text) > 200:
+            return False
+        if typ in ("title", "toc", "xtitle"):
+            return True
+        return _TITLE_CANDIDATE_RE.match(text) is not None
+
+    def _read_json(self, file: Path) -> Any:
+        try:
+            import orjson
+
+            return orjson.loads(file.read_bytes())
+        except ModuleNotFoundError:
+            return json.loads(file.read_text("utf-8"))
 
     def _check_config_shape(self) -> None:
         assert self._settings is not None
@@ -972,11 +1468,41 @@ class Doctor:
 
     def _get(self, dotted: str) -> Any:
         obj: Any = self._settings
-        for part in dotted.split("."):
+        for part in self._split_dotted(dotted):
             if not isinstance(obj, Mapping):
                 return None
             obj = obj.get(part)
         return obj
+
+    def _split_dotted(self, path: str) -> list[str]:
+        parts: list[str] = []
+        buf: list[str] = []
+        quote: str | None = None
+        escape = False
+        for ch in path:
+            if escape:
+                buf.append(ch)
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if quote:
+                if ch == quote:
+                    quote = None
+                else:
+                    buf.append(ch)
+                continue
+            if ch in {"'", '"'}:
+                quote = ch
+                continue
+            if ch == ".":
+                parts.append("".join(buf))
+                buf = []
+            else:
+                buf.append(ch)
+        parts.append("".join(buf))
+        return parts
 
     def _to_enum(self, enum_cls: type[StrEnum], value: Any) -> Any | None:
         if isinstance(value, enum_cls):
@@ -1042,6 +1568,28 @@ class Doctor:
     def _looks_like_url(self, value: str) -> bool:
         return re.fullmatch(r"https?://.+", value.strip()) is not None
 
+    def _option_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if hasattr(value, "value"):
+            return value.value
+        return str(value)
+
+    def _as_int(self, value: Any, default: int | None = None) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _max_number(self, value: Any) -> int | float | None:
+        if isinstance(value, int | float):
+            return value
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            numbers = [v for v in value if isinstance(v, int | float)]
+            if numbers:
+                return max(numbers)
+        return None
+
     def _nearest_existing_parent(self, path: Path) -> Path:
         cur = path if path.exists() and path.is_dir() else path.parent
         while not cur.exists():
@@ -1063,6 +1611,10 @@ class Doctor:
             return result
         if isinstance(value, list):
             return [self._redact(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._redact(item) for item in value]
+        if isinstance(value, str) and len(value) > 1200:
+            return value[:1200] + "...<truncated>"
         return value
 
     def _clean_capture(self, text: str, limit: int = 4000) -> str:

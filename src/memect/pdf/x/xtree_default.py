@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Mapping, Sequence
 
 from memect.base import strs
+from memect.pdf.base import KDocument
 
 from .xbase import XNo, XNode, XObject, XText, XTree
 
@@ -195,6 +196,10 @@ class Chapter:
         """表示章节的类型"""
         self.provisional_end = False
         """True表示end只是当前搜索上界，后续章节还没确定。"""
+    
+    @property
+    def doc(self)->KDocument:
+        return self.title.doc
 
 
 class ChapterSpec:
@@ -475,7 +480,8 @@ class Parser:
 
         if index + 1 >= len(xobjects):
             return
-
+        
+        doc:Final = xobjects[0].doc
         # total_page = self._total_page(xobjects)
         total_page = xobjects[0].pages[0].doc.page_count
         start_page = self._resolve_page(spec.pages[0], total_page)
@@ -518,7 +524,7 @@ class Parser:
 
         spec.chapters.append(
             Chapter(
-                XText.create_title(spec.title or "<正文>"),
+                XText.create_title(doc,spec.title or "<正文>"),
                 start,
                 end,
                 fixed_end=fixed_end,
@@ -536,7 +542,8 @@ class Parser:
             return
         if spec.type != ChapterType.TOC:
             return
-
+        
+        doc:Final = xobjects[0].doc
         start = doc_spec.get_start(index)
         end = doc_spec.get_end(index, len(xobjects))
         tocs = self._find_toc_chapters(spec, start, end, xobjects)
@@ -549,7 +556,7 @@ class Parser:
                 # 目录2
                 spec.chapters.append(
                     Chapter(
-                        XText.create_title("<正文>"),
+                        XText.create_title(doc,"<正文>"),
                         tocs[i - 1].end,
                         toc.anchor,
                         fixed_end=True,
@@ -564,7 +571,9 @@ class Parser:
         self, spec: ChapterSpec, start: int, end: int, xobjects: Sequence[XObject]
     ) -> list[Chapter]:
         from .xtoc import XTOCParser
-
+        if not xobjects:
+            return []
+        doc:Final = xobjects[0].doc
         chapters: list[Chapter] = []
         for toc_start, toc_end, _ in XTOCParser().find(xobjects[start:end]):
             anchor = start + toc_start
@@ -574,7 +583,7 @@ class Parser:
                 title = title_obj
                 content_start = anchor + 1
             else:
-                title = XText.create_title(spec.title or "<目录>")
+                title = XText.create_title(doc,spec.title or "<目录>")
                 content_start = anchor
             chapters.append(
                 Chapter(
@@ -665,7 +674,9 @@ class Parser:
         end = doc_spec.get_end(index, len(xobjects))
         if start >= end:
             return
-        spec.chapters.append(Chapter(XText.create_title(spec.title), start, end,type=spec.type))
+        
+        doc = xobjects[0].doc
+        spec.chapters.append(Chapter(XText.create_title(doc,spec.title), start, end,type=spec.type))
         spec.done = True
 
     def _normalize_chapters(self, doc_spec: DocSpec, end: int) -> list[Chapter]:
@@ -674,7 +685,8 @@ class Parser:
             chapters.extend(spec.chapters)
         if not chapters:
             return []
-
+        
+        doc:Final = chapters[0].doc
         chapters.sort(key=lambda c: (c.anchor, c.start, c.end))
         unique: list[Chapter] = []
         seen: set[tuple[int, int, str]] = set()
@@ -700,10 +712,10 @@ class Parser:
             for chapter in unique
             if chapter.start < chapter.end or chapter.title.objects
         ]
-        return self._fill_body_chapters(normalized, end)
+        return self._fill_body_chapters(doc,normalized, end)
 
     def _fill_body_chapters(
-        self, chapters: Sequence[Chapter], end: int
+        self,doc:KDocument,chapters: Sequence[Chapter], end: int
     ) -> list[Chapter]:
         result: list[Chapter] = []
         cursor = 0
@@ -712,7 +724,7 @@ class Parser:
             if cursor < chapter_start:
                 result.append(
                     Chapter(
-                        XText.create_title("<正文>"),
+                        XText.create_title(doc,"<正文>"),
                         cursor,
                         chapter_start,
                         fixed_end=True,
@@ -723,7 +735,7 @@ class Parser:
         if cursor < end:
             result.append(
                 Chapter(
-                    XText.create_title("<正文>"),
+                    XText.create_title(doc,"<正文>"),
                     cursor,
                     end,
                     fixed_end=True,
