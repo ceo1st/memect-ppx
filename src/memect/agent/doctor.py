@@ -131,6 +131,9 @@ class Doctor:
         self._check_output_dir()
         if self._settings is not None:
             self._check_config_shape()
+            self._check_config_models()
+            self._check_custom_setting_paths()
+            self._check_parse_feature_support()
             self._check_backend()
             self._check_model_references()
             self._check_model_paths()
@@ -463,6 +466,96 @@ class Doctor:
             else "Configuration is missing top-level sections",
             details={"missing": missing},
         )
+
+    def _check_config_models(self) -> None:
+        assert self._settings is not None
+        errors: list[dict[str, str]] = []
+
+        try:
+            from memect.pdf.model import ModelManagerArgs
+
+            ModelManagerArgs.create(self._settings.get("model_manager"))
+        except Exception as e:
+            errors.append(
+                {
+                    "section": "model_manager",
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+            )
+
+        try:
+            from memect.pdf.parser import ParserArgs
+
+            ParserArgs.create(self._settings.get("pdf_parser"))
+        except Exception as e:
+            errors.append(
+                {
+                    "section": "pdf_parser",
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                }
+            )
+
+        self.report.add(
+            "config.validation",
+            "error" if errors else "ok",
+            "config",
+            "Configuration models are valid"
+            if not errors
+            else "Configuration model validation failed",
+            details={"errors": errors},
+        )
+
+    def _check_custom_setting_paths(self) -> None:
+        assert self._settings is not None
+        legacy_patches = {
+            "model_manager.executors.table_det.": "model_manager.executors.table.",
+            "model_manager.models.table_det.": "model_manager.models.table.",
+        }
+        patches: list[ConfigPatch] = []
+        legacy_keys: list[str] = []
+
+        for key, value in self.args.custom_settings.items():
+            for old_prefix, new_prefix in legacy_patches.items():
+                if key.startswith(old_prefix):
+                    legacy_keys.append(key)
+                    patches.append(
+                        ConfigPatch(
+                            path=new_prefix + key[len(old_prefix) :],
+                            value=value,
+                            reason=f"{old_prefix.rstrip('.')} was renamed to {new_prefix.rstrip('.')}",
+                        )
+                    )
+
+        if legacy_keys:
+            self.report.add(
+                "config.custom_paths",
+                "error",
+                "config",
+                "Custom settings use renamed configuration paths",
+                details={"legacy_keys": legacy_keys},
+                suggested_patches=patches,
+            )
+
+    def _check_parse_feature_support(self) -> None:
+        table = self._to_enum(TableMode, self.args.table)
+        llm_table = getattr(TableMode, "LLM", None)
+        if llm_table is not None and table == llm_table:
+            self.report.add(
+                "parse.table.llm",
+                "error",
+                "config",
+                "TableMode.LLM is currently not enabled by the default table parser",
+                details={"table": table.value},
+                suggested_patches=[
+                    ConfigPatch(
+                        path="parse.table",
+                        value=TableMode.AUTO.value,
+                        reason="Use the enabled automatic table parser",
+                    )
+                ],
+            )
 
     def _check_backend(self) -> None:
         backend = self._effective_backend or Backend.DEFAULT

@@ -431,6 +431,8 @@ class Parser:
                 template['chapters'][1]['titles']=titles1
             if titles2:
                 template['chapters'][3]['titles']=titles2
+        else:
+            pass
         doc_spec = DocSpec(template)
         
         xobjects = xtree.xobjects

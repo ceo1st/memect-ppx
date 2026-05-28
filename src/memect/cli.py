@@ -12,6 +12,27 @@ import typer
 from .pdf.base import Backend, OCRMode, ParseMode, TableMode, TreeBackend
 
 app:Final= typer.Typer()
+_DOCTOR_DEFAULT = "__ppx_default_doctor__"
+_AGENT_DEFAULT = "./agent.json"
+
+
+def _normalize_argv(argv: list[str]) -> None:
+    if "parse" not in argv or ("--doctor" not in argv and "--agent" not in argv):
+        return
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--doctor":
+            next_index = index + 1
+            if next_index >= len(argv) or argv[next_index].startswith("-"):
+                argv.insert(next_index, _DOCTOR_DEFAULT)
+                index += 1
+        elif item == "--agent":
+            next_index = index + 1
+            if next_index >= len(argv) or argv[next_index].startswith("-"):
+                argv.insert(next_index, _AGENT_DEFAULT)
+                index += 1
+        index += 1
 
 
 def _ensure_packages(
@@ -336,6 +357,17 @@ def parse(
         Path | None, typer.Option(help="解析参数文件，JSON 文件")
     ] = None,
     dry: Annotated[bool, typer.Option(help="表示仅仅测试设置参数等，不执行")] = False,
+    doctor_text: Annotated[
+        str | None,
+        typer.Option(
+            "--doctor",
+            help="解析后诊断。可不带说明，也可写：--doctor '解析内容太少'",
+        ),
+    ] = None,
+    agent: Annotated[
+        Path,
+        typer.Option("--agent", help="agent 配置文件，仅在 --doctor 时使用"),
+    ] = Path("./agent.json"),
 ) -> None:
     """解析 PDF 文件"""
     from .base.config import parse_kvs, setup
@@ -352,7 +384,6 @@ def parse(
         log_custom_settings.update(parse_kvs(log_kvs))
     
     params = ParseParams.create(params_file or params_text)
-
     if llm:
         llm_args = _parse_llm(llm)
         name = llm_args.pop("name")
@@ -368,17 +399,11 @@ def parse(
 
     if parallel is not None:
         # 如果使用gpu，将需要更大的内存
-        for n in ["ocr", "layout", "formula", "table_det"]:
+        for n in ["ocr", "layout", "formula", "table"]:
             custom_settings[f"model_manager.executors.{n}.max_workers"] = parallel
 
     _set_device(cpu, cuda=cuda)
 
-    setup(settings=custom_settings, conf_dir=conf)
-
-    if debug:
-        XDebugger.setup()
-
-    
     if dev is not None:
         params.dev = dev
     if backend is not None:
@@ -416,6 +441,70 @@ def parse(
     if html is not None:
         params.html = html
 
+    docs: list[KDocumentFactory] = []
+
+    def enum_value(value: Any) -> Any:
+        return value.value if hasattr(value, "value") else value
+
+    def factory_out_dirs(items: Sequence[KDocumentFactory]) -> list[Path]:
+        result: list[Path] = []
+        for item in items:
+            result.append(
+                Path(item.out_dir) if item.out_dir else Path(f"{item.file}.out")
+            )
+        if not result:
+            if out_dir is not None:
+                result.append(out_dir)
+            else:
+                result.append(Path(f"{file}.out"))
+        return result
+
+    def run_parse_doctor(error: BaseException | None = None):
+        from .agent.parse_doctor import (
+            ParseDoctor,
+            ParseDoctorArgs,
+            format_report_console,
+        )
+
+        problem = (
+            "parse diagnosis"
+            if doctor_text is None or doctor_text == _DOCTOR_DEFAULT
+            else doctor_text
+        )
+        report = ParseDoctor(
+            ParseDoctorArgs(
+                problem=problem,
+                file=file,
+                out_dirs=factory_out_dirs(docs),
+                conf_dir=conf,
+                out_dir=out_dir,
+                as_doc=as_doc,
+                pages=pages,
+                backend=enum_value(params.backend),
+                llm=llm,
+                mode=enum_value(params.mode),
+                ocr=enum_value(params.ocr),
+                table=enum_value(params.table),
+                formula=formula
+                if formula is not None
+                else ("no" if not params.formula else None),
+                tree=enum_value(params.tree.backend),
+                cpu=cpu,
+                cuda=cuda,
+                params_text=params_text,
+                params_file=params_file,
+                custom_settings=custom_settings,
+                params_snapshot=params.model_dump(mode="json"),
+                parse_failed=error is not None,
+                error=error,
+                command=sys.argv,
+                agent_config=agent,
+            )
+        ).run()
+        console.rule("parse doctor")
+        console.print(format_report_console(report))
+        return report
+
     # 表示为多个文件，需要并行吗？可能需要比较多的内存
     def get_docs(dir_: Path):
         if dir_.is_file():
@@ -440,18 +529,29 @@ def parse(
                     pass
 
     # 考虑到文件数不会太多，为了获得总数，使用list
-    if dry:
-        docs = list(get_docs(file))
-        console.print(params)
-        console.log(f"共需要解析:{len(docs)}")
+    try:
+        setup(settings=custom_settings, conf_dir=conf)
 
-    else:
-        # 如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
-        # 如果是远程，和正常一样调用
-        try:
-            Parser.batch(list(get_docs(file)), max_workers=max_workers)
-        finally:
-            pass
+        if debug:
+            XDebugger.setup()
+
+        docs = list(get_docs(file))
+        if dry:
+            console.print(params)
+            console.log(f"共需要解析:{len(docs)}")
+            if doctor_text is not None:
+                run_parse_doctor()
+        else:
+            # 如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
+            # 如果是远程，和正常一样调用
+            Parser.batch(docs, max_workers=max_workers)
+            if doctor_text is not None:
+                run_parse_doctor()
+    except Exception as e:
+        if doctor_text is not None:
+            run_parse_doctor(error=e)
+            raise typer.Exit(code=1) from e
+        raise
 
 
 @app.command()
@@ -717,6 +817,7 @@ def install(
 
 
 def main() -> None:
+    _normalize_argv(sys.argv)
     app()
 
 
