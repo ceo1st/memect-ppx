@@ -555,6 +555,48 @@ def parse(
 
 
 @app.command()
+def chapter(
+    out_dir: Annotated[
+        Path,
+        typer.Argument(help="解析输出目录，需包含 tree.md（如 a.pdf.out）"),
+    ],
+    agent: Annotated[
+        Path,
+        typer.Option("--agent", help="agent 配置文件"),
+    ] = Path("./agent.json"),
+    max_iter: Annotated[
+        int, typer.Option(help="最大迭代轮数")
+    ] = 4,
+    threshold: Annotated[
+        int, typer.Option(help="收敛分数阈值（0-100）")
+    ] = 85,
+) -> None:
+    """基于 tree.md 自迭代生成一级章节划分"""
+    from .agent2 import ChapterIterAgent
+    from .base.utils import console
+
+    if not out_dir.is_dir():
+        console.print(f"[error] 目录不存在: {out_dir}")
+        raise typer.Exit(code=1)
+    if not (out_dir / "tree.md").is_file():
+        console.print(f"[error] 缺少 tree.md: {out_dir / 'tree.md'}")
+        raise typer.Exit(code=1)
+    if not agent.is_file():
+        console.print(f"[error] agent 配置不存在: {agent}")
+        raise typer.Exit(code=1)
+
+    params_file = ChapterIterAgent(
+        out_dir=out_dir,
+        agent_json=agent,
+        max_iter=max_iter,
+        score_threshold=threshold,
+    ).run()
+    console.rule("chapter iter")
+    console.print(f"chapter-params: {params_file}")
+    console.print(f"summary: {out_dir / 'agent2' / 'summary.md'}")
+
+
+@app.command()
 def doctor(
     file: Annotated[
         Path | None, typer.Argument(help="PDF 文件、图片文件或图片目录", exists=False)

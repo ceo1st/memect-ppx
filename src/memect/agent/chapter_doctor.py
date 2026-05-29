@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 ChapterSource = Literal[
-    "pdf_outline", "doc_tree", "doc_json", "markdown", "agent", "rule"
+    "pdf_outline", "doc_tree", "doc_json", "markdown", "tree_md", "agent", "rule"
 ]
 AgentProvider = Literal["auto", "openai-chat", "openai-responses", "anthropic"]
 
@@ -39,6 +39,20 @@ _ANGLE_HINT_LINE_RE = re.compile(
 _HINT_LINE_RE = re.compile(
     r"^\s*(?P<title>[^\s]+?)"
     r"(?:\s+(?P<range>-?[0-9]+(?:\s*[-~至]\s*-?[0-9]+)?))?\s*$"
+)
+_CN_NUM = "零〇一二三四五六七八九十百千万"
+_CN_NUM_COMMON = "一二三四五六七八九十"
+_PREFACE_PATTERN = (
+    "前言|引言|序言|摘要|内容摘要|重要提示|重大事项提示|特别提示|"
+    "重要声明|声明|声明与承诺|释义"
+)
+_ENDING_PATTERNS = [
+    r"分析师声明|免责声明|法律声明",
+    r"信息披露",
+    r"评级说明|股票投资评级说明",
+]
+_NUMBERED_UNIT_PATTERN = re.compile(
+    rf"^第[{_CN_NUM}0-9]+(?P<unit>[章节篇部]|部分)"
 )
 
 
@@ -170,6 +184,7 @@ class ChapterDoctor:
         self.agent_dir = self.out_dir / "agent"
         self._doc_json: Any | None = None
         self._markdown: str = ""
+        self._tree_markdown: str = ""
         self._prediagnosis: Mapping[str, Any] = {}
         self._hints: list[ChapterHint] = []
 
@@ -292,10 +307,9 @@ class ChapterDoctor:
         return Path(f"{self.args.file}.out")
 
     def _load_inputs(self) -> None:
-        self._doc_json = _read_json(self.out_dir / "doc.json")
-        md_file = self.out_dir / "doc.md"
-        if md_file.is_file():
-            self._markdown = md_file.read_text("utf-8", errors="replace")
+        tree_md_file = self.out_dir / "tree.md"
+        if tree_md_file.is_file():
+            self._tree_markdown = tree_md_file.read_text("utf-8", errors="replace")
         prediagnosis = _read_json(self.agent_dir / "doctor-tree-prediagnosis.json")
         if isinstance(prediagnosis, Mapping):
             self._prediagnosis = prediagnosis
@@ -316,13 +330,79 @@ class ChapterDoctor:
 
     def _collect_candidates(self) -> list[ChapterCandidate]:
         candidates: list[ChapterCandidate] = []
-        candidates.extend(self._from_pdf_outline())
-        candidates.extend(self._from_doc_tree())
-        candidates.extend(self._from_markdown())
-        candidates.extend(self._from_doc_json())
+        candidates.extend(self._from_tree_markdown())
+        candidates.extend(self._template_candidates())
         if not candidates:
             candidates.extend(self._fallback_rules())
         return candidates
+
+    def _from_tree_markdown(self) -> list[ChapterCandidate]:
+        if not self._tree_markdown:
+            return []
+
+        candidates: list[ChapterCandidate] = []
+        headings = _tree_markdown_headings(self._tree_markdown)
+        top_level = min((heading["level"] for heading in headings), default=None)
+        for heading in headings:
+            title = _clean_title(heading["title"])
+            if not title:
+                continue
+            category = _chapter_category(title)
+            if heading["level"] != top_level and category not in {
+                "preface",
+                "toc",
+                "numbered",
+                "appendix",
+                "ending",
+            }:
+                continue
+            confidence = 0.92 if heading["level"] == top_level else 0.82
+            candidates.append(
+                ChapterCandidate(
+                    title=title,
+                    level=_as_int(heading["level"], default=1) or 1,
+                    source="tree_md",
+                    confidence=confidence,
+                    evidence=[
+                        ChapterEvidence(
+                            source="tree_md",
+                            text=title,
+                            detail={
+                                "line": heading["line"],
+                                "heading_level": heading["level"],
+                                "category": category,
+                            },
+                        )
+                    ],
+                )
+            )
+
+        if candidates:
+            return candidates
+
+        for item in _tree_markdown_candidate_lines(self._tree_markdown):
+            title = _clean_title(item["title"])
+            if not title:
+                continue
+            candidates.append(
+                ChapterCandidate(
+                    title=title,
+                    source="tree_md",
+                    confidence=0.65,
+                    evidence=[
+                        ChapterEvidence(
+                            source="tree_md",
+                            text=title,
+                            detail={"line": item["line"], "category": item["category"]},
+                        )
+                    ],
+                )
+            )
+        return candidates[:120]
+
+    def _template_candidates(self) -> list[ChapterCandidate]:
+        chapters = _rule_chapters_from_tree_markdown(self._tree_markdown)
+        return _candidates_from_template_chapters(chapters, source="rule")
 
     def _from_pdf_outline(self) -> list[ChapterCandidate]:
         outline = self._prediagnosis.get("pdf_outline")
@@ -583,11 +663,6 @@ class ChapterDoctor:
         return result
 
     def _page_count(self) -> int | None:
-        data = self._doc_json
-        if isinstance(data, Mapping):
-            pages = data.get("pages")
-            if isinstance(pages, Sequence) and not isinstance(pages, (str, bytes)):
-                return len(pages)
         input_info = self._prediagnosis.get("input")
         if isinstance(input_info, Mapping):
             page_count = _as_int(input_info.get("page_count"))
@@ -635,11 +710,13 @@ class ChapterDoctor:
             "out_dir": str(self.out_dir),
             "page_count": self._page_count(),
             "manual_template": template_text,
+            "tree_md": _truncate_text(self._tree_markdown, 45000),
+            "tree_md_headings": _tree_markdown_headings(self._tree_markdown)[:200],
+            "rule_chapters": _rule_chapters_from_tree_markdown(self._tree_markdown),
             "local_candidates": [
                 candidate.model_dump(mode="json", exclude={"evidence"})
                 for candidate in candidates[:80]
             ],
-            "page_text_samples": self._page_text_samples(),
             "page_images": [
                 image.model_dump(mode="json") for image in images[:80]
             ],
@@ -660,7 +737,7 @@ class ChapterDoctor:
                 "manual_template_rule": (
                     "当 generation_mode=manual_template 时，按 manual_template 的顺序生成 "
                     "tree.template.chapters。对 <正文> 这类没有固定页码的模板项，"
-                    "优先结合 doc.json 推断 titles 正则表达式；不要只输出无法匹配原文标题的逻辑标题。"
+                    "优先结合 tree.md 推断 titles 正则表达式；不要只输出无法匹配原文标题的逻辑标题。"
                 ),
             },
         }
@@ -736,29 +813,16 @@ class ChapterDoctor:
         )
 
     def _build_params(self, candidates: Sequence[ChapterCandidate]) -> Mapping[str, Any]:
-        chapters: list[Mapping[str, Any]] = []
-        page_count = self._page_count()
-        first_page = next(
-            (candidate.page_start for candidate in candidates if candidate.page_start),
-            None,
-        )
-        if page_count and (first_page is None or first_page > 1):
-            chapters.append({"title": "<首页>", "type": "plain", "pages": [1]})
-
-        has_toc = any(_is_toc_title(candidate.title) for candidate in candidates)
-        if has_toc:
-            chapters.append({"type": "toc"})
-
-        titles = [
-            _exact_title_pattern(candidate.title)
-            for candidate in candidates
-            if candidate.title
-            and not candidate.title.startswith("<")
-            and not _is_toc_title(candidate.title)
-        ]
-        titles = _dedupe_texts(titles)
-        if titles:
-            chapters.append({"titles": titles})
+        chapters = _rule_chapters_from_tree_markdown(self._tree_markdown)
+        if not chapters:
+            titles = [
+                _exact_title_pattern(candidate.title)
+                for candidate in candidates
+                if candidate.title
+                and not candidate.title.startswith("<")
+                and not _is_toc_title(candidate.title)
+            ]
+            chapters = [{"titles": _dedupe_texts(titles)}] if titles else [{"title": "<正文>"}]
 
         return {
             "mode": "tree",
@@ -785,10 +849,14 @@ class ChapterDoctor:
         candidates_file = self.agent_dir / "chapter-candidates.json"
         preview_file = self.agent_dir / "chapter-preview.md"
         params_file = self.agent_dir / "chapter-params.json"
+        tree_input_file = self.agent_dir / "chapter-tree-input.md"
+        tree_analysis_file = self.agent_dir / "chapter-tree-analysis.json"
         report.report_files = {
             "candidates": candidates_file,
             "preview": preview_file,
             "params": params_file,
+            "tree_input": tree_input_file,
+            "tree_analysis": tree_analysis_file,
         }
 
         candidates_file.write_text(
@@ -798,6 +866,18 @@ class ChapterDoctor:
         preview_file.write_text(format_chapter_report_markdown(report), encoding="utf-8")
         params_file.write_text(
             json.dumps(report.params, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tree_input_file.write_text(self._tree_markdown, encoding="utf-8")
+        tree_analysis_file.write_text(
+            json.dumps(
+                {
+                    "headings": _tree_markdown_headings(self._tree_markdown),
+                    "rule_chapters": _rule_chapters_from_tree_markdown(self._tree_markdown),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
@@ -937,7 +1017,7 @@ class ChapterDoctorTUI:
     def _choose_generation_mode(self, console: Any, prompt: Any) -> str | None:
         console.rule("chapter doctor")
         console.print("选择章节生成模式：")
-        console.print("[ai] agent 根据 doc.json 推理一级章节")
+        console.print("[ai] agent 根据 tree.md 推理一级章节模板")
         console.print("[m] 手动输入模板，agent 补全 chapters/titles 正则")
         console.print("[l] 使用当前本地候选")
         default = "ai" if self._agent_ready() else "l"
@@ -956,7 +1036,7 @@ class ChapterDoctorTUI:
         if not self._agent_ready():
             console.print("agent 未配置 base_url，无法使用 AI 模式。")
             return "agent 未配置 base_url，AI 模式未执行。"
-        console.print("agent 正在根据 doc.json/doc.md 和本地候选推理一级章节...")
+        console.print("agent 正在根据 tree.md 和本地候选推理一级章节模板...")
         proposal = self.propose_agent(
             self.agent_config,
             self.candidates,
@@ -996,7 +1076,7 @@ class ChapterDoctorTUI:
             return "TUI 已根据手动模板生成章节参数。"
 
         if self._agent_ready():
-            console.print("agent 正在根据模板和 doc.json 生成 chapters/titles 正则...")
+            console.print("agent 正在根据模板和 tree.md 生成 chapters/titles 正则...")
             proposal = self.propose_agent(
                 self.agent_config,
                 self.candidates,
@@ -1416,8 +1496,8 @@ class ChapterAgentClient:
 
     def _system_prompt(self) -> str:
         return (
-            "你是 ppx PDF 章节划分 agent。根据 doc.json/doc.md 信号和可选页面截图，"
-            "只梳理一级章节结构，并生成可执行的 tree.template.chapters。"
+            "你是 ppx PDF 章节模板 agent。tree.md 是当前章节解析结果，内容正确但结构可能不合理。"
+            "请只根据 tree.md 和本地候选梳理一级章节模板，并生成可执行的 tree.template.chapters。"
             "输出严格 JSON，不要 Markdown，不要解释性前后缀。"
         )
 
@@ -1429,12 +1509,12 @@ class ChapterAgentClient:
         if mode == "manual_template":
             return (
                 "用户正在通过 TUI 手动模板修正章节。请根据 manual_template 的顺序，"
-                "结合 doc.json/doc.md 的页面文本和本地候选，生成只包含一级章节的 params。"
+                "结合 tree.md 和本地候选，生成只包含一级章节的 params。"
                 "模板中类似 <首页>、<目录>、<正文>、<结尾> 是逻辑段落："
                 "<首页>/<结尾> 如有页码范围可生成 type=plain 和 pages；"
                 "<目录> 生成 type=toc；<正文> 或其它无固定页码的正文段，"
-                "应优先从文档真实标题推断 titles 正则表达式，例如第X章、"
-                "一、xxx、附件等，而不是只给 title。"
+                "应优先从 tree.md 里的真实标题推断 titles 正则表达式，例如第X章、"
+                "第一部、第一节、附件、附录等，而不是只给 title。"
                 "titles 必须是 Python re 可用的正则字符串，尽量泛化但避免误匹配。"
                 "返回 JSON，必须包含 params，格式为 "
                 '{"mode":"tree","tree":{"backend":"default","template":{"chapters":[]}}}；'
@@ -1443,7 +1523,9 @@ class ChapterAgentClient:
                 + text
             )
         return (
-            "请基于以下 ppx 解析输出，给出一级章节划分。"
+            "请基于以下 ppx tree.md 解析结果，给出一级章节模板。"
+            "章节模板只需要覆盖：首页/封面、前言/声明/重要提示、目录、"
+            "第一章/第一部/第一节等编号正文、附件/附录、以及必要的 <正文>/<结尾>/<附件> 逻辑标题。"
             "返回 JSON：chapters 为数组，每项包含 title、page_start、page_end、reason；"
             "params 为可直接传给 --params-file 的对象，格式为 "
             '{"mode":"tree","tree":{"backend":"default","template":{"chapters":[]}}}。'
@@ -1557,6 +1639,210 @@ def _read_json(file: Path) -> Any | None:
         return None
 
 
+def _tree_markdown_headings(text: str) -> list[Mapping[str, Any]]:
+    headings: list[Mapping[str, Any]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        match = _MD_HEADING_RE.match(line)
+        if not match:
+            continue
+        title = _clean_title(match.group(2))
+        if not title:
+            continue
+        headings.append(
+            {
+                "line": lineno,
+                "level": len(match.group(1)),
+                "title": title,
+                "category": _chapter_category(title),
+            }
+        )
+    return headings
+
+
+def _tree_markdown_candidate_lines(text: str) -> list[Mapping[str, Any]]:
+    candidates: list[Mapping[str, Any]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        title = _clean_title(_strip_markdown_line(line))
+        if not title or len(title) > 120:
+            continue
+        category = _chapter_category(title)
+        if category == "body":
+            continue
+        candidates.append({"line": lineno, "title": title, "category": category})
+    return candidates
+
+
+def _rule_chapters_from_tree_markdown(text: str) -> list[Mapping[str, Any]]:
+    titles = _ordered_rule_titles(text)
+    if not titles:
+        return [{"title": "<正文>"}]
+
+    categories = [_chapter_category(title) for title in titles]
+    chapters: list[Mapping[str, Any]] = []
+    if categories and categories[0] == "cover":
+        chapters.append({"title": "<首页>"})
+    elif not _starts_with_structured_content(categories):
+        chapters.append({"title": "<首页>"})
+
+    preface_titles = [
+        _infer_template_title_pattern(title)
+        for title, category in zip(titles, categories, strict=False)
+        if category == "preface"
+    ]
+    if preface_titles:
+        chapters.append({"titles": _dedupe_texts(preface_titles)})
+
+    if "toc" in categories:
+        chapters.append({"type": "toc"})
+
+    numbered_patterns = [
+        _numbered_chapter_pattern(title)
+        for title, category in zip(titles, categories, strict=False)
+        if category == "numbered"
+    ]
+    numbered_patterns = [pattern for pattern in numbered_patterns if pattern]
+    if numbered_patterns:
+        chapters.append({"titles": _dedupe_texts(numbered_patterns), "deep": True})
+
+    appendix_patterns = [
+        _infer_template_title_pattern(title)
+        for title, category in zip(titles, categories, strict=False)
+        if category == "appendix"
+    ]
+    if appendix_patterns:
+        chapters.append({"titles": _dedupe_texts(appendix_patterns), "deep": True})
+
+    if "ending" in categories:
+        chapters.append(
+            {
+                "title": "<结尾>",
+                "pages": [-1],
+                "keywords": list(_ENDING_PATTERNS),
+                "min_keyword_size": 1,
+            }
+        )
+
+    if not _has_main_body_rule(categories):
+        chapters.append({"title": "<正文>"})
+    return _dedupe_chapters(chapters)
+
+
+def _ordered_rule_titles(text: str) -> list[str]:
+    headings = _tree_markdown_headings(text)
+    if headings:
+        top_level = min(heading["level"] for heading in headings)
+        selected = [
+            heading["title"]
+            for heading in headings
+            if heading["level"] == top_level or heading["category"] != "body"
+        ]
+        return _dedupe_texts([title for title in selected if title])
+
+    lines = _tree_markdown_candidate_lines(text)
+    return _dedupe_texts([item["title"] for item in lines])
+
+
+def _chapter_category(title: str) -> str:
+    normalized = _normalize_title(title)
+    if not normalized:
+        return "body"
+    if normalized in {"<首页>", "<封面>", "首页", "封面", "扉页"}:
+        return "cover"
+    if _is_toc_title(title):
+        return "toc"
+    if _is_preface_title(title):
+        return "preface"
+    if _is_appendix_title(title):
+        return "appendix"
+    if _is_ending_title(title):
+        return "ending"
+    if _is_numbered_chapter_title(title):
+        return "numbered"
+    if normalized in {"<正文>", "正文"}:
+        return "body_logic"
+    return "body"
+
+
+def _is_preface_title(title: str) -> bool:
+    text = _normalize_title(title)
+    return bool(re.fullmatch(_PREFACE_PATTERN, text))
+
+
+def _is_appendix_title(title: str) -> bool:
+    text = _normalize_title(title)
+    return bool(re.match(r"^(附件|附录)", text))
+
+
+def _is_ending_title(title: str) -> bool:
+    text = _normalize_title(title)
+    return any(re.search(pattern, text) for pattern in _ENDING_PATTERNS)
+
+
+def _is_numbered_chapter_title(title: str) -> bool:
+    text = _normalize_title(title)
+    if _NUMBERED_UNIT_PATTERN.match(text):
+        return True
+    if re.match(rf"^[{_CN_NUM}]+[、.．].+", text):
+        return True
+    return bool(re.match(r"^[0-9]+[、.．].+", text))
+
+
+def _numbered_chapter_pattern(title: str) -> str | None:
+    text = _normalize_title(title)
+    match = _NUMBERED_UNIT_PATTERN.match(text)
+    if match:
+        unit = match.group("unit")
+        if unit == "部分":
+            return rf"第[{_CN_NUM_COMMON}0-9]+部分.+"
+        return rf"第[{_CN_NUM_COMMON}0-9]+{unit}.+"
+    if re.match(rf"^[{_CN_NUM}]+[、.．].+", text):
+        return rf"[{_CN_NUM_COMMON}]+[、.．].+"
+    if re.match(r"^[0-9]+[、.．].+", text):
+        return r"[0-9]+[、.．].+"
+    return None
+
+
+def _starts_with_structured_content(categories: Sequence[str]) -> bool:
+    return bool(categories) and categories[0] in {
+        "preface",
+        "toc",
+        "numbered",
+        "appendix",
+        "body_logic",
+    }
+
+
+def _has_main_body_rule(categories: Sequence[str]) -> bool:
+    return any(category in {"numbered", "body_logic"} for category in categories)
+
+
+def _dedupe_chapters(chapters: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    result: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for chapter in chapters:
+        key = json.dumps(chapter, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            continue
+        result.append(dict(chapter))
+        seen.add(key)
+    return result
+
+
+def _strip_markdown_line(line: str) -> str:
+    line = re.sub(r"^#{1,6}\s+", "", line.strip())
+    line = re.sub(r"^\s*[-*+]\s+", "", line)
+    line = re.sub(r"^\s*[0-9]+[.)]\s+", "", line)
+    return line.strip()
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    head = max(limit * 2 // 3, 1)
+    tail = max(limit - head, 1)
+    return text[:head] + "\n...<truncated>...\n" + text[-tail:]
+
+
 def _params_from_agent_json(
     data: Mapping[str, Any],
     *,
@@ -1647,6 +1933,14 @@ def _candidates_from_params(params: Mapping[str, Any] | None) -> list[ChapterCan
     chapters = _template_chapters_from_params(params)
     if not chapters:
         return []
+    return _candidates_from_template_chapters(chapters, source="agent")
+
+
+def _candidates_from_template_chapters(
+    chapters: Sequence[Any],
+    *,
+    source: ChapterSource,
+) -> list[ChapterCandidate]:
     candidates: list[ChapterCandidate] = []
     for item in chapters:
         if not isinstance(item, Mapping):
@@ -1660,11 +1954,11 @@ def _candidates_from_params(params: Mapping[str, Any] | None) -> list[ChapterCan
                 title=title,
                 page_start=page_start,
                 page_end=page_end,
-                source="agent",
+                source=source,
                 confidence=0.9,
                 evidence=[
                     ChapterEvidence(
-                        source="agent",
+                        source=source,
                         page=page_start,
                         text=title,
                         detail={"template": dict(item)},
@@ -1741,6 +2035,11 @@ def _infer_template_title_pattern(text: str) -> str:
     compact = re.sub(r"\s+", "", stripped)
     cn = "零〇一二三四五六七八九十百千万"
     cn_common = "一二三四五六七八九十"
+
+    if re.match(r"^附件", compact):
+        return r"附件.+"
+    if re.match(r"^附录", compact):
+        return r"附录.+"
 
     match = re.match(rf"^第[{cn}]+(?P<unit>[章节篇部])", compact)
     if match:

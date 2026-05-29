@@ -122,6 +122,15 @@ $vllm serve PaddlePaddle/PaddleOCR-VL-1.5 \
   --gpu-memory-utilization 0.5\
   --port 4001
 
+$vllm serve PaddlePaddle/PaddleOCR-VL-1.6 \
+  --served-model-name paddleocr-vl \
+  --trust-remote-code \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --gpu-memory-utilization 0.5\
+  --port 4001
+
 #https://modelscope.cn/models/ZhipuAI/GLM-OCR
 $vllm serve ZhipuAI/GLM-OCR \
 --served-model-name glmocr \
