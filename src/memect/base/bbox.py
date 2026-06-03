@@ -122,7 +122,24 @@ class BBox(tuple[float,float,float,float]):
         """转换为整形，扩大"""
         x0, y0, x1, y1 = self
         return BBox(math.floor(x0), math.floor(y0), math.ceil(x1), math.ceil(y1))
+    
+    @property
+    def top(self)->"BBox":
+        return BBox(self.x0,self.y1,self.x1,self.y1)
 
+    @property
+    def bottom(self)->"BBox":
+        return BBox(self.x0,self.y0,self.x1,self.y0)
+
+    @property
+    def left(self)->"BBox":
+        return BBox(self.x0,self.y0,self.x0,self.y1)
+
+    @property
+    def right(self)->"BBox":
+        return BBox(self.x1,self.y0,self.x1,self.y1)
+    
+    
     def to_int(self) -> "BBox":
         """转换为整形，扩大"""
         x0, y0, x1, y1 = self

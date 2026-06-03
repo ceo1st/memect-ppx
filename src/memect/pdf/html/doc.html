@@ -215,7 +215,7 @@
             content-visibility: auto;
 
             scroll-margin-top: 20px;
-            
+
             &>.body>* {
                 scroll-margin-top: 20px;
             }
@@ -265,6 +265,14 @@
 
             &:hover {
                 outline: 2px solid sandybrown;
+            }
+
+            &[data-merged] td[data-subtype="header"] {
+                background-color: #81d784;
+            }
+
+            &[data-merged] td[data-merged="true"]{
+                background-color: lightblue;
             }
         }
 
@@ -395,20 +403,24 @@
             outline: 2px solid blueviolet !important;
         }
 
-        .section{
+        .section {
             display: none;
             position: absolute;
             box-sizing: border-box;
             outline: 2px solid grey;
         }
-        .column{
+
+        .column {
             position: absolute;
             box-sizing: border-box;
             background-color: rebeccapurple;
             opacity: 0.1;
         }
 
-        
+        [data-merged] {
+            outline-style: dashed !important;
+            outline-color: yellow ;
+        }
     </style>
 
     <style>

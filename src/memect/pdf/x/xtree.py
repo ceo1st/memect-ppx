@@ -111,24 +111,6 @@ class XTreeParser:
         if debugger.allow("save"):
             doc.write("debug/xtree.txt", xtree.root.stringify())
 
-    def _parse_outline(self, xtree: XTree) -> bool:
-        from .xtree_outline import Parser
-
-        Parser().parse(xtree)
-        return self._has_title_child(xtree)
-
-    def _parse_toc(self, xtree: XTree) -> bool:
-        from .xtree_toc import Parser
-
-        Parser().parse(xtree)
-        return self._has_title_child(xtree)
-
-    def _has_title_child(self, xtree: XTree) -> bool:
-        return any(child.is_title() for child in xtree.root.children)
-
-    def _clear_root(self, xtree: XTree):
-        for child in list(xtree.root.children):
-            child.deatch()
 
         
 

@@ -89,8 +89,8 @@ class TableMode(StrEnum):
     """全部按无边框解析"""
     AUTO = auto()
     """自动按有边框或者无边框"""
-    #LLM = auto()
-    #"""使用LLM解析"""
+    # LLM = auto()
+    # """使用LLM解析"""
 
 
 class ParseMode(StrEnum):
@@ -101,15 +101,18 @@ class ParseMode(StrEnum):
     PPT = auto()
     """按PPT解析，也就是没有页眉页脚注的内容"""
 
+
 class TreeBackend(StrEnum):
-    DEFAULT=auto()
-    LLM=auto()
-    OUTLINE=auto()
-    TOC=auto()
+    DEFAULT = auto()
+    LLM = auto()
+    OUTLINE = auto()
+    TOC = auto()
+
 
 class TreeParams(MyBaseModel):
-    backend:TreeBackend=TreeBackend.DEFAULT
-    template:Mapping[str,Any]|None=None
+    backend: TreeBackend = TreeBackend.DEFAULT
+    template: Mapping[str, Any] | None = None
+
 
 class ApiParams(MyBaseModel):
     model_config = ConfigDict(
@@ -153,10 +156,10 @@ class ApiParams(MyBaseModel):
 
     mode: ParseMode = ParseMode.PAGE
     table: TableMode = TableMode.AUTO
-    formula: bool = True
+    formula: bool = False
     """True表示需要解析公式，需要部署对应的模型,False只是截图即可"""
 
-    tree:TreeParams=Field(default_factory=TreeParams)
+    tree: TreeParams = Field(default_factory=TreeParams)
 
     remove_watermark: bool = False
     """True表示清除水印"""
@@ -373,11 +376,12 @@ class KDocument:
         self.state: dict[str, Any] = {}
         """执行统计"""
 
-        self.pdf_toc:PDFNode|None=None
+        self.pdf_toc: PDFNode | None = None
         """pdf的toc根节点"""
-        
+
         from .x.xbase import XTree
-        self.tree:XTree|None=None
+
+        self.tree: XTree | None = None
         """章节树解析的结果"""
 
     def __del__(self):
@@ -634,12 +638,12 @@ class KDocument:
             assert page.type == PageType.UNKNOWN
             page.type = PageType.PDF
 
-    def get_working_page(self,number:int)->'KPage|None':
+    def get_working_page(self, number: int) -> "KPage|None":
         for p in self.working_pages:
-            if p.number==number:
+            if p.number == number:
                 return p
         return None
-    
+
     def _get_filetype(self, file: Path) -> tuple[str, str]:
         import filetype
 
@@ -663,22 +667,22 @@ class KDocument:
                 raise ApiError(ApiError.ANY, f"不支持的文档类型:{suffix}")
 
     def jsonify(self, lite: bool = False) -> Any:
-        data:dict[str,Any] = {}
+        data: dict[str, Any] = {}
         if self.tree is not None:
-            #如果解析了章节树，输出tree和pages(精简版)
-            data['pages']=[page.jsonify(lite=True) for page in self.pages]
-            data['tree']=self.tree.jsonify()
+            # 如果解析了章节树，输出tree和pages(精简版)
+            data["pages"] = [page.jsonify(lite=True) for page in self.pages]
+            data["tree"] = self.tree.jsonify()
         else:
-            data['pages']=[page.jsonify() for page in self.pages]
-        
-        #data['execute']={}
+            data["pages"] = [page.jsonify() for page in self.pages]
+
+        # data['execute']={}
         return data
 
     def markdown(self) -> str:
         buf: list[str] = []
         for page in self.working_pages:
             buf.append(page.markdown())
-        #TODO 需要添加分页符吗？如：----1----
+        # TODO 需要添加分页符吗？如：----1----
         return "\n\n".join(buf)
 
 
@@ -712,74 +716,76 @@ def _md_escape(text: str) -> str:
     # 在实际使用中"()"不需要转义
     return re.sub(r"[`~*_+\-!{}#.\\]", lambda m: rf"\{m.group()}", text)
 
+
 class KColumn:
     """对应docx中的一个列"""
-    def __init__(self,index:int,bbox:BBox):
+
+    def __init__(self, index: int, bbox: BBox):
         super().__init__()
-        self.index=index
-        self.bbox=bbox
-    
-    def has_silibing(self)->bool:
+        self.index = index
+        self.bbox = bbox
+
+    def has_silibing(self) -> bool:
         """
         [column1]|[column2]|[column3]
         """
         pass
 
-    def is_section(self,*columns:Self)->bool:
+    def is_section(self, *columns: Self) -> bool:
         """
         判断几个列是否为一个section，如：
         [column1]|[column2]|[column3]
         """
-        if len(columns)<=1:
+        if len(columns) <= 1:
             return True
-        
-        
-        for i in range(1,len(columns)):
-            c1=columns[i-1]
-            c2=columns[i]
-            if c1.index+1!=c2.index:
+
+        for i in range(1, len(columns)):
+            c1 = columns[i - 1]
+            c2 = columns[i]
+            if c1.index + 1 != c2.index:
                 return False
-            #如果是严格的，必须顶部对齐的，现在宽松一点
+            # 如果是严格的，必须顶部对齐的，现在宽松一点
+
 
 class KSection:
     """对应docx的一个节，在docx中，一个节可以设置分栏的方式，如：单栏，双栏，三栏，在按页解析中，记录该页的节"""
-    def __init__(self,page:'KPage',columns:Sequence[BBox]):
+
+    def __init__(self, page: "KPage", columns: Sequence[BBox]):
         super().__init__()
-        assert len(columns)>0
-        self.page:Final=page
-        self.columns:Final = tuple(columns)
+        assert len(columns) > 0
+        self.page: Final = page
+        self.columns: Final = tuple(columns)
         self.bbox = BBox.join(columns)
-    
+
     @property
-    def col_num(self)->int:
+    def col_num(self) -> int:
         return len(self.columns)
 
-    def get_column(self,bbox:BBox)->KColumn|None:
-        for i,column in enumerate(self.columns):
+    def get_column(self, bbox: BBox) -> KColumn | None:
+        for i, column in enumerate(self.columns):
             xa = column.intersect(bbox)
-            if xa and xa.area/bbox.area>=0.8:
-                return KColumn(i,column)
+            if xa and xa.area / bbox.area >= 0.8:
+                return KColumn(i, column)
         return None
-    
-    def contains(self,bbox:BBox)->bool:
+
+    def contains(self, bbox: BBox) -> bool:
         column = self.get_column(bbox)
         if column is not None:
             return True
         return False
 
-    def alike(self,b:'KSection',*,strict:bool=True)->bool:
+    def alike(self, b: "KSection", *, strict: bool = True) -> bool:
         """判断是否列对齐"""
-        a=self
-        if a.col_num!=b.col_num:
+        a = self
+        if a.col_num != b.col_num:
             return False
-        if a.col_num==1:
+        if a.col_num == 1:
             return True
-        
-        #a1|a2|a3
-        #b1|b2|b3
-        #因为目前仅仅支持双栏且等宽
-        return True
 
+        # a1|a2|a3
+        # b1|b2|b3
+        # 因为目前仅仅支持双栏且等宽
+        return True
 
 
 class KPage:
@@ -837,7 +843,7 @@ class KPage:
         # self.ocr_spans:Final[list[KSpan]]=[]
         # """ocr识别的字符串，目的是用来去掉和pdf识别的且重叠的"""
 
-        self.pdf_links:Sequence[PDFLink]=tuple()
+        self.pdf_links: Sequence[PDFLink] = tuple()
         """表示页面上的pdf的annots(Subtype=Link)"""
 
         self.data: Final[dict[str, Any]] = {}
@@ -861,8 +867,8 @@ class KPage:
         self.footer: Final = KPageFooter(
             self, self.bbox.adjust(y1=int(height * 0.1)).to_quad()
         )
-       
-        self.footnotes:Final[list[KPageFootnote]]=[]
+
+        self.footnotes: Final[list[KPageFootnote]] = []
         """在分栏下，会存在多个部分"""
 
         self._seqs: dict[str, int] = {"figure": 1}
@@ -882,9 +888,9 @@ class KPage:
 
         self._blocks: Sequence[BBox] | None = None
         """页面的板块区域"""
-        self._sections:Sequence[KSection]=tuple()
+        self._sections: Sequence[KSection] = tuple()
         """记录当前页面的分栏，生成docx的时候需要"""
-        self._default_section:Final=KSection(self,[self.bbox])
+        self._default_section: Final = KSection(self, [self.bbox])
 
     def __del__(self):
         self._logger.debug("gc %s", self)
@@ -990,7 +996,7 @@ class KPage:
             img.save(fullpath)
         return img
 
-    def make_figure(self, quad: Quad, *, add: bool = False) -> "KFigure|None":
+    def make_figure(self, quad: Quad | BBox, *, add: bool = False) -> "KFigure|None":
         img = self.crop(quad)
         if img is None:
             return None
@@ -1328,10 +1334,10 @@ class KPage:
             image.save(file)
         return image
 
-    def jsonify(self,lite:bool=False) -> Any:
+    def jsonify(self, lite: bool = False) -> Any:
         data: dict[str, Any] = {
             "number": self.number,
-            #"bbox": self.bbox.jsonify(),
+            # "bbox": self.bbox.jsonify(),
             "width": self.width,
             "height": self.height,
             #'header':{},
@@ -1349,178 +1355,182 @@ class KPage:
         for obj in self.objects:
             buf.append(obj.markdown())
         return "\n\n".join(buf)
-    
 
     @property
-    def sections(self)->Sequence[KSection]:
+    def sections(self) -> Sequence[KSection]:
         return self._sections
 
-    def get_section(self,obj:'KObject')->KSection:
+    def get_section(self, obj: "KObject") -> KSection:
         for section in self._sections:
             if section.contains(obj.bbox):
                 return section
         return self._default_section
-    
-    def set_blocks(self,blocks:Sequence[BBox]):
+
+    def set_blocks(self, blocks: Sequence[BBox]):
         """设置页面按阅读顺序划分的区域"""
-        def parse_section(blocks:list[BBox])->KSection:
-            b1=blocks.pop(0)
+
+        def parse_section(blocks: list[BBox]) -> KSection:
+            b1 = blocks.pop(0)
             if not blocks:
-                return KSection(self,[b1])
-            
-            columns:list[BBox]=[b1]
+                return KSection(self, [b1])
+
+            columns: list[BBox] = [b1]
             while blocks:
                 b2 = blocks[0]
-                if b2.x0>=b1.x1:
-                    #b1|b2
-                    #考虑到可能有很多回车导致的如下：
-                    #b1|
+                if b2.x0 >= b1.x1:
+                    # b1|b2
+                    # 考虑到可能有很多回车导致的如下：
+                    # b1|
                     #  |b2
                     columns.append(b2)
                     blocks.pop(0)
                 else:
                     break
-            return KSection(self,columns)
-        
-        def check1(sections:Sequence[KSection])->bool:
-            for i in range(1,len(sections)):
-                s1 = sections[i-1]
+            return KSection(self, columns)
+
+        def check1(sections: Sequence[KSection]) -> bool:
+            for i in range(1, len(sections)):
+                s1 = sections[i - 1]
                 s2 = sections[i]
-                #检查，必须满足格式
-                #[--section--]
-                #[--section--]
-                if s1.bbox.y0<=s2.bbox.y1-5:
-                    #允许一点误差?
+                # 检查，必须满足格式
+                # [--section--]
+                # [--section--]
+                if s1.bbox.y0 <= s2.bbox.y1 - 5:
+                    # 允许一点误差?
                     return False
             return True
 
-        def check2(sections:Sequence[KSection])->bool:
-            #检查，是否为单栏/双栏/三栏
-            cx:Final= self.bbox.cx
+        def check2(sections: Sequence[KSection]) -> bool:
+            # 检查，是否为单栏/双栏/三栏
+            cx: Final = self.bbox.cx
             for section in sections:
-                assert len(section.columns)>0
-                if len(section.columns)>=3:
-                    #现在不支持三栏，后续支持再说
+                assert len(section.columns) > 0
+                if len(section.columns) >= 3:
+                    # 现在不支持三栏，后续支持再说
                     return False
-                
-                if len(section.columns)==1:
-                    #c1| or
-                    #-------
-                    #[--c1--]
-                    if section.columns[0].x0>cx:
-                        #允许一点误差
+
+                if len(section.columns) == 1:
+                    # c1| or
+                    # -------
+                    # [--c1--]
+                    if section.columns[0].x0 > cx:
+                        # 允许一点误差
                         return False
                 else:
-                    #目前仅仅支持等宽
-                    c1=section.columns[0]
-                    c2=section.columns[1]
-                    if c1.x1>cx+10 or c2.x0<cx-10:
+                    # 目前仅仅支持等宽
+                    c1 = section.columns[0]
+                    c2 = section.columns[1]
+                    if c1.x1 > cx + 10 or c2.x0 < cx - 10:
                         return False
-            
+
             return True
 
-        def cut(section:KSection,x:float)->list[KSection]:
-            #xx
-            #------- 在这里切开
-            #xxxxxx
-            #xxxxxx
-            bbox=section.bbox
-            objs = bbox.get(self.objects,ratio=0.8)
-            objs.sort(key=lambda obj:obj.bbox.y1,reverse=True)
-            idx=0
-            for i,obj in enumerate(objs):
-                if obj.bbox.x1>=x+5:
-                    idx=i
+        def cut(section: KSection, x: float) -> list[KSection]:
+            # xx
+            # ------- 在这里切开
+            # xxxxxx
+            # xxxxxx
+            bbox = section.bbox
+            objs = bbox.get(self.objects, ratio=0.8)
+            objs.sort(key=lambda obj: obj.bbox.y1, reverse=True)
+            idx = 0
+            for i, obj in enumerate(objs):
+                if obj.bbox.x1 >= x + 5:
+                    idx = i
                     break
-            
-            if idx==0:
-                return []
-            y0=objs[idx].bbox.y1
-            left_bbox=bbox.adjust(x1=x,y0=y0+1)
-            bottom_bbox=bbox.adjust(y1=y0)
-            section1 = KSection(self,[left_bbox])
-            section2 = KSection(self,[bottom_bbox])
-            return [section1,section2]
 
-        def fix1(sections:list[KSection]):
-            #还需要根据上一页处理几种特别的情况
-            #这种不处理，因为太少见了，使用很多换行来占据空间然后再分栏
+            if idx == 0:
+                return []
+            y0 = objs[idx].bbox.y1
+            left_bbox = bbox.adjust(x1=x, y0=y0 + 1)
+            bottom_bbox = bbox.adjust(y1=y0)
+            section1 = KSection(self, [left_bbox])
+            section2 = KSection(self, [bottom_bbox])
+            return [section1, section2]
+
+        def fix1(sections: list[KSection]):
+            # 还需要根据上一页处理几种特别的情况
+            # 这种不处理，因为太少见了，使用很多换行来占据空间然后再分栏
             #   |c1
-            #-------- 分页
-            #c2 |
-            #第二种
-            #c1 | c2
-            #--------- 分页，因为前一页存在分栏，c2和c3可能跨页合并
-            #c3 |      需要把c3也设置为对应的分栏
-            #---c4---
+            # -------- 分页
+            # c2 |
+            # 第二种
+            # c1 | c2
+            # --------- 分页，因为前一页存在分栏，c2和c3可能跨页合并
+            # c3 |      需要把c3也设置为对应的分栏
+            # ---c4---
             if not sections:
                 return
-            
-            if self.number<=1:
+
+            if self.number <= 1:
                 return
-            
-            prev_page = self.doc.get_working_page(self.number-1)
-            if prev_page is None or len(prev_page.sections)<1 or abs(prev_page.width-self.width)>=5:
+
+            prev_page = self.doc.get_working_page(self.number - 1)
+            if (
+                prev_page is None
+                or len(prev_page.sections) < 1
+                or abs(prev_page.width - self.width) >= 5
+            ):
                 return
-            
+
             section = sections[0]
             prev_section = prev_page.sections[-1]
 
-            #TODO 目前仅仅支持双栏的
-            if not (prev_section.col_num==2 and section.col_num<prev_section.col_num):
+            # TODO 目前仅仅支持双栏的
+            if not (
+                prev_section.col_num == 2 and section.col_num < prev_section.col_num
+            ):
                 return
-            
-            #a1|a2
-            #---------
-            #b1|     => 自动补齐b2
 
-            #如果是这样
-            #a1|a2
-            #----------
-            #b1
-            #---b2------  => 需要先把这个给切开
+            # a1|a2
+            # ---------
+            # b1|     => 自动补齐b2
+
+            # 如果是这样
+            # a1|a2
+            # ----------
+            # b1
+            # ---b2------  => 需要先把这个给切开
 
             left_column = prev_section.columns[0]
             right_column = prev_section.columns[1]
-            if section.bbox.x1>self.bbox.cx:
-                #目前仅仅支持双栏且左右相等
-                new_sections = cut(section,self.bbox.cx)
-                if len(new_sections)!=2:
+            if section.bbox.x1 > self.bbox.cx:
+                # 目前仅仅支持双栏且左右相等
+                new_sections = cut(section, self.bbox.cx)
+                if len(new_sections) != 2:
                     return
 
                 del sections[0]
-                sections.insert(0,new_sections[0])
-                sections.insert(1,new_sections[1])
+                sections.insert(0, new_sections[0])
+                sections.insert(1, new_sections[1])
                 section = sections[0]
-            
-            b1=section.columns[0]
-            b2=b1.adjust(x0=right_column[0],x1=right_column[2])
-            sections[0]=KSection(self,[b1,b2])
-            self._logger.warning('第%s页，因为上一页为分栏，当前页使用分栏',self.number)
 
-        
-        
+            b1 = section.columns[0]
+            b2 = b1.adjust(x0=right_column[0], x1=right_column[2])
+            sections[0] = KSection(self, [b1, b2])
+            self._logger.warning(
+                "第%s页，因为上一页为分栏，当前页使用分栏", self.number
+            )
+
         self._blocks = tuple(blocks)
-        sections:list[KSection]=[]
-        
-        new_blocks=list(blocks)
+        sections: list[KSection] = []
+
+        new_blocks = list(blocks)
         while new_blocks:
             section = parse_section(new_blocks)
             sections.append(section)
-        
-        if len(sections)>0 and all(fn(sections) for fn in [check1,check2]):
-            fix1(sections)
-            self._sections=tuple(sections)
-        else:
-            #如果不能够分节成功，就仅仅作为一节，不影响阅读理解，章节树分析
-            #只是影响docx的生成
-            if blocks:
-                default_section=KSection(self,[BBox.join(blocks)])
-                self._sections=(default_section,)
-            else:
-                self._sections=tuple()
-            
 
+        if len(sections) > 0 and all(fn(sections) for fn in [check1, check2]):
+            fix1(sections)
+            self._sections = tuple(sections)
+        else:
+            # 如果不能够分节成功，就仅仅作为一节，不影响阅读理解，章节树分析
+            # 只是影响docx的生成
+            if blocks:
+                default_section = KSection(self, [BBox.join(blocks)])
+                self._sections = (default_section,)
+            else:
+                self._sections = tuple()
 
 
 class KObject:
@@ -1824,8 +1834,8 @@ class KChar(KObject):
             and c1.underline == c2.underline
             and c1.color == c2.color
             and c1.font == c2.font
-            and c1.source==c2.source
-            and abs(c1.bbox.height-c2.bbox.height)<=2
+            and c1.source == c2.source
+            and abs(c1.bbox.height - c2.bbox.height) <= 2
         )
 
     @cached_property
@@ -1853,10 +1863,10 @@ class KChar(KObject):
         # 默认为黑色
         if not self.color.is_black():
             data["color"] = self.color.jsonify()
-        
-        data['font']=self.font.name
-        #if self.wingdings_text:
-            #data['wingdings']=self.wingdings_text
+
+        data["font"] = self.font.name
+        # if self.wingdings_text:
+        # data['wingdings']=self.wingdings_text
         return data
 
     def is_valid(self) -> bool:
@@ -1889,26 +1899,28 @@ class KText2(KObject):
 
     type = "text"
 
-    def __init__(self, page: KPage, quad: Quad|BBox, *, text: str,md_text:str|None=None):
+    def __init__(
+        self, page: KPage, quad: Quad | BBox, *, text: str, md_text: str | None = None
+    ):
         super().__init__(page, quad)
         self.text: Final = text
-        self._md_text:Final=md_text
+        self._md_text: Final = md_text
         """表示原始的markdown"""
 
     def markdown(self) -> str:
-        #如果有原始的markdown，就返回，如：##xxxx，或者xxx*zz*vvvv
+        # 如果有原始的markdown，就返回，如：##xxxx，或者xxx*zz*vvvv
         if self._md_text:
             return self._md_text
         return _md_escape(self.text)
 
     def jsonify(self):
         return {"type": "text", "bbox": self.bbox.jsonify(), "text": self.text}
-    
+
     @classmethod
-    def from_markdown(cls,page:KPage,bbox:BBox|Quad,text:str)->Self:
+    def from_markdown(cls, page: KPage, bbox: BBox | Quad, text: str) -> Self:
         """根据markdown构造"""
         text = cls.md_unescape(text)
-        return cls(page,bbox,text=text,md_text=text)
+        return cls(page, bbox, text=text, md_text=text)
 
     @classmethod
     def md_escape(cls, text: str) -> str:
@@ -1950,10 +1962,8 @@ class KText2(KObject):
 
         # 9. 行内公式（$xxx$）
         # 如何转换为文本？把公式扔了？或者不做改变？
-        
+
         return text
-
-
 
 
 class KSpan(KObject):
@@ -1962,7 +1972,12 @@ class KSpan(KObject):
     type = "span"
 
     def __init__(
-        self, page: KPage, quad: Quad|BBox, *, chars: Sequence[KChar], score: float = 1
+        self,
+        page: KPage,
+        quad: Quad | BBox,
+        *,
+        chars: Sequence[KChar],
+        score: float = 1,
     ):
         assert len(chars) > 0
         super().__init__(page, quad)
@@ -1972,29 +1987,29 @@ class KSpan(KObject):
     @cached_property
     def text(self) -> str:
         return "".join(c.text for c in self.chars)
-    
+
     @property
-    def bold(self)->bool:
+    def bold(self) -> bool:
         return self.chars[0].bold
-    
+
     @property
-    def italic(self)->bool:
+    def italic(self) -> bool:
         return self.chars[0].italic
-    
+
     @property
-    def underline(self)->bool:
+    def underline(self) -> bool:
         return self.chars[0].underline
-    
+
     @property
-    def strikeout(self)->bool:
+    def strikeout(self) -> bool:
         return self.chars[0].strikeout
-    
+
     @property
-    def font(self)->KFont:
+    def font(self) -> KFont:
         return self.chars[0].font
-    
+
     @property
-    def color(self)->KColor:
+    def color(self) -> KColor:
         return self.chars[0].color
 
 
@@ -2037,9 +2052,9 @@ class KTextline(KObject):
                 return True
             else:
                 return False
-        
-        def is_span(group:Sequence[KObject])->TypeGuard[Sequence[KChar]]:
-            return isinstance(group[0],KChar)
+
+        def is_span(group: Sequence[KObject]) -> TypeGuard[Sequence[KChar]]:
+            return isinstance(group[0], KChar)
 
         groups: list[list[KObject]] = []
         group: list[KObject] = [self.objects[0]]
@@ -2048,18 +2063,16 @@ class KTextline(KObject):
             if not join(group, obj):
                 group = [obj]
                 groups.append(group)
-        
-        new_objects:list[KObject]=[]
+
+        new_objects: list[KObject] = []
         for group in groups:
             if is_span(group):
-                span = KSpan(self.page,BBox.join2(group),chars=group)
+                span = KSpan(self.page, BBox.join2(group), chars=group)
                 new_objects.append(span)
             else:
                 new_objects.extend(group)
-        
+
         return new_objects
-
-
 
     @override
     def markdown(self) -> str:
@@ -2165,7 +2178,7 @@ class KTextline(KObject):
                         if c.bold:
                             buf.append("**")
                             has_style = True
-                        
+
                         buf.append(_md_escape(s))
                         if c.italic:
                             buf.append("*")
@@ -2520,23 +2533,30 @@ class KText(KObject):
 
     type = "text"
 
-    def __init__(self, page: KPage, quad: Quad|BBox, *, lines: Sequence[KTextline]|None=None, text: str|None=None,md_text:str|None=None):
+    def __init__(
+        self,
+        page: KPage,
+        quad: Quad | BBox,
+        *,
+        lines: Sequence[KTextline] | None = None,
+        text: str | None = None,
+        md_text: str | None = None,
+    ):
         super().__init__(page, quad)
 
         if lines and text is not None:
-            #设置了lines，表示有坐标的方式
-            raise ValueError('lines和text只能够指定一个，现在2个都设置了')
-        
+            # 设置了lines，表示有坐标的方式
+            raise ValueError("lines和text只能够指定一个，现在2个都设置了")
+
         if text is not None and md_text is None:
-            #如果指定了文本但是没有原始markdown，就马上转义一个
+            # 如果指定了文本但是没有原始markdown，就马上转义一个
             md_text = _md_escape(text)
 
         self.lines: Final[Sequence[KTextline]] = tuple(lines or [])
-        self._raw_text:Final = text
+        self._raw_text: Final = text
         """直接的文本，因为没有单个字符的坐标"""
-        self._md_text:Final = md_text
+        self._md_text: Final = md_text
         """原始的markdown"""
-
 
     @cached_property
     def text(self) -> str:
@@ -2594,16 +2614,15 @@ class KText(KObject):
 
     def __add__(self, other: Self) -> Self:
         quad = Quad.join([self.quad, other.quad])
-        if len(self.lines)>0 and len(other.lines)>0:
-            #如果都是有坐标的
+        if len(self.lines) > 0 and len(other.lines) > 0:
+            # 如果都是有坐标的
             lines = [*self.lines, *other.lines]
             return self.__class__(self.page, quad, lines=lines)
         else:
-            #有一个没有坐标，就变成没有坐标的
-            text = self.text+other.text
-            md_text = self.markdown()+other.markdown()
-            return self.__class__(self.page,quad,text=text,md_text=md_text)
-
+            # 有一个没有坐标，就变成没有坐标的
+            text = self.text + other.text
+            md_text = self.markdown() + other.markdown()
+            return self.__class__(self.page, quad, text=text, md_text=md_text)
 
     def jsonify(self):
         return {
@@ -2635,10 +2654,10 @@ class KText(KObject):
             return cls(page, quad, lines=lines)
 
     @classmethod
-    def from_markdown(cls,page:KPage,bbox:BBox|Quad,text:str)->Self:
+    def from_markdown(cls, page: KPage, bbox: BBox | Quad, text: str) -> Self:
         """根据markdown构造"""
         text = cls.md_unescape(text)
-        return cls(page,bbox,text=text,md_text=text)
+        return cls(page, bbox, text=text, md_text=text)
 
     @classmethod
     def md_escape(cls, text: str) -> str:
@@ -2680,12 +2699,14 @@ class KText(KObject):
 
         # 9. 行内公式（$xxx$）
         # 如何转换为文本？把公式扔了？或者不做改变？
-        
+
         return text
+
+
 class KFigure(KObject):
     type: str = "figure"
 
-    def __init__(self, page: KPage, quad: Quad, *, filename: str):
+    def __init__(self, page: KPage, quad: Quad|BBox, *, filename: str):
         super().__init__(page, quad)
         self.filename: Final = filename
         """如：images/1.png，相对doc.md"""
@@ -2709,18 +2730,56 @@ class KFigure(KObject):
 class KTable(KObject):
     type: str = "table"
 
-    def __init__(
-        self, page: KPage, quad: Quad | BBox, *, row_num: int = 0, col_num: int = 0
-    ):
+    def __init__(self, page: KPage, quad: Quad | BBox, *, cells: Sequence["KCell"],subtype:str|None=None):
         super().__init__(page, quad)
-        self.row_num = row_num
-        self.col_num = col_num
-        self.cells: list[KCell] = []
+        assert len(cells)>0
+        self.row_num = max(c.row_index+c.row_span for c in cells)
+        self.col_num = max(c.col_index+c.col_span for c in cells)
+
+        self._validate(cells)
+        for cell in cells:
+            cell.table = self
+        
+
+
+        self.cells: Sequence[KCell] = tuple(cells)
         self.filename: str = ""
         """对应的截图的文件名，在llm且只需要获得markdown下，不一定需要截图"""
         self.grid: list[list[KCell]] = []
-        self.subtype='wbk'
+        self.subtype = subtype or 'wbk'
         """默认都是无边框表格，除非是直接使用线解析的"""
+
+        # 跨页表格合并需要的属性
+        # main=(header,body)
+        self.header: Self | None = None
+        """在跨页合并的时候，可以分离表头和表体"""
+        self.body: Self | None = None
+        """在跨页合并的时候，可以分离表头和表体"""
+        self.main: Self | None = None
+        """如果是header/body表格，可以获得其的主表格"""
+
+        self.merged: bool = False
+        """True表示跨页/跨栏合并了"""
+        self.merge_info: Any = None
+        """可以记录合并后的一些信息"""
+
+        self.working_state: Any = None
+        """合并或者其他操作可以设置临时状态"""
+
+        self.grid = self._create_grid()
+
+    def _create_grid(self):
+        # TODO 如果需要快速的访问，建立一个n*m的grid
+        grid: list[list[KCell]] = []
+        for i in range(self.row_num):
+            row = [None] * self.col_num
+            grid.append(row) # type: ignore
+
+        for cell in self.cells:
+            for i in range(cell.row_index, cell.row_index + cell.row_span):
+                for j in range(cell.col_index, cell.col_index + cell.col_span):
+                    grid[i][j] = cell
+        return grid
 
     @cached_property
     def fullpath(self) -> Path:
@@ -2748,22 +2807,133 @@ class KTable(KObject):
         return column
 
     def __getitem__(self, key: tuple[int, int]) -> "KCell":
+        # 因为页面的单元格比较少，如：self.row_num*self.col_num的表格，如果需要遍历所有单元格，且都是访问最后一个，就需要执行
+        # self.row_num*self.col_num*len(self.cells)次，太慢了
         row_index, col_index = key
-        for cell in self.cells:
-            if (
-                cell.row_index <= row_index < cell.row_index + cell.row_span
-                and cell.col_index <= col_index < cell.col_index + cell.col_span
-            ):
-                return cell
-        raise ValueError(f"错误的的行列坐标:{key}")
+        if True:
+            return self.grid[row_index][col_index]
+        else:
+            for cell in self.cells:
+                if (
+                    cell.row_index <= row_index < cell.row_index + cell.row_span
+                    and cell.col_index <= col_index < cell.col_index + cell.col_span
+                ):
+                    return cell
+            raise ValueError(f"错误的的行列坐标:{key}")
 
-    def get_lines(self) -> list["KLine"]:
+    def set_body(self, row_index: int | None):
+        """设置(0,row_index)为header，(row_index,end)为body"""
+        if row_index is None:
+            if self.header is not None:
+                for cell in self.header.cells:
+                    cell.subtype = None
+                    if cell.original_cell is not None:
+                        cell.original_cell.subtype = None
+            self.header = None
+            self.body = None
+        else:
+            self.header, self.body = self.split(row_index)
+            if self.header is not None:
+                # 同时可以标记这些为表头，这样在生成html的时候，可以标记为跨页表头，知道这部分内容不参与合并
+                # 当然，第一个表格的表头还是参与合并的
+                for cell in self.header.cells:
+                    cell.subtype = "header"
+                    if cell.original_cell is not None:
+                        cell.original_cell.subtype = "header"
+
+    def split(self, row_index: int) -> tuple[Self | None, Self | None]:
+        """在指定的行分开"""
+        header_cells: list[KCell] = []
+        body_cells: list[KCell] = []
+        for cell in self.cells:
+            if cell.row_index < row_index:
+                # 出现错误表示识别的header错误了
+                assert cell.row_index + cell.row_span <= row_index
+                header_cells.append(cell)
+            else:
+                body_cells.append(cell)
+
+        if not body_cells:
+            return (self, None)
+        elif not header_cells:
+            return (None, self)
+        else:
+            # 不重新解析，只是调整一下行数
+            header_bbox = self.bbox.adjust(y0=header_cells[-1].bbox.y0)
+            header_row_num: int = header_cells[-1].row_index + header_cells[-1].row_span
+            #header_col_num: int = self.col_num
+            header = self.__class__(
+                self.page,
+                header_bbox,
+                #row_num=header_row_num,
+                #col_num=header_col_num,
+                cells=header_cells,
+                subtype=self.subtype,
+            )
+            header.main = self
+
+            body_bbox = self.bbox.adjust(y1=body_cells[0].bbox.y1)
+            new_body_cells: list[KCell] = []
+            for cell in body_cells:
+                # 简单的调整即可
+                cell = cell.copy(row_index=cell.row_index - header_row_num)
+                new_body_cells.append(cell)
+
+            #body_row_num = self.row_num - header_row_num
+            #body_col_num = self.col_num
+            body = self.__class__(
+                self.page,
+                body_bbox,
+                #row_num=body_row_num,
+                #col_num=body_col_num,
+                cells=new_body_cells,
+                subtype=self.subtype,
+            )
+            body.main = self
+            return (header, body)
+        pass
+
+    def select(self, start: int, end: int, *, strict: bool = False) -> Self:
+        """
+        选择指定范围的行，返回一个新的表格，
+        start: 开始行
+        end： 结束行（不包括）
+
+        strict：True表示严格到end结束，False表示如果跨行超过end，自动调整，返回对齐的
+        """
+        cells: list[KCell] = []
+        for cell in self.cells:
+            if strict:
+                # 表示严格到end结束，必须对齐
+                assert cell.row_index + cell.row_span <= end
+                if cell.row_index >= start:
+                    cells.append(cell)
+            else:
+                if start <= cell.row_index < end:
+                    # 如果溢出了，自动调整end
+                    end = max(end, cell.row_index + cell.row_span)
+                    cells.append(cell)
+
+        # TODO 调整row_index
+        for i in range(len(cells)):
+            cell = cells[i]
+            cells[i] = cell.copy(row_index=cell.row_index - start)
+        bbox = self.bbox.adjust(y1=cells[0].bbox.y1, y0=cells[-1].bbox.y0)
+        #row_num = cells[-1].row_index + cells[-1].row_span
+        return self.__class__(
+            self.page,
+            bbox,
+            #row_num=row_num,
+            #col_num=self.col_num,
+            cells=cells,
+            subtype=self.subtype,
+        )
+
+    def get_lines(self) -> tuple[list["KLine"],list["KLine"]]:
         """根据当前cells的bbox，构造水平线和垂直线（合并共线重叠段）。"""
         horiz: list[tuple[float, float, float]] = []  # (y, x0, x1)
         vert: list[tuple[float, float, float]] = []  # (x, y0, y1)
         for cell in self.cells:
-            if cell.bbox is None:
-                continue
             x0, y0, x1, y1 = cell.bbox.x0, cell.bbox.y0, cell.bbox.x1, cell.bbox.y1
             horiz.append((y0, x0, x1))
             horiz.append((y1, x0, x1))
@@ -2789,12 +2959,19 @@ class KTable(KObject):
                     merged.append((coord, a, b))
             return merged
 
-        lines: list[KLine] = []
+        h_lines: list[KLine] = []
+        v_lines: list[KLine] =[]
         for y, x0, x1 in _merge(horiz):
-            lines.append(KLine(self.page, BBox(x0, y, x1, y)))
+            h_lines.append(KLine(self.page, BBox(x0, y, x1, y)))
         for x, y0, y1 in _merge(vert):
-            lines.append(KLine(self.page, BBox(x, y0, x, y1)))
-        return lines
+            v_lines.append(KLine(self.page, BBox(x, y0, x, y1)))
+        return h_lines,v_lines
+    
+    def get_lines2(self)->list["KLine"]:
+        h_lines,v_lines=self.get_lines()
+        return h_lines+v_lines
+    
+
 
     def jsonify(self) -> Any:
         data = {
@@ -2814,7 +2991,7 @@ class KTable(KObject):
         # table.html()
         from html import escape
 
-        def render_objects(objs: Sequence[KObject],allow_chars:bool=False) -> str:
+        def render_objects(objs: Sequence[KObject], allow_chars: bool = False) -> str:
             buf: list[str] = []
             for obj in objs:
                 if isinstance(obj, KText):
@@ -2822,7 +2999,7 @@ class KTable(KObject):
                     if obj.lines:
                         for tl in obj.lines:
                             buf.append("<div>")
-                            buf.append(render_objects(tl.objects,allow_chars=True))
+                            buf.append(render_objects(tl.objects, allow_chars=True))
                             buf.append("</div>")
                     else:
                         buf.append(escape(obj.text))
@@ -2832,13 +3009,13 @@ class KTable(KObject):
                     buf.append(f'<img src="{obj.filename}">')
                 elif isinstance(obj, KTable):
                     buf.append(obj.html())
-                elif isinstance(obj,KBlock):
-                    #KBlock，表示一组对象
+                elif isinstance(obj, KBlock):
+                    # KBlock，表示一组对象
                     buf.append(render_objects(obj.objects))
-                elif isinstance(obj,KChar) and allow_chars:
+                elif isinstance(obj, KChar) and allow_chars:
                     buf.append(escape(obj.text))
                 else:
-                    raise ValueError(f'不支持的对象:{obj}')
+                    raise ValueError(f"不支持的对象:{obj}")
             return "".join(buf)
 
         buf: list[str] = []
@@ -2878,116 +3055,6 @@ class KTable(KObject):
             buf.extend(tr)
         buf.append("</table>")
         return "".join(buf)
-
-    def rich_html(
-        self, fp: str | Path | TextIO | None = None, full: bool = True
-    ) -> str:
-        import html
-
-        buf: list[str] = []
-        if full:
-            buf.append("<html><head></head><body>")
-        buf.append('<table style="border: 1px solid;border-collapse: collapse;">')
-        # 如果需要显示复杂的表格，如下设置可以让跨列跨行的显示更加明确
-        buf.append("<colgroup>")
-        for i in range(self.col_num):
-            buf.append('<col colspan=1 style="width:100px;"></col>')
-        buf.append("</colgroup>")
-        buf.append("<tbody>")
-
-        i = -1
-        tr: list[str] = []
-        for cell in self.cells:
-            if cell.row_index != i:
-                if tr:
-                    tr.append("</tr>")
-                    buf.extend(tr)
-                    tr.clear()
-                i = cell.row_index
-                # 如果使用css，并不需要输出style
-                tr.append('<tr style="border:1px solid;">')
-
-            if cell.merged == True:
-                # 表示来自2个表格合并
-                bgcolor = "background-color:blue;"
-            elif cell.merged == False:
-                # 上下相邻的单元格，没有合并
-                bgcolor = "background-color:gray;"
-            elif cell.subtype == "header":
-                # 重复的表头不存在merged=True或者False的情况
-                bgcolor = "background-color:yellow;"
-            else:
-                bgcolor = ""
-            tr.append(
-                f'<td colspan="{cell.col_span}" rowspan="{cell.row_span}" style="border:1px solid;{bgcolor}">'
-            )
-            # tr.append(html.escape(cell.body.text()))
-            for obj in cell.objects:
-                if isinstance(obj, KText):
-                    tr.append(html.escape(obj.text))
-                elif isinstance(obj, KFigure):
-                    tr.append(f'<img src="images/{obj.filename}">')
-
-            tr.append("</td>")
-
-        if tr:
-            tr.append("</tr>")
-            buf.extend(tr)
-
-        buf.append("</tbody>")
-
-        buf.append("</table>")
-        if full:
-            buf.append("</body></html>")
-        s = "".join(buf)
-        if isinstance(fp, (str, Path)):
-            Path(fp).write_text(s, encoding="utf-8")
-        elif isinstance(fp, TextIO):
-            fp.write(s)
-        else:
-            pass
-        return s
-
-    def fill_html(self, html: str):
-        self.llm_text = html
-        self.raw_text = html
-        self.fill(self.parse_html(html))
-
-    def fill_otsl(self, text: str):
-        self.llm_text = text
-        self.raw_text = text
-        self.fill(self.parse_otsl(text))
-
-    def fill(self, data: Mapping[str, Any]):
-        from .table_builder import Builder
-        #计算表格的结构
-        x_axis,y_axis = Builder().build(self.bbox,data)
-        self.row_num = data["row_num"]
-        self.col_num = data["col_num"]
-        self.cells.clear()
-
-        for cell in data["cells"]:
-            row_index:int = cell['row_index']
-            col_index:int = cell['col_index']
-            row_span:int = cell['row_span']
-            col_span:int = cell['col_span']
-            x0 = x_axis[col_index]
-            x1 = x_axis[col_index+col_span]
-            y0 = y_axis[row_index]
-            y1 = y_axis[row_index+row_span]
-            cell_bbox = BBox(x0,y0,x1,y1)
-            text_bbox = BBox(x0,y0,x1,y1)
-            ktext = KText(self.page,text_bbox,text=cell['text'])
-            kcell = KCell(
-                self.page,
-                cell_bbox,
-                row_index=row_index,
-                col_index=col_index,
-                row_span=row_span,
-                col_span=col_span,
-                objects=[ktext]
-            )
-            self.cells.append(kcell)
 
     def fill_objects(self, objs: list[KObject | VObject]):
         """已经创建表格结构，把对象填充到单元格，会消耗使用的对象，目的是为了更好的测试"""
@@ -3040,7 +3107,7 @@ class KTable(KObject):
                 tb = KText.from_objects(new_cell_objs)
                 if tb is not None:
                     cell.objects.append(tb)
-                    cell.text = tb.text
+                    # cell.text = tb.text
             elif is_figures(valid_objs):
                 # 都是图片
                 for obj in valid_objs:
@@ -3066,7 +3133,7 @@ class KTable(KObject):
                         tb = KText.from_objects(group[1])
                         if tb is not None:
                             cell.objects.append(tb)
-                            cell.text += tb.text
+                            # cell.text += tb.text
 
         if len(objs) > 0:
             # 有对象剩余？
@@ -3151,60 +3218,99 @@ class KTable(KObject):
         adjust_y()
         adjust_x()
 
-    def validate(self):
-        for cell in self.cells:
-            if cell.col_index<0 or cell.col_index+cell.col_span>self.col_num or cell.row_index<0 or cell.row_index+cell.row_span>self.row_num:
-                raise ValueError(f'第{self.page.number}页表格结构错误,table=({self.row_num},{self.col_num})，cell=({cell.row_index},{cell.col_index},{cell.row_span},{cell.col_span})')
-        row_indexes:set[int]=set()
-        col_indexes:set[int]=set()
-        for cell in self.cells:
+    def _validate(self, cells: Sequence["KCell"]):
+        row_num = self.row_num
+        col_num = self.col_num
+        for cell in cells:
+            if (
+                cell.col_index < 0
+                or cell.col_index + cell.col_span > col_num
+                or cell.row_index < 0
+                or cell.row_index + cell.row_span > row_num
+            ):
+                raise ValueError(
+                    f"第{self.page.number}页表格结构错误,table=({row_num},{col_num})，cell=({cell.row_index},{cell.col_index},{cell.row_span},{cell.col_span})"
+                )
+        row_indexes: set[int] = set()
+        col_indexes: set[int] = set()
+        for cell in cells:
             row_indexes.add(cell.row_index)
             col_indexes.add(cell.col_index)
-        if len(row_indexes)!=self.row_num or len(col_indexes)!=self.col_num:
-            a=set(range(0,self.row_num)).difference(row_indexes)
-            b=set(range(0,self.col_num)).difference(col_indexes)
-            raise ValueError(f'第{self.page.number}页表格结构错误，缺少了行={a},缺少列={b}')
+        #if len(row_indexes) != row_num or len(col_indexes) != col_num:
+        if row_indexes!=set(range(row_num)) or col_indexes!=set(range(col_num)):
+            a = set(range(row_num)).difference(row_indexes)
+            b = set(range(col_num)).difference(col_indexes)
+            raise ValueError(
+                f"第{self.page.number}页表格结构错误，缺少了行={a},缺少列={b}"
+            )
 
     @classmethod
-    def from_text(cls, page: KPage, quad: Quad, text: str) -> "KTable":
+    def create_table(
+        cls, page: KPage, quad: Quad | BBox, data: Mapping[str, Any]
+    ) -> "KTable":
+        from .table_builder import Builder
+
+        # 计算表格的结构
+        bbox = quad.bbox if isinstance(quad, Quad) else quad
+        x_axis, y_axis = Builder().build(bbox, data)
+        # row_num = data["row_num"]
+        # col_num = data["col_num"]
+
+        cells: list[KCell] = []
+        for cell in data["cells"]:
+            row_index: int = cell["row_index"]
+            col_index: int = cell["col_index"]
+            row_span: int = cell["row_span"]
+            col_span: int = cell["col_span"]
+            x0 = x_axis[col_index]
+            x1 = x_axis[col_index + col_span]
+            y0 = y_axis[row_index]
+            y1 = y_axis[row_index + row_span]
+            cell_bbox = BBox(x0, y0, x1, y1)
+            text_bbox = BBox(x0, y0, x1, y1)
+            ktext = KText(page, text_bbox, text=cell["text"])
+            kcell = KCell(
+                page,
+                cell_bbox,
+                row_index=row_index,
+                col_index=col_index,
+                row_span=row_span,
+                col_span=col_span,
+                objects=[ktext],
+            )
+            cells.append(kcell)
+
+        return KTable(page, bbox, cells=cells)
+
+    @classmethod
+    def from_text(cls, page: KPage, quad: Quad | BBox, text: str) -> "KTable":
         """根据html或者otsl构造"""
-        table = KTable(page, quad)
-        table.fill(cls.parse_text(text))
-        table.llm_text = text
+        table = cls.create_table(page, quad, cls.parse_text(text))
+        table.raw_text = text
         return table
 
     @classmethod
-    def from_data(cls, page: KPage, quad: Quad, data: Mapping[str, Any]) -> "KTable":
-        table = KTable(page, quad)
-        table.fill(data)
-        return table
+    def from_data(
+        cls, page: KPage, quad: Quad | BBox, data: Mapping[str, Any]
+    ) -> "KTable":
+        return cls.create_table(page, quad, data)
 
     @classmethod
     def from_grid(cls, page: KPage, grid: Grid) -> "KTable":
-        table = KTable(page, grid.bbox.to_quad())
-        table.row_num = grid.row_num
-        table.col_num = grid.col_num
+        #grid.draw(size=(int(page.width),int(page.height)),show=True).show()
+        cells: list[KCell] = []
         for cell in grid.cells:
-            buf: list[str] = []
-            for obj in cell.objects:
-                if isinstance(obj, KText):
-                    buf.append(obj.text)
-                else:
-                    pass
-            text = "".join(buf)
             kcell = KCell(
                 page,
                 cell.bbox.to_quad(),
-                text=text,
                 row_index=cell.row_index,
                 col_index=cell.col_index,
                 row_span=cell.row_span,
                 col_span=cell.col_span,
             )
             kcell.objects.extend(cell.objects)
-
-            table.cells.append(kcell)
-        return table
+            cells.append(kcell)
+        return KTable(page, grid.bbox, cells=cells)
 
     @classmethod
     def from_lines(
@@ -3281,7 +3387,6 @@ class KTable(KObject):
                 colspan = get_int(td, "colspan", 1)
                 rowspan = get_int(td, "rowspan")
                 text = td.get_text(strip=True)
-                # kcell = KCell(ktable.page,None,row_index=r_idx,col_index=c_idx,col_span=colspan,row_span=rowspan,text=text)
                 cell = {
                     "row_index": r_idx,
                     "col_index": c_idx,
@@ -3334,17 +3439,20 @@ class KCell:
 
     # type: str = "cell"
 
+    # 后续设置
+    table: KTable
+
     def __init__(
         self,
         page: KPage,
-        quad: Quad | BBox | None,
+        quad: Quad | BBox,
         *,
         row_index: int,
         col_index: int,
         row_span: int = 1,
         col_span: int = 1,
-        text: str = "",
         objects: Sequence[KObject] | None = None,
+        original_cell:Self|None=None
     ):
         # super().__init__(page,quad)
         self.page: Final = page
@@ -3353,20 +3461,27 @@ class KCell:
         if isinstance(quad, BBox):
             bbox = quad
             quad = bbox.to_quad()
-        elif isinstance(quad, Quad):
-            bbox = quad.bbox
         else:
-            quad = None
-            bbox = None
+            bbox=quad.bbox
         self.quad: Final = quad
         self.bbox: Final = bbox
-        self.text: str = text
+        # self.text: str = ''
         self.row_index = row_index
         self.col_index = col_index
         self.row_span = row_span
         self.col_span = col_span
 
+        self.subtype: str | None = None
+
+        # 后续设置
+        # self.table:KTable
+
         self.working_state: Any = None
+        self.original_cell:Self|None=original_cell
+        """在复制的时候，可以设置来自哪个单元格"""
+
+        self.merged:bool|None=None
+        """True表示在跨页/跨栏的时候被合并"""
 
         self.objects: Final[list[KObject]] = []
         if objects:
@@ -3375,6 +3490,25 @@ class KCell:
     @property
     def content_bbox(self) -> BBox | None:
         return BBox.join([obj.content_bbox for obj in self.objects], strict=False)
+
+    @property
+    def text(self) -> str:
+        buf: list[str] = []
+        for obj in self.objects:
+            if isinstance(obj, KText):
+                buf.append(obj.text)
+        return "".join(buf)
+
+    def copy(self,*,row_index:int|None=None,col_index:int|None=None,col_span:int|None=None,row_span:int|None=None)->Self:
+        if row_index is None:
+            row_index = self.row_index
+        if col_index is None:
+            col_index = self.col_index
+        if col_span is None:
+            col_span = self.col_span
+        if row_span is None:
+            row_span = self.row_span
+        return self.__class__(self.page,self.bbox,row_index=row_index,col_index=col_index,row_span=row_span,col_span=col_span,objects=self.objects,original_cell=self)
 
     def jsonify(self) -> Any:
         # 有些并不需要输出准确的bbox
@@ -3616,75 +3750,79 @@ class Group[T](list[T]):
     def invalidate(self):
         self._bbox = None
 
+
 class KDest:
-    def __init__(self,page_number:int,point:Point):
+    def __init__(self, page_number: int, point: Point):
         super().__init__()
         self.page_number = page_number
-        self.point=point
+        self.point = point
         """页面的坐标"""
 
 
 class PDFNode:
     """表示pdf的outline的一个节点"""
-    def __init__(self,parent:'PDFNode|None'=None):
+
+    def __init__(self, parent: "PDFNode|None" = None):
         super().__init__()
-        self.parent=parent
-        self.children:list[PDFNode]=[]
-        self.level=0
-        self.title:str=''
-        self.page_number:int=-1
+        self.parent = parent
+        self.children: list[PDFNode] = []
+        self.level = 0
+        self.title: str = ""
+        self.page_number: int = -1
         """页面，1位第一页，-1表示没有"""
-        self.point:tuple[float,float]|None=None
+        self.point: tuple[float, float] | None = None
         """页面坐标，原点为左下角"""
-        self.type='title'
-        #self.target:Any={}
-    
+        self.type = "title"
+        # self.target:Any={}
+
     @property
-    def size(self)->int:
+    def size(self) -> int:
         return len(self.children)
 
-    def add(self,node:'PDFNode'):
-        node.parent=self
+    def add(self, node: "PDFNode"):
+        node.parent = self
         self.children.append(node)
-    
 
-    def get_last_node(self,level:int)->'PDFNode':
-        if level==0:
+    def get_last_node(self, level: int) -> "PDFNode":
+        if level == 0:
             return self.get_root()
-        elif level>self.level:
-            #往下查找
-            node=self
-            while level>node.level:
-                node = node.children[-1]                
+        elif level > self.level:
+            # 往下查找
+            node = self
+            while level > node.level:
+                node = node.children[-1]
             return node
         else:
-            #往上查找
+            # 往上查找
             return self.get_root().get_last_node(level)
-    
-    def get_root(self)->'PDFNode':
+
+    def get_root(self) -> "PDFNode":
         if self.parent is None:
             return self
         else:
             return self.parent.get_root()
-    
+
     def detach(self):
         if self.parent is not None:
             self.parent.children.remove(self)
-    
-    def stringify(self)->str:
-        buf:list[str]=[]
-        indent = '    '*self.level
-        buf.append(f'{indent}[{self.level}]({self.page_number},{self.point}){self.title}\n')
+
+    def stringify(self) -> str:
+        buf: list[str] = []
+        indent = "    " * self.level
+        buf.append(
+            f"{indent}[{self.level}]({self.page_number},{self.point}){self.title}\n"
+        )
         for child in self.children:
             buf.append(child.stringify())
-        return ''.join(buf)
-    
+        return "".join(buf)
+
+
 class PDFLink:
-    def __init__(self,bbox:BBox,page_number:int,point:Point):
+    def __init__(self, bbox: BBox, page_number: int, point: Point):
         super().__init__()
-        self.bbox:Final=bbox
+        self.bbox: Final = bbox
         """表示在页面上的位置"""
-        self.page_number:Final=page_number
+        self.page_number: Final = page_number
         """表示点击后跳转到哪个页面"""
-        self.point:Final=point
+        self.point: Final = point
         """表示点击后跳转到页面的那个位置"""

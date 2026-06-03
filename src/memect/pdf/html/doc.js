@@ -162,6 +162,7 @@ const showPageNumberInput = document.getElementById('show-page-number-input')
 const showPageSectionInput = document.getElementById('show-page-section-input')
 const treeFilterInput = document.getElementById('tree-filter-input')
 const viewer = document.querySelector('.viewer')
+let tree = null
 
 // 程序化滚动期间，屏蔽 observer 对 currentNumber 的反向更新
 let _suppressObserver = false
@@ -304,6 +305,12 @@ function initEvents() {
             dlg.close();
         }
     });
+
+    document.addEventListener('click',(ev)=>{
+        const el = ev.target.closest('[data-xid]')
+        if (!el || !tree) return
+        tree.expand(el.dataset.xid)
+    })
 }
 
 function initSplitter() {
@@ -369,6 +376,8 @@ class Tree extends EventTarget {
         const hasChildren = Array.isArray(node.children) && node.children.length > 0
         li.className = 'tree-node' + (hasChildren ? '' : ' leaf')
         li.dataset.type = node.type
+        li.dataset.nodeId=node.xid
+        li._treeNode = node
         if (this._defaultExpanded && hasChildren) li.classList.add('expanded')
 
         const row = document.createElement('div')
@@ -408,6 +417,25 @@ class Tree extends EventTarget {
         if (this._activeNode) this._activeNode.classList.remove('active')
         this._activeNode = li
         li.classList.add('active')
+        this.dispatchEvent(new CustomEvent('active', { detail: { node: li._treeNode, el: li } }))
+    }
+
+    expand(id){
+        const escapedId = CSS.escape(String(id))
+        const el = this._container.querySelector(`.tree-node[data-node-id="${escapedId}"]`)
+        if (!el) return false
+
+        el.classList.add('expanded')
+
+        let parent = el.parentElement?.closest('.tree-node')
+        while (parent) {
+            parent.classList.add('expanded')
+            parent = parent.parentElement?.closest('.tree-node')
+        }
+
+        this._setActive(el)
+
+        return true
     }
 }
 
@@ -446,32 +474,42 @@ const tree2 = {
     }
 }
 
-const t = new Tree('#outline', data.tree,{defaultExpanded:false})
+tree = new Tree('#outline', data.tree,{defaultExpanded:false})
 let lastXID = null
-t.addEventListener('click', (e) => {
+tree.addEventListener('click', (e) => {
     console.log('node clicked:', e.detail.node)
     const number = e.detail.node.number
     if (typeof number == 'number') {
         document.querySelector(`.page[data-number="${number}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' })
         return
     }
+
     const xid = e.detail.node.xid
-    const els = document.querySelectorAll(`[data-xid="${xid}"]`)
+    const els = document.querySelector('.doc').querySelectorAll(`[data-xid="${xid}"]`)
+    if (els.length > 0) {
+        els[0].scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+})
+
+tree.addEventListener('active',(e)=>{
+    console.log('active',e)
+    const xid = e.detail.node.xid
+    const els = document.querySelector('.doc').querySelectorAll(`[data-xid="${xid}"]`)
     if (lastXID !== xid) {
-        document.querySelectorAll(`[data-xid="${lastXID}"]`).forEach(el => {
+        document.querySelector('.doc').querySelectorAll(`[data-xid="${lastXID}"]`).forEach(el => {
             el.classList.remove('object-highlight')
         })
     }
     lastXID = xid
+    
     if (els.length > 0) {
-        els[0].scrollIntoView({ behavior: 'smooth', block: 'start' })
         els.forEach(el => {
             //可以添加一个class，如：object-selected
             el.classList.toggle('object-highlight')
         })
-
-
     }
+
 
 })
 

@@ -8,7 +8,7 @@ import PIL.ImageDraw
 import PIL.ImageFont
 
 from memect.base.bbox import BBox
-from memect.pdf.base import KDocument, KPage, KTable, KText, VObject
+from memect.pdf.base import KDocument, KFigure, KPage, KTable, KText, VObject
 from memect.pdf.commons import FileInfo
 from memect.pdf.model import ModelManager
 
@@ -73,6 +73,7 @@ class Parser:
 
             # 2表示支持重复出现的情况
             method = 2
+            objects:list[str|KFigure]=[]
             for cell in reversed(table.cells):
                 # 解析文本，如果有图片序号的，使用图片替代
                 # <figure=1>
@@ -93,18 +94,56 @@ class Parser:
                     else:
                         j += 1
 
-                    text = text[0:i] + "\n" + text[i + len(name) :]
+                    #text = text[0:i] + "\n" + text[i + len(name) :]
+                    
+                    if len(objects)>0 and isinstance(objects[-1],str):
+                        objects[-1]+=text[0:i]
+                    else:
+                        objects.append(text[0:i])
+
+                    text=text[i+len(name):]
                     # 在这里删除
                     vobj = anchors.pop(name, None)
                     if vobj:
-                        cell.objects.append(vobj.make_figure())
+                        objects.append(vobj.make_figure())
+                
+                if text and len(objects)>0:
+                    if isinstance(objects[-1],str):  
+                        objects[-1]+=text
+                    else:
+                        objects.append(text)
+                
+                
+                if len(objects)>1:
+                    #表示包含了图片
+                    assert len(cell.objects)>0
+                    content_bbox = BBox.join2(cell.objects)
+                    cell.objects.clear()
+                    
+                    #---text---
+                    #---figure--
+                    #---text---- or ---figure---(不应该出现这个)
+                    for k,obj in enumerate(objects):
+                        if isinstance(obj,str):
+                            #如何计算text的bbox，现在不支持行内图片，仅仅支持行间图片
+                            if k==0:
+                                y1=content_bbox.y1
+                            else:
+                                fig_obj = objects[k-1]
+                                assert isinstance(fig_obj,KFigure)
+                                y1=fig_obj.bbox.y0
+                            
+                            if k+1<len(objects):
+                                fig_obj = objects[k+1]
+                                assert isinstance(fig_obj,KFigure)
+                                y0=fig_obj.bbox.y1
+                            else:
+                                y0=content_bbox.y0
 
-                if cell.objects and text:
-                    # TODO 如果有对象了，就需要转换了,BBox不知道怎么得到，就简单的使用
-                    cell.objects.append(
-                        KText(table.page, BBox.join2(cell.objects).to_quad(), text=text)
-                    )
-                cell.text = text
+                            obj = KText(table.page,content_bbox.adjust(y0=y0,y1=y1),text=obj)
+                        cell.objects.append(obj)
+                    pass
+
 
         def get_tables(page: KPage):
             items: list[Any] = []
@@ -135,7 +174,6 @@ class Parser:
                 if table.row_num > 0 and table.col_num > 0:
                     if anchors:
                         resolve_anchors(table, anchors)
-                        pass
                     page.objects.append(table)
                 else:
                     # TODO 无法解析，截图？

@@ -165,6 +165,9 @@ class Parser:
                     del h_lines[0]
                     self._logger.warning('第%s页，删除和表格粘连的页脚线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
 
+        #TODO 还需要去掉下划线，否则可能会把下划线识别为表格线，如：
+        # xx____下划线
+        #-------表格线
         lines = bbox.get(page.pdf_lines, ratio=0.5)
         h_lines,v_lines=KLine.split(lines)
         #TODO 如果有页眉线页脚线，可能会重叠或者相邻，需要先去掉，避免多识别一列

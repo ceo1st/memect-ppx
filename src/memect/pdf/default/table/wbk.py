@@ -108,7 +108,7 @@ class Parser:
                     steps.append(
                         (
                             f"ybk=({ybk_table.row_num},{ybk_table.col_num})",
-                            ybk_table.get_lines(),
+                            ybk_table.get_lines2(),
                         )
                     )
                 if use_ybk(ybk_table, wbk_table):
@@ -126,7 +126,7 @@ class Parser:
         # TODO 如何显示
         if steps is not None:
             steps.append((f"remain_objects={len(result.remain_objects)}",result.remain_objects))
-            steps.append((f"{table.subtype}", table.get_lines()))
+            steps.append((f"{table.subtype}", table.get_lines2()))
             page.draw(
                 *steps,
                 index=index,
@@ -190,7 +190,7 @@ class Parser:
                     (f"adjusted_cells={len(adjusted_cells)}", adjusted_cells),
                     (f'expanded_cells={len(expanded_cells)}',expanded_cells),
                     (f"cells={len(cells)}", cells),
-                    (f"wbk=({table.row_num},{table.col_num})",table.get_lines())
+                    (f"wbk=({table.row_num},{table.col_num})",table.get_lines2())
                 ]
             )
         return table
@@ -384,22 +384,19 @@ class Builder:
         cells: Sequence[_Cell],
     ) -> KTable:
         cells = [cell for cell in cells if cell.bbox.width > 0 and cell.bbox.height > 0]
-        table = KTable(page, table_bbox, row_num=1, col_num=1)
+        
         if not cells:
-            table.cells.append(KCell(page, table_bbox, row_index=0, col_index=0))
-            return table
+            return KTable(page, table_bbox,cells=[KCell(page, table_bbox, row_index=0, col_index=0)])
 
         x_lines = self._axis_lines(cells, axis="x")
         y_lines = self._axis_lines(cells, axis="y")
         if len(x_lines) < 2 or len(y_lines) < 2:
             bbox = BBox.join2(cells)
-            table = KTable(page, bbox, row_num=1, col_num=1)
-            table.cells.append(KCell(page, bbox, row_index=0, col_index=0))
-            return table
+            return KTable(page, bbox,cells=[KCell(page, bbox, row_index=0, col_index=0)])
 
         col_num = len(x_lines) - 1
         row_num = len(y_lines) - 1
-        table = KTable(page, table_bbox, row_num=row_num, col_num=col_num)
+        
 
         kcells: list[KCell] = []
         for cell in cells:
@@ -432,8 +429,8 @@ class Builder:
             )
 
         kcells.sort(key=lambda cell: (cell.row_index, cell.col_index))
-        table.cells.extend(kcells)
-        return table
+        return KTable(page, table_bbox,cells=kcells)
+
 
     def _snap_outlier_edges(self, cells: list[_Cell], *, axis: Literal["x", "y"]):
         """把孤立边界吸附到相邻稳定边界，避免形成很窄的伪行/列。"""
