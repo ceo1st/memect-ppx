@@ -555,21 +555,22 @@ class Parser:
             return line_paths,rect_paths
 
         timer=utils.Timer.start()
-        timer.mark('start filter')
-        paths = filter1(paths)
-        paths = filter2(paths)
-        line_paths,rect_paths = split(paths)
-        timer.mark('end filter')
-        timer.mark('start merge')
-        h_lines,v_lines = LineParser().parse(page,line_paths)
-        page.pdf_lines.clear()
-        page.pdf_lines.extend(h_lines)
-        page.pdf_lines.extend(v_lines)
+        with timer.watch('filter'):
+            paths = filter1(paths)
+            paths = filter2(paths)
+            line_paths,rect_paths = split(paths)
+        
+        #删除下划线
+        
+        with timer.watch('merge'):
+            h_lines,v_lines = LineParser().parse(page,line_paths)
+            page.pdf_lines.clear()
+            page.pdf_lines.extend(h_lines)
+            page.pdf_lines.extend(v_lines)
 
-        #矩形的合并，目的是为了能够还原背景，非常复杂的计算
-        page.pdf_rects.clear()
-        page.pdf_rects.extend([])
-        timer.mark('end merge')
+            #矩形的合并，目的是为了能够还原背景，非常复杂的计算
+            page.pdf_rects.clear()
+            page.pdf_rects.extend([])
 
         if debugger.allow('info'):
             debugger.print(f'第{page.number}页,耗时={timer.elapsed()}，原始路径={len(raw_paths)},line_paths={len(line_paths)},rect_paths={len(rect_paths)}，合并后=({len(h_lines)},{len(v_lines)})')

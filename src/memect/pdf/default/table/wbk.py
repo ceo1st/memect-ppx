@@ -236,7 +236,9 @@ class Parser:
         m = Matrix().lt_to_lb((width, height)).scale(sw, sh).translate(tx, ty)
         cells: list[_Cell] = []
         for cell_bbox in result["cells"]:
-            cells.append(_Cell(BBox.from_list(cell_bbox, matrix=m)))
+            xb = vobj.bbox.intersect(BBox.from_list(cell_bbox, matrix=m))
+            if xb is not None: 
+                cells.append(_Cell(xb))
         return cells
 
     def _adjust_cells(self, cells: Sequence[_Cell]) -> list[_Cell]:
