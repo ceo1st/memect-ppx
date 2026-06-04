@@ -142,7 +142,7 @@ class Parser:
     def _parse_pdf_lines(
         self, page: KPage, bbox: BBox
     ) -> tuple[list[KLine], list[KLine]]:
-        def clean_lines(h_lines:list[KLine],v_lines:list[KLine]):
+        def clean1(h_lines:list[KLine],v_lines:list[KLine]):
             v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
             if len(h_lines)>=2 and page.bbox.y1-bbox.y1<=100:
                 #可能和页眉线相邻
@@ -165,13 +165,45 @@ class Parser:
                     del h_lines[0]
                     self._logger.warning('第%s页，删除和表格粘连的页脚线,line1=%s,line2=%s',page.number,line1.bbox,line2.bbox)
 
+        def clean2(lines:list[KLine],is_h:bool):
+            #清除双层的线，如：
+            #------------------line1
+            # ---------------line2
+            if len(lines)<2:
+                return
+            
+            if is_h:
+                x0,y0,x1,y1=0,1,2,3
+            else:
+                x0,y0,x1,y1=1,0,3,2
+            
+            lines.sort(key=lambda line:line.bbox[y1],reverse=True)
+            i=0
+            while i+1<len(lines):
+                line1=lines[i].bbox
+                line2=lines[i+1].bbox
+                #如果线很粗的，可以放大，如：4
+                dx=3
+                dy=2
+                if line1[x1]-line1[x0]>=20 and abs(line1[x0]-line2[x0])<=dx and abs(line1[x1]-line2[x1])<=dx and line1[y1]-line2[y1]<=dy:
+                    if line1[x1]-line1[x0]>=line2[x1]-line2[x0]:
+                        del lines[i+1]
+                    else:
+                        del lines[i]
+                else:
+                    i+=1
+            
+            pass
         #TODO 还需要去掉下划线，否则可能会把下划线识别为表格线，如：
         # xx____下划线
         #-------表格线
         lines = bbox.get(page.pdf_lines, ratio=0.5)
         h_lines,v_lines=KLine.split(lines)
+
+        clean2(h_lines,True)
+        clean2(v_lines,False)
         #TODO 如果有页眉线页脚线，可能会重叠或者相邻，需要先去掉，避免多识别一列
-        clean_lines(h_lines,v_lines)
+        clean1(h_lines,v_lines)
         return h_lines,v_lines
 
     def _parse_image_lines(

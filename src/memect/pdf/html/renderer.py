@@ -489,7 +489,7 @@ class HtmlRenderer:
                 td.set_data({'subtype':cell.subtype})
 
             if cell.merged is True:
-                td.set_data({'merged':'true'})
+                td.set_data({'cell-merged':'true'})
 
 
             return [td]

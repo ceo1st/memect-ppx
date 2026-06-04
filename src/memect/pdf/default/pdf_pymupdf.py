@@ -15,7 +15,6 @@ from memect.pdf.base import (
     CharSource,
     KChar,
     KColor,
-    KDest,
     KDocument,
     KFont,
     KLine,
