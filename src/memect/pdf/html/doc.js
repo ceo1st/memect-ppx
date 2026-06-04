@@ -25,9 +25,12 @@ function initPage(page) {
     }))
     widths.forEach(({ el, dataWidth, scrollWidth }) => {
         const s = el.textContent
-        if (['•', '●'].includes(s)) {
+        if(el.dataset.wingdings=='true'){
             return
         }
+        //if (['•', '●','■'].includes(s)) {
+            //return
+        //}
         const scale = Math.round(dataWidth / scrollWidth * 1000) / 1000
         el.style.transformOrigin = 'left center'
         el.style.transform = `scaleX(${scale})`

@@ -660,6 +660,3 @@ class Liner:
                 break
 
         pass
-
-
-            

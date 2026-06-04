@@ -624,6 +624,8 @@ class HtmlRenderer:
         set_text_style(tag, span, scale=self._scale)
 
         tag.set_data({'width':span.bbox.width,'height':span.bbox.height})
+        if span.font.wingdings:
+            tag.set_data({'wingdings':'true'})
         tag.children.append(span.text)
         return [tag]
 
