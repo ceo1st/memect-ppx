@@ -133,6 +133,8 @@ class DefaultParser:
         self._parse_texts(doc)
         self._parse_figures(doc)
         self._parse_formulas(doc)
+        #加入特别功能处理，如：释义表格
+        #处理表格
         self._parse_tables(doc)
         if doc.params.mode == ParseMode.PPT:
             # 如果是按ppt，就不需要解析页面页脚等了

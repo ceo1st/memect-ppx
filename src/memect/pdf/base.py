@@ -2858,40 +2858,11 @@ class KTable(KObject):
         elif not header_cells:
             return (None, self)
         else:
-            # 不重新解析，只是调整一下行数
-            header_bbox = self.bbox.adjust(y0=header_cells[-1].bbox.y0)
-            header_row_num: int = header_cells[-1].row_index + header_cells[-1].row_span
-            #header_col_num: int = self.col_num
-            header = self.__class__(
-                self.page,
-                header_bbox,
-                #row_num=header_row_num,
-                #col_num=header_col_num,
-                cells=header_cells,
-                subtype=self.subtype,
-            )
+            header = self._from_cells(header_cells)
             header.main = self
-
-            body_bbox = self.bbox.adjust(y1=body_cells[0].bbox.y1)
-            new_body_cells: list[KCell] = []
-            for cell in body_cells:
-                # 简单的调整即可
-                cell = cell.copy(row_index=cell.row_index - header_row_num)
-                new_body_cells.append(cell)
-
-            #body_row_num = self.row_num - header_row_num
-            #body_col_num = self.col_num
-            body = self.__class__(
-                self.page,
-                body_bbox,
-                #row_num=body_row_num,
-                #col_num=body_col_num,
-                cells=new_body_cells,
-                subtype=self.subtype,
-            )
+            body = self._from_cells(body_cells)
             body.main = self
             return (header, body)
-        pass
 
     def select(self, start: int, end: int, *, strict: bool = False) -> Self:
         """
@@ -2913,27 +2884,15 @@ class KTable(KObject):
                     # 如果溢出了，自动调整end
                     end = max(end, cell.row_index + cell.row_span)
                     cells.append(cell)
+        
+        return self._from_cells(cells)
 
-        # TODO 调整row_index
-        for i in range(len(cells)):
-            cell = cells[i]
-            cells[i] = cell.copy(row_index=cell.row_index - start)
-        bbox = self.bbox.adjust(y1=cells[0].bbox.y1, y0=cells[-1].bbox.y0)
-        #row_num = cells[-1].row_index + cells[-1].row_span
-        return self.__class__(
-            self.page,
-            bbox,
-            #row_num=row_num,
-            #col_num=self.col_num,
-            cells=cells,
-            subtype=self.subtype,
-        )
 
-    def get_lines(self) -> tuple[list["KLine"],list["KLine"]]:
+    def _get_lines(self,cells:Sequence["KCell"]) -> tuple[list["KLine"],list["KLine"]]:
         """根据当前cells的bbox，构造水平线和垂直线（合并共线重叠段）。"""
         horiz: list[tuple[float, float, float]] = []  # (y, x0, x1)
         vert: list[tuple[float, float, float]] = []  # (x, y0, y1)
-        for cell in self.cells:
+        for cell in cells:
             x0, y0, x1, y1 = cell.bbox.x0, cell.bbox.y0, cell.bbox.x1, cell.bbox.y1
             horiz.append((y0, x0, x1))
             horiz.append((y1, x0, x1))
@@ -2967,11 +2926,24 @@ class KTable(KObject):
             v_lines.append(KLine(self.page, BBox(x, y0, x, y1)))
         return h_lines,v_lines
     
+    def get_lines(self)->tuple[list["KLine"],list["KLine"]]:
+        return self._get_lines(self.cells)
+    
     def get_lines2(self)->list["KLine"]:
         h_lines,v_lines=self.get_lines()
         return h_lines+v_lines
     
 
+    def _from_cells(self,cells:Sequence["KCell"])->Self:
+        """根据选择的部分单元格构造一个新的表格，重新计算单元格"""
+        h_lines,v_lines = self._get_lines(cells)
+        grid = Grid([line.bbox for line in h_lines+v_lines])
+        assert len(cells)==len(grid.cells)
+        new_cells:list[KCell]=[]
+        for c1,c2 in zip(cells,grid.cells):
+            cell = c1.copy(row_index=c2.row_index,col_index=c2.col_index,row_span=c2.row_span,col_span=c2.col_span)
+            new_cells.append(cell)
+        return self.__class__(self.page,grid.bbox,cells=new_cells,subtype=self.subtype)
 
     def jsonify(self) -> Any:
         data = {
