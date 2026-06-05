@@ -50,3 +50,5 @@
 !/.env.sample
 **/**/others
 .claude
+!/agent-sample.json
+

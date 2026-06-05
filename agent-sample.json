@@ -1,0 +1,7 @@
+{
+    "provider": "openai-responses",
+    "base_url": "https://api.deepseek.com",
+    "api_key": "",
+    "max_tokens": 8000,
+    "model": "deepseek-v4-pro"
+}

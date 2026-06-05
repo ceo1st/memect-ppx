@@ -1,14 +1,17 @@
 import logging
+from pathlib import Path
 import re
 from functools import cached_property
 from logging import Logger
-from typing import Any, Final, Self, Sequence, cast, override
+from typing import Any, Final, Self, Sequence, TextIO, cast, override
 
 from memect.base import strs
+from memect.base.bbox import BBox, Point
 from memect.base.pattern import XPattern
 from memect.pdf.base import (
     KBlock,
     KCell,
+    KChar,
     KDocument,
     KFigure,
     KFormula,
@@ -17,7 +20,20 @@ from memect.pdf.base import (
     KTable,
     KText,
 )
+from memect.pdf.grid import Grid
 
+def _md_escape(text: str) -> str:
+    # 在实际使用中"()"不需要转义
+    return re.sub(r"[`~*_+\-!{}#.\\]", lambda m: rf"\{m.group()}", text)
+
+class XDest:
+    def __init__(self,page_number:int,point:Point|BBox|None=None):
+        super().__init__()
+        self.page_number:Final=page_number
+        self.bbox:Final=point if isinstance(point,BBox) else None
+        """目标位置，可以为None"""
+        self.point:Final=point if isinstance(point,Point) else None
+        """目标位置，可以为None，通常为原文上一点的地方"""
 
 class XNode:
     def __init__(self, object: "XObject"):
@@ -103,6 +119,9 @@ class XNode:
         else:
             return None
         
+    def is_root(self)->bool:
+        return self.parent is None
+    
     def is_formula(self)->bool:
         return isinstance(self.object,XFormula)
     
@@ -251,19 +270,25 @@ class XNode:
             buf.append(child.stringify(indent=indent+4))
         return '\n'.join(buf)
 
+    def markdown(self)->str:
+        buf:list[str]=[]
+        buf.append(self.object.markdown())
+        for child in self.children:
+            buf.append(child.markdown())
+        return '\n\n'.join(buf)
 class XTree:
     def __init__(self,doc:KDocument):
         super().__init__()
         self.doc:Final=doc
         self.xobjects:Final[list[XObject]]=[]
         """获得该树的对象，可以添加/删除，因为需要跨页表格，跨页文本合并等"""
-        self.root: Final = XText.create_title('<doc>').node
+        self.root: Final = XText.create_title(doc,'<doc>').node
         """根节点"""
         self.layout_tables:Final[list[Any]]=[]
         """记录用来布局的表格，目的是在生成docx的，需要使用表格的方式来布局"""
         for page in doc.working_pages:
             for obj in page.objects:
-                self.xobjects.append(XObject.from_objects([obj]))
+                self.xobjects.append(XObject.from_object(obj))
     
 
     def get_sections(self)->list[Any]:
@@ -287,6 +312,14 @@ class XTree:
                 section=XSection.from_object(obj)
                 sections.append(section)
         return sections
+    
+
+    def markdown(self)->str:
+        #不需要输出root，所以不是直接的root.markdown()
+        buf:list[str]=[]
+        for child in self.root.children:
+            buf.append(child.markdown())
+        return '\n\n'.join(buf)
     
     def jsonify(self):
         return {
@@ -337,8 +370,9 @@ class XObject:
     """逻辑上的对象，包含页面上的0-n个对象"""
 
     type:str='xobject'
-    def __init__(self):
+    def __init__(self,doc:KDocument):
         super().__init__()
+        self.doc:Final = doc
         self.node = XNode(self)
         self._objects: Final[list[KObject]] = []
         self.subtype:str|None=None
@@ -446,41 +480,96 @@ class XObject:
         data['page_number']=obj.page.number
         return data
     
+    def markdown(self)->str:
+        return ''
+    
     @classmethod
-    def from_objects(cls,objects:Sequence[KObject]):
-        assert len(objects)>0
-        obj = objects[0]
-        if isinstance(obj,KText):
-            xobj = XText()
-        elif isinstance(obj,KFigure):
-            xobj = XFigure()
-        elif isinstance(obj,KFormula):
-            xobj = XFormula()
-        elif isinstance(obj,KTable):
-            xobj = XTable()
-        elif isinstance(obj,KBlock):
-            xobj = XBlock()
+    def from_object(cls,obj:KObject)->Self:
+        doc = obj.doc
+        if isinstance(obj,KTable):
+            xobj = XTable(doc,[XCell.from_cell(c) for c in obj.cells],tables=[obj])
+            xobj.subtype=obj.subtype
         else:
-            #后续可能支持KBlock，先作为一个整体，然后再展开
-            raise ValueError(f'不支持的类型:{obj}')
-        xobj.add(*objects)
-        xobj.subtype = obj.subtype
+            if isinstance(obj,KText):
+                xobj = XText(doc)
+            elif isinstance(obj,KFigure):
+                xobj = XFigure(doc)
+            elif isinstance(obj,KFormula):
+                xobj = XFormula(doc)
+            elif isinstance(obj,KBlock):
+                xobj = XBlock(doc)
+            else:
+                #后续可能支持KBlock，先作为一个整体，然后再展开
+                raise ValueError(f'不支持的类型:{obj}')
+            xobj.add(obj)
+            xobj.subtype = obj.subtype
+        assert isinstance(xobj,cls)
         return xobj
 
 class XCell:
-    def __init__(self):
+    table:'XTable'
+    def __init__(self,row_index:int=0,col_index:int=0,row_span:int=1,col_span:int=1,cells:Sequence[KCell]|None=None):
         super().__init__()
-        self.row_index = 0
-        self.col_index = 0
-        self.row_span = 0
-        self.col_span = 0
-        self.cells: list[KCell] = []
+        self.row_index = row_index
+        self.col_index = col_index
+        self.row_span = row_span
+        self.col_span = col_span
+        self.cells: Sequence[KCell] = tuple(cells or []) 
+        """表示组成这个单元格的原文的cell，注意：这些cell可能来自body table，如果表头重复的"""
         # TODO 严格的说，单元格内包含的也是xobjects
         # 如：2个单元格合并，t1+t2，那么，也需要合并为一个xtextbox才更加合理
         # 这样才能够在生成docx更加准确
-        self.xobjects:list[XObject]=[]
+        #self.xobjects:list[XObject]=[]
 
+    @property
+    def merged(self)->bool|None:
+        """
+        上下相邻表格的最后一行和第一行的单元格的合并状态，
+        True表示该单元格上下相邻合并，False表示和上下相邻单元格没有合并，None表示不是上下相邻的单元格
+        """
+        if len(self.cells)>1:
+            return True
+        elif len(self.cells)==1:
+            cell = self.cells[0]
 
+            if cell.table.main is not None:
+                #表示为body table
+                k=self.table.tables.index(cell.table.main)
+            else:
+                k=self.table.tables.index(cell.table)
+
+            if k==0:
+                #表示为第一个表格
+                if cell.subtype=='header':
+                    #如果是表头
+                    return None
+                if cell.row_index+cell.row_span==cell.table.row_num:
+                    #最后一行，没有合并
+                    return False
+                return None
+            else:
+                #如果为中间表格，判断首行或者尾行
+                #如果是最后一个表格，判断首行
+                if cell.table.main is not None:
+                    #如果cell使用body table
+                    if cell.row_index==0 or (k+1<len(self.table.tables) and cell.row_index+cell.row_span==cell.table.row_num):
+                        return False
+                    return None
+                else:
+                    #cell使用table的，需要先去掉表头
+                    if cell.table.header is not None:
+                        i=cell.table.header.row_num
+                    else:
+                        i=0
+                    
+                    if cell.row_index==i or (k+1<len(self.table.tables) and cell.row_index+cell.row_span==cell.table.row_num):
+                        return False
+                    return None
+        else:
+            #不应该出现这个，至少有一个
+            return None
+            
+        
 
     @property
     def text(self)->str:
@@ -502,6 +591,17 @@ class XCell:
         pages.sort(key=lambda p: p.number)
         return pages
     
+    def is_header(self)->bool:
+        """表示是否为表头单元格"""
+        if len(self.cells)>0 and self.cells[0].subtype=='header':
+            #这个判断方法对于第一个表格有效，因为使用的原始的表格
+            #对于后面的，如果有header，使用的是body，也就是来自body的cell，而不是原始表格的cell
+            #对于目前来说，这个实现足够了
+            return True
+        else:
+            return False
+
+    
     def jsonify(self)->Any:
         def jsonify_object(obj:KObject)->Any:
             data=obj.jsonify()
@@ -512,28 +612,59 @@ class XCell:
         data['col_index']=self.col_index
         data['row_span']=self.row_span
         data['col_span']=self.col_span
+
+        #TODO 再合并，输出xobjects?
         if self.objects:
             data['objects']=[jsonify_object(obj) for obj in self.objects]
         return data
+    
+    @classmethod
+    def from_cell(cls,cell:KCell)->Self:
+        return cls(row_index=cell.row_index,col_index=cell.col_index,row_span=cell.row_span,col_span=cell.col_span,cells=[cell])
 
+
+class XItem[T]:
+    def __init__(self,bbox:BBox,object:T):
+        super().__init__()
+        self.bbox=bbox
+        self.object=object
 
 class XTable(XObject):
     type='xtable'
-    def __init__(self):
-        super().__init__()
-        self.row_num:int=0
-        self.col_num:int=0
-        self.cells:list[XCell]=[]
+    def __init__(self,doc:KDocument,cells:Sequence[XCell],tables:Sequence[KTable]):
+        super().__init__(doc)
+        assert len(tables)>0
+        assert len(cells)>0
+        for cell in cells:
+            cell.table = self
+        self.row_num:int=max(c.row_index+c.row_span for c in cells)
+        self.col_num:int=max(c.col_index+c.col_span for c in cells)
+        self.cells:Sequence[XCell]=tuple(cells)
         self._grid:list[list[XCell]]|None=None
+
+        #表格合并需要使用到的属性
+        self.working_tables:list[KTable]=[]
+        """真正用来合并的表格对象，除了第一个，后面的为去掉了表头的"""
+
+        #表示合并的多个表格，和working_tables的区别在于
+        #tables=[t1,t2,t3]
+        #working_tables=[t1,t2_body,t3_body] 如果t2，t3有重复表头的,t2_body.main is t2,t3_body.main is t3
+        self.add(*tables)
     
     @override
     def invalidate(self):
-        self._grid=None
+        super().invalidate()
     
     def _get_grid(self)->list[list[XCell]]:
         if self._grid is not None:
             return self._grid
-        self._grid=[]
+
+        grid: list[list[KCell]] = []
+        for i in range(self.row_num):
+            row = [None] * self.col_num
+            grid.append(row) # type: ignore
+
+        self._grid = grid    
         for cell in self.cells:
             for i in range(cell.row_index,cell.row_index+cell.row_span):
                 self._grid[i][cell.col_index:cell.col_index+cell.col_span]=[cell]*cell.col_span
@@ -541,13 +672,43 @@ class XTable(XObject):
     
     def __getitem__(self, key:tuple[int,int]):
         i,j=key
-        for cell in self.cells:
-            #对于几百页的表格，这种方法很慢，通过
-            #self._grid[i][j]
-            if cell.row_index<=i<cell.row_index+cell.row_span and cell.col_index<=j<cell.col_index+cell.col_span:
-                return cell
-        raise ValueError(f'不存在的key:{key}')
+        return self._get_grid()[i][j]
 
+    def get_row(self, row_index: int, *, strict: bool = False) ->list[XCell]:
+        if row_index < 0:
+            row_index += self.row_num
+        row: list[XCell] = []
+        for cell in self.cells:
+            if cell.row_index <= row_index < cell.row_index+cell.row_span:
+                if strict:
+                    # 返回的行的长度=col_num
+                    row.extend([cell]*cell.col_span)
+                else:
+                    row.append(cell)
+            else:
+                pass
+        # 和列不同，这里需要排序一下，列就不需要了
+        row.sort(key=lambda cell: cell.col_index)
+        return row
+
+    def get_column(self, col_index: int, *, strict: bool = False) -> list[XCell]:
+        if col_index < 0:
+            col_index += self.col_num
+        column: list[XCell] = []
+        for cell in self.cells:
+            if cell.col_index <= col_index < cell.col_index+cell.col_span:
+                if strict:
+                    # 返回的列的长度==row_num
+                    column.extend([cell]*cell.row_span)
+                else:
+                    column.append(cell)
+            else:
+                pass
+
+        # 实际上并不需要排序
+        column.sort(key=lambda cell: cell.row_index)
+        return column
+    
     @override
     def jsonify(self)->Any:
         data:dict[str,Any]={}
@@ -562,16 +723,222 @@ class XTable(XObject):
             pass
         
         return data
+    
+    @override
+    def markdown(self) -> str:
+        return self.html()
 
+    def html(self) -> str:
+        # 没有使用这个就是返回最基本的table的结构，不需要style
+        # table.html()
+        from html import escape
+
+        def render_objects(objs: Sequence[KObject],allow_chars:bool=False) -> str:
+            buf: list[str] = []
+            for obj in objs:
+                if isinstance(obj, KText):
+                    # TODO 如果全部是文字，如果包含有图片
+                    if obj.lines:
+                        for tl in obj.lines:
+                            buf.append("<div>")
+                            buf.append(render_objects(tl.objects,allow_chars=True))
+                            buf.append("</div>")
+                    else:
+                        buf.append(escape(obj.text))
+                elif isinstance(obj, KFigure):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj, KFormula):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj, KTable):
+                    buf.append(obj.html())
+                elif isinstance(obj,KBlock):
+                    #KBlock，表示一组对象
+                    buf.append(render_objects(obj.objects))
+                elif isinstance(obj,KChar) and allow_chars:
+                    buf.append(escape(obj.text))
+                else:
+                    raise ValueError(f'不支持的对象:{obj}')
+            return "".join(buf)
+
+        buf: list[str] = []
+        buf.append("<table>")
+        if True:
+            # 如果存在错位的跨列，如果该列没有内容，会导致width=0，显示上看不出来错位
+            # 所以这里简单的设置一个宽度
+            buf.append("<colgroup>")
+            for i in range(self.col_num):
+                buf.append('<col colspan=1 style="min-width:20px;"></col>')
+            buf.append("</colgroup>")
+        i = -1
+        tr: list[str] = []
+        for cell in self.cells:
+            if cell.row_index != i:
+                if tr:
+                    tr.append("</tr>")
+                    buf.extend(tr)
+                    tr.clear()
+                i = cell.row_index
+                tr.append("<tr>")
+
+            if cell.col_span == 1 and cell.row_span == 1:
+                # 多数没有
+                tr.append("<td>")
+            else:
+                tr.append(f'<td colspan="{cell.col_span}" rowspan="{cell.row_span}">')
+            tr.append(render_objects(cell.objects))
+            tr.append("</td>")
+
+        if tr:
+            tr.append("</tr>")
+            buf.extend(tr)
+        buf.append("</table>")
+        return "".join(buf)
+
+    def rich_html(self, fp: str | Path | TextIO | None = None, full: bool = True) -> str:
+        """生成给测试使用的html，可以显示单元格合并信息"""
+        from html import escape
+        def render_objects(objs: Sequence[KObject],allow_chars:bool=False) -> str:
+            buf: list[str] = []
+            for obj in objs:
+                if isinstance(obj, KText):
+                    # TODO 如果全部是文字，如果包含有图片
+                    if obj.lines:
+                        for tl in obj.lines:
+                            buf.append("<div>")
+                            buf.append(render_objects(tl.objects,allow_chars=True))
+                            buf.append("</div>")
+                    else:
+                        buf.append(escape(obj.text))
+                elif isinstance(obj, KFigure):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj, KFormula):
+                    buf.append(f'<img src="{obj.filename}">')
+                elif isinstance(obj, KTable):
+                    buf.append(obj.html())
+                elif isinstance(obj,KBlock):
+                    #KBlock，表示一组对象
+                    buf.append(render_objects(obj.objects))
+                elif isinstance(obj,KChar) and allow_chars:
+                    buf.append(escape(obj.text))
+                else:
+                    raise ValueError(f'不支持的对象:{obj}')
+            return "".join(buf)
+        
+        buf: list[str] = []
+        if full:
+            buf.append('<html><head></head><body>')
+        buf.append('<table style="border: 1px solid;border-collapse: collapse;">')
+        # 如果需要显示复杂的表格，如下设置可以让跨列跨行的显示更加明确
+        buf.append('<colgroup>')
+        for i in range(self.col_num):
+            buf.append('<col colspan=1 style="width:100px;"></col>')
+        buf.append('</colgroup>')
+        buf.append('<tbody>')
+
+        i=-1
+        tr:list[str]=[]
+        for cell in self.cells:
+            if cell.row_index!=i:
+                if tr:
+                    tr.append('</tr>')
+                    buf.extend(tr)
+                    tr.clear()
+                i=cell.row_index
+                #如果使用css，并不需要输出style
+                tr.append('<tr style="border:1px solid;">')
+
+            if cell.is_header():
+                #重复的表头不存在merged=True或者False的情况
+                bgcolor='background-color:blue;'
+            elif cell.merged is True:
+                #黄色，表示来自多个表格合并
+                bgcolor='background-color:yellow;'
+            elif cell.merged is False:
+                #灰色，上下相邻的单元格，没有合并
+                bgcolor='background-color:gray;'
+            else:
+                bgcolor=''
+            tr.append(
+                    f'<td colspan="{cell.col_span}" rowspan="{cell.row_span}" style="border:1px solid;{bgcolor}">')
+            #tr.append(html.escape(cell.body.text()))
+            tr.append(render_objects(cell.objects))               
+            tr.append('</td>')
+        
+        if tr:
+            tr.append('</tr>')
+            buf.extend(tr)
+
+        buf.append('</tbody>')
+
+        buf.append('</table>')
+        if full:
+            buf.append('</body></html>')
+        s = ''.join(buf)
+        if isinstance(fp, (str, Path)):
+            Path(fp).write_text(s, encoding='utf-8')
+        elif isinstance(fp, TextIO):
+            fp.write(s)
+        else:
+            pass
+        return s
+
+    def apply_merged_info(self):
+        """把单元格的合并信息设置到组合的table中，对于提取没有什么用，只是为了html显示合并信息"""
+        def set_cell(cell:KCell,merged:bool):
+            assert cell.original_cell is None
+            cell.merged=merged
+        #重置
+        for table in self.tables:
+            for cell in table.cells:
+                cell.subtype=None
+                #cell.merged=None
+        
+        if len(self.tables)<=1:
+            return
+        
+        for xcell in self.cells:
+            if xcell.merged is True:
+                #表示由多个单元格合并，第一个并不需要设置
+                for c in xcell.cells:#[1:]:
+                    set_cell(c,True)
+            elif xcell.merged is False:
+                for c in xcell.cells:
+                    set_cell(c,False)
+            else:
+                pass
+
+        for table in self.tables:
+            if table.header is not None:
+                #表示重复的表头
+                j = table.header.row_num
+                for cell in table.cells:
+                    if cell.row_index<j:
+                        cell.subtype='header'
+                    else:
+                        cell.subtype=None
+                pass
+
+    @classmethod
+    def from_grid(cls,doc:KDocument,grid:Grid,items:Sequence[XItem[KCell]],*,tables:Sequence[KTable])->Self:
+        xcells:list[XCell]=[]
+        items = list(items)
+        for cell in grid.cells:
+            include_cells = [item.object for item in cell.bbox.get(items,ratio=0.8,remove=True)]
+            xcell = XCell(row_index=cell.row_index,col_index=cell.col_index,row_span=cell.row_span,col_span=cell.col_span,cells=include_cells)
+            xcells.append(xcell)
+        return cls(doc,xcells,tables=tables)
 
 class XText(XObject):
     """文本内容"""
     type='xtext'
-    def __init__(self,text:str|None=None):
-        super().__init__()
+    def __init__(self,doc:KDocument,text:str|None=None):
+        super().__init__(doc)
         self._text:Final[str|None]=text
         """自定义的文本，如：逻辑标题"""
         self.no:XNo|None=None
+        """如果为标题，可以设置序号"""
+        self.dest:XDest|None=None
+        """如果为标题，且出现在目录中，可以设置目标位置"""
         self._raw_text:str|None=None
     
     def is_title(self)->bool:
@@ -597,7 +964,8 @@ class XText(XObject):
             #XText or XTextbox
             self._raw_text=''.join(getattr(obj,'text') for obj in self.objects)
         return self._raw_text
-
+    
+    
     @override
     def invalidate(self):
         super().invalidate()
@@ -613,58 +981,147 @@ class XText(XObject):
             data['objects']=self._jsonify_objects(self._objects)
         return data
     
+    @override
+    def markdown(self)->str:
+        #如果级别太多了怎么办？
+        if self.type=='xtitle':
+            level = '#'*self.node.level
+            return f'{level} {_md_escape(self.text)}'
+        else:
+            return _md_escape(self.text)
+    
     @classmethod
-    def create_title(cls,text:str)->Self:
-        obj = cls(text=text)
+    def create_title(cls,doc:KDocument,text:str)->Self:
+        obj = cls(doc,text=text)
         obj.as_title()
         return obj
 
 
 class XFigure(XObject):
     type='xfigure'
-    def __init__(self):
-        super().__init__()
+    def __init__(self,doc:KDocument):
+        super().__init__(doc)
         self.filename: str = ""
         """表示新的图片文件名，如：几个图片合并后的截图，如果为空，表示没有合并，也就是只有一个图片"""
+    
+
+    def invalidate(self):
+        super().invalidate()
+        if len(self.objects)>1:
+            #需要重新生成图片？
+            pass
+
+    @cached_property
+    def fullpath(self) -> Path:
+        assert len(self.filename)>0
+        return self.doc.out_dir / self.filename
+
+    @override
+    def markdown(self) -> str:
+        if len(self.objects)>1:
+            name = self.fullpath.name
+            return f"![{_md_escape(name)}](./images/{_md_escape(name)})"
+        else:
+            return self.objects[0].markdown()
     
     @override
     def jsonify(self)->Any:
         data:dict[str,Any] = {
         }
-        if self.filename:
+        data['objects']=self._jsonify_objects(self._objects)
+        if len(self._objects)>1:
             data['filename']=self.filename
 
-        data['objects']=self._jsonify_objects(self._objects)
         return data
 
 
 class XFormula(XObject):
     type='xformula'
-    def __init__(self):
-        super().__init__()
-        self.latex:str = ""
-        self.filename:str=""
+    def __init__(self,doc:KDocument):
+        super().__init__(doc)
+        self._latex:str|None = None
+        """多个对象合并后的latex"""
+        self._filename:str|None = None
+        """多个对象合并后的图片文件名"""
+    
+    def invalidate(self):
+        super().invalidate()
+        if len(self.objects)>1:
+            #更新filename,latex?
+            pass
+
+    @property
+    def latex(self)->str:
+        return self._latex or self.formulas[0].latex
+            
+    @property
+    def filename(self)->str:
+        return self._filename or self.formulas[0].filename
+    
+    @latex.setter
+    def latex(self,latex:str):
+        self._latex = latex
+    
+    @filename.setter
+    def filename(self,filename:str):
+        self._filename = filename
+    
+    @property
+    def inline(self)->bool:
+        if len(self.formulas)>1:
+            return False
+        else:
+            return self.formulas[0].inline
+
+    @cached_property
+    def fullpath(self) -> Path:
+        return self.doc.out_dir / self.filename
+    
+    @override
+    def markdown(self):
+        if self.latex:
+            if self.inline:
+                # $xx$    markdown用
+                # \(xxx\) 标准
+                return f"${self.latex}$"
+            else:
+                # $$xx$$ markdown用
+                # \[xx\] 标准
+                return f"$${self.latex}$$"
+                # return rf'\[{self.latex}\]'
+        else:
+            name =_md_escape(self.fullpath.name)
+            return f"![{name}](./images/{name})"
+
     
     @override
     def jsonify(self)->Any:
         data:dict[str,Any]={}
         data['objects']=self._jsonify_objects(self._objects)
-        #如果有，表示为多个跨页/跨栏合并后的结果
-        if self.filename:
-            data['filename']=self.filename
-        if self.latex:
-            data['latex']=self.latex
+        if len(self._objects)>1:
+            #如果有，表示为多个跨页/跨栏合并后的结果
+            if self.filename:
+                data['filename']=self.filename
+            if self.latex:
+                data['latex']=self.latex
         return data
 
 class XBlock(XObject):
     type='xblock'
 
+    @override
+    def markdown(self)->str:
+        buf:list[str]=[]
+        for obj in self._objects:
+            buf.append(obj.markdown())
+        return '\n\n'.join(buf)
+
     
 class XGroup(XObject):
     """多个XObject合并为一组，作为一个整体，解析完毕后再展开，如：某些引用的内容，不需要解析层次结构"""
     type="xgroup"
-    def __init__(self):
-        super().__init__()
+    def __init__(self,doc:KDocument):
+        super().__init__(doc)
         self.xobjects:Final[list[XObject]]=[]
         """包含的是XObject"""
 

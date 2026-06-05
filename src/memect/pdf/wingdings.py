@@ -716,6 +716,16 @@ REVERSED_WINGDINGS3_MAP={v:k for k,v in WINGDINGS3_MAP.items()}
 
 """
 class WingdingsRecognizer:
+    _SQUARE_CODES: Final = (
+        0xF06E,
+        0xF06F,
+        0xF070,
+        0xF071,
+        0xF072,
+        0xF0A0,
+        0xF0A8,
+    )
+
     def __init__(self, font_path: str|Path, font_size: int =32):
         self._font_path = Path(font_path)
         self._font_size = font_size
@@ -805,6 +815,117 @@ class WingdingsRecognizer:
                 best_dist, best_char = dist, code
         return best_char
 
+    def _match_square_shape(self, patch: np.ndarray) -> int | None:
+        p = self._preprocess_patch(patch)
+        if p is None:
+            return None
+
+        mask = self._foreground_mask(p)
+        if mask is None:
+            return None
+        h, w = mask.shape[:2]
+        if h < 6 or w < 6:
+            return None
+        aspect = w / h
+        if not 0.55 <= aspect <= 1.8:
+            return None
+
+        black_ratio = float(np.count_nonzero(mask) / mask.size)
+        hole_ratio = self._hole_ratio(mask)
+        center = mask[
+            h // 4 : max(h // 4 + 1, 3 * h // 4),
+            w // 4 : max(w // 4 + 1, 3 * w // 4),
+        ]
+        center_black_ratio = float(np.count_nonzero(center) / center.size)
+
+        is_solid_square = black_ratio >= 0.68 and hole_ratio < 0.08
+        is_hollow_square = hole_ratio >= 0.18 and center_black_ratio <= 0.25
+        if not is_solid_square and not is_hollow_square:
+            return None
+
+        candidates = [
+            code
+            for code in self._SQUARE_CODES
+            if code in self._templates and (code != 0xF0A0 or is_solid_square)
+        ]
+        if is_hollow_square:
+            candidates = [
+                code for code in candidates if code != 0xF06E and code != 0xF0A0
+            ]
+        if not candidates:
+            return None
+
+        patch_features = self._square_features(mask)
+        patch_norm = self._normalize(p, 48)
+        best_code: int | None = None
+        best_score = float("inf")
+        for code in candidates:
+            tmpl = self._templates[code]
+            tmpl_mask = self._foreground_mask(tmpl)
+            if tmpl_mask is None:
+                continue
+            tmpl_features = self._square_features(tmpl_mask)
+            tmpl_norm = self._normalize(tmpl, 48)
+            mse = float(
+                np.mean(
+                    (patch_norm.astype(np.float32) - tmpl_norm.astype(np.float32))
+                    ** 2
+                )
+            ) / (255 * 255)
+            feature_score = sum(
+                abs(a - b) * weight
+                for a, b, weight in zip(
+                    patch_features,
+                    tmpl_features,
+                    (1.2, 2.0, 0.8, 0.5, 0.5),
+                )
+            )
+            score = mse + feature_score
+            if score < best_score:
+                best_score = score
+                best_code = code
+        return best_code
+
+    def _foreground_mask(self, img: np.ndarray) -> np.ndarray | None:
+        if len(img.shape) == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        coords = cv2.findNonZero(mask)
+        if coords is None:
+            return None
+        x, y, w, h = cv2.boundingRect(coords)
+        return mask[y : y + h, x : x + w]
+
+    def _hole_ratio(self, mask: np.ndarray) -> float:
+        h, w = mask.shape[:2]
+        white = (mask == 0).astype(np.uint8)
+        flood = white.copy()
+        flood_mask = np.zeros((h + 2, w + 2), np.uint8)
+        for x in range(w):
+            if flood[0, x]:
+                cv2.floodFill(flood, flood_mask, (x, 0), 0)
+            if flood[h - 1, x]:
+                cv2.floodFill(flood, flood_mask, (x, h - 1), 0)
+        for y in range(h):
+            if flood[y, 0]:
+                cv2.floodFill(flood, flood_mask, (0, y), 0)
+            if flood[y, w - 1]:
+                cv2.floodFill(flood, flood_mask, (w - 1, y), 0)
+        return float(np.count_nonzero(flood) / mask.size)
+
+    def _square_features(
+        self, mask: np.ndarray
+    ) -> tuple[float, float, float, float, float]:
+        h, w = mask.shape[:2]
+        black_ratio = float(np.count_nonzero(mask) / mask.size)
+        hole_ratio = self._hole_ratio(mask)
+        aspect = w / h
+        right = mask[:, max(0, int(w * 0.75)) :]
+        bottom = mask[max(0, int(h * 0.75)) :, :]
+        right_ratio = float(np.count_nonzero(right) / right.size) if right.size else 0.0
+        bottom_ratio = float(np.count_nonzero(bottom) / bottom.size) if bottom.size else 0.0
+        return black_ratio, hole_ratio, aspect, right_ratio, bottom_ratio
+
     def recognize_patch(self, patch: np.ndarray, method: str = "vote") -> int | None:
         if method == "template":
             return self._match_template(patch)
@@ -812,6 +933,7 @@ class WingdingsRecognizer:
             return self._match_phash(patch)
         # vote: template 优先，phash 作为备选
         t_result = self._match_template(patch)
+        s_result = self._match_square_shape(patch)
         p_result = self._match_phash(patch)
 
         verbose=False
@@ -819,13 +941,20 @@ class WingdingsRecognizer:
         if verbose:
             print('=============>>>')
             print(f"template: {hex(t_result) if t_result else None}")
+            print(f"square:   {hex(s_result) if s_result else None}")
             print(f"phash:    {hex(p_result) if p_result else None}")
 
-        # 策略：template 匹配成功则直接返回，否则用 phash
-        if t_result is not None:
+        # 策略：template 优先；如果几何特征明确是方框而 template 命中非方框，使用方框结果。
+        if t_result is not None and (
+            s_result is None or t_result in self._SQUARE_CODES
+        ):
             result = t_result
             if verbose:
                 print(f"选择 template: {hex(result)} {chr(result)} {wingdings2standard('wingdings',chr(result))}")
+        elif s_result is not None:
+            result = s_result
+            if verbose:
+                print(f"选择 square: {hex(result)} {chr(result)} {wingdings2standard('wingdings',chr(result))}")
         elif p_result is not None:
             result = p_result
             if verbose:

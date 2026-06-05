@@ -378,15 +378,4 @@ class Pdf2Image:
     
 
     
-def main():
-    # 提供命令行使用
-    import sys
-    from memect.base.config import setup
-    setup()
-    settings = Pdf2ImageArgs.model_validate_json(sys.argv[1])
-    args = DrawArgs.model_validate_json(sys.argv[2])
-    Pdf2Image(settings,only_execute=True).execute(args, max_workers=0)
 
-
-if __name__ == "__main__":
-    main()

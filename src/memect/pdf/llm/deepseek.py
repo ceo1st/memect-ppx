@@ -197,14 +197,15 @@ class Deepseek:
                     page.make_figure(adjust_bbox(bboxes[0]).to_quad(),add=True)
                 elif type_ == "table":
                     #获得的是html，然后可以解析为cells
-                    table = KTable(page,adjust_bbox(bboxes[0]))
+                    table_bbox = adjust_bbox(bboxes[0])
+                    table:KTable|None=None
                     try:
-                        table.fill_html(text)
+                        table = KTable.from_text(page,table_bbox,text)
                     except Exception:
                         self._logger.exception('解析表格出现异常')
-                    if table.row_num==0 or table.col_num==0:
+                    if table is None or table.row_num==0 or table.col_num==0:
                         #如果无法生成表格，返回markdown？使用图片表示
-                        page.make_figure(table.quad,add=True)
+                        page.make_figure(table_bbox,add=True)
                     else:
                         page.objects.append(table)
                 else:

@@ -214,12 +214,14 @@ class Paddle:
         
 
         def parse_table(vobj:VObject,text:str,raw_text:str):
-            table = KTable(page,vobj.quad)
-            table.fill_otsl(text)
+            table = KTable.from_text(page,vobj.quad,text=text)
             if table.row_num>0 and table.col_num>0:
                 table.raw_text=raw_text
                 table.vobject=vobj
                 page.objects.append(table)
+            else:
+                #TODO 作为图片？
+                pass
 
         def parse_figure(vobj:VObject):
             figure=page.make_figure(vobj.quad,add=True)

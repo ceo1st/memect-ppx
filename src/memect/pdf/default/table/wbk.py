@@ -49,8 +49,8 @@ class Parser:
         super().__init__()
         from .ybk import Parser
 
-        self._table_det: Final = manager.get("table_det")
-        self._table_det_key: Final = "cache/default/wbk/table_det"
+        self._table: Final = manager.get("table")
+        self._table_key: Final = "cache/default/wbk/table"
         self._ybk_parser: Final = Parser()
 
     def parse(
@@ -73,7 +73,7 @@ class Parser:
         def parse_page(page: KPage):
             return self._parse_page(page, mode=mode)
 
-        self._table_det.parse(doc, self._table_det_key, handler=get_tables)
+        self._table.parse(doc, self._table_key, handler=get_tables)
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
     def _parse_page(self, page: KPage, mode: WBKMode):
@@ -84,7 +84,7 @@ class Parser:
                 page.objects.append(table)
                 i += 1
 
-    def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode):
+    def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode)->KTable:
         debugger = self._debugger.bind(page=page.number)
 
         def use_ybk(ybk: KTable, wbk: KTable) -> bool:
@@ -109,7 +109,7 @@ class Parser:
                     steps.append(
                         (
                             f"ybk=({ybk_table.row_num},{ybk_table.col_num})",
-                            ybk_table.get_lines(),
+                            ybk_table.get_lines2(),
                         )
                     )
                 if use_ybk(ybk_table, wbk_table):
@@ -127,7 +127,7 @@ class Parser:
         # TODO 如何显示
         if steps is not None:
             steps.append((f"remain_objects={len(result.remain_objects)}",result.remain_objects))
-            steps.append((f"{table.subtype}", table.get_lines()))
+            steps.append((f"{table.subtype}", table.get_lines2()))
             page.draw(
                 *steps,
                 index=index,
@@ -168,6 +168,7 @@ class Parser:
         expanded_cells:Final=[c.bbox for c in cells]
         self._adjust_items(cells)
         cells = Builder().build(cells)
+        self._adjust_items(cells)
         if cells:
             bbox = bbox.union(BBox.join2(cells))
         table = Builder().make_table(page,bbox,cells)
@@ -190,7 +191,7 @@ class Parser:
                     (f"adjusted_cells={len(adjusted_cells)}", adjusted_cells),
                     (f'expanded_cells={len(expanded_cells)}',expanded_cells),
                     (f"cells={len(cells)}", cells),
-                    (f"wbk=({table.row_num},{table.col_num})",table.get_lines())
+                    (f"wbk=({table.row_num},{table.col_num})",table.get_lines2())
                 ]
             )
         return table
@@ -220,7 +221,7 @@ class Parser:
     def _get_cells_by_model(self, page: KPage, index: int, vobj: VObject) -> list[_Cell]:
         # debugger = self._debugger.bind(page=page.number)
         bbox = vobj.bbox
-        result = vobj.cache.pop(self._table_det_key, None)
+        result = vobj.cache.pop(self._table_key, None)
         if not result:
             # 表示无法截图？
             return [_Cell(vobj.bbox)]
@@ -236,7 +237,9 @@ class Parser:
         m = Matrix().lt_to_lb((width, height)).scale(sw, sh).translate(tx, ty)
         cells: list[_Cell] = []
         for cell_bbox in result["cells"]:
-            cells.append(_Cell(BBox.from_list(cell_bbox, matrix=m)))
+            xb = vobj.bbox.intersect(BBox.from_list(cell_bbox, matrix=m))
+            if xb is not None: 
+                cells.append(_Cell(xb))
         return cells
 
     def _adjust_cells(self, cells: Sequence[_Cell]) -> list[_Cell]:
@@ -384,22 +387,19 @@ class Builder:
         cells: Sequence[_Cell],
     ) -> KTable:
         cells = [cell for cell in cells if cell.bbox.width > 0 and cell.bbox.height > 0]
-        table = KTable(page, table_bbox, row_num=1, col_num=1)
+        
         if not cells:
-            table.cells.append(KCell(page, table_bbox, row_index=0, col_index=0))
-            return table
+            return KTable(page, table_bbox,cells=[KCell(page, table_bbox, row_index=0, col_index=0)])
 
         x_lines = self._axis_lines(cells, axis="x")
         y_lines = self._axis_lines(cells, axis="y")
         if len(x_lines) < 2 or len(y_lines) < 2:
             bbox = BBox.join2(cells)
-            table = KTable(page, bbox, row_num=1, col_num=1)
-            table.cells.append(KCell(page, bbox, row_index=0, col_index=0))
-            return table
+            return KTable(page, bbox,cells=[KCell(page, bbox, row_index=0, col_index=0)])
 
         col_num = len(x_lines) - 1
         row_num = len(y_lines) - 1
-        table = KTable(page, table_bbox, row_num=row_num, col_num=col_num)
+        
 
         kcells: list[KCell] = []
         for cell in cells:
@@ -432,8 +432,8 @@ class Builder:
             )
 
         kcells.sort(key=lambda cell: (cell.row_index, cell.col_index))
-        table.cells.extend(kcells)
-        return table
+        return KTable(page, table_bbox,cells=kcells)
+
 
     def _snap_outlier_edges(self, cells: list[_Cell], *, axis: Literal["x", "y"]):
         """把孤立边界吸附到相邻稳定边界，避免形成很窄的伪行/列。"""
@@ -548,11 +548,218 @@ class Builder:
                 for rr in range(r, r_end):
                     for cc in range(c, c_end):
                         visited[rr][cc] = True
+                if self._align_missing(
+                    cells, covered, x_lines, y_lines, r, c, r_end, c_end
+                ):
+                    continue
                 cells.append(
                     _Cell(
                         BBox(x_lines[c], y_lines[r], x_lines[c_end], y_lines[r_end])
                     )
                 )
+
+    def _align_missing(
+        self,
+        cells: list[_Cell],
+        covered: list[list[bool]],
+        x_lines: list[float],
+        y_lines: list[float],
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
+    ) -> bool:
+        """把边界错位造成的空洞并入相邻cell，而不是创建伪空cell。"""
+        bbox = BBox(x_lines[c0], y_lines[r0], x_lines[c1], y_lines[r1])
+        if not self._looks_like_alignment_gap(
+            bbox, x_lines, y_lines, r0, c0, r1, c1
+        ):
+            return False
+
+        plans = [
+            plan
+            for plan in (
+                self._alignment_plan(
+                    cells, x_lines, y_lines, r0, c0, r1, c1, "y1"
+                ),
+                self._alignment_plan(
+                    cells, x_lines, y_lines, r0, c0, r1, c1, "y0"
+                ),
+                self._alignment_plan(
+                    cells, x_lines, y_lines, r0, c0, r1, c1, "x1"
+                ),
+                self._alignment_plan(
+                    cells, x_lines, y_lines, r0, c0, r1, c1, "x0"
+                ),
+            )
+            if plan is not None
+        ]
+        if not plans:
+            return False
+
+        for _, adjustments in sorted(plans, key=lambda item: item[0]):
+            old_bboxes = [(cell, cell.bbox) for cell, _, _ in adjustments]
+            for cell, attr, target in adjustments:
+                self._adjust_edge(cell, attr, target)
+            attr = adjustments[0][1]
+            if self._removed_gap_line(cells, x_lines, y_lines, attr, r0, c0, r1, c1):
+                for rr in range(r0, r1):
+                    for cc in range(c0, c1):
+                        covered[rr][cc] = True
+                return True
+            for cell, old_bbox in old_bboxes:
+                cell.bbox = old_bbox
+        return False
+
+    def _alignment_plan(
+        self,
+        cells: list[_Cell],
+        x_lines: list[float],
+        y_lines: list[float],
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
+        attr: Literal["x0", "x1", "y0", "y1"],
+    ) -> tuple[float, list[tuple[_Cell, str, float]]] | None:
+        if attr == "y0":
+            target = y_lines[r0]
+            intervals = self._edge_intervals(cells, x_lines, y_lines, "y0", r1)
+            adjustments = self._covering_adjustments(intervals, c0, c1, attr, target)
+            if adjustments is None:
+                return None
+            return y_lines[r1] - y_lines[r0], adjustments
+        if attr == "y1":
+            target = y_lines[r1]
+            intervals = self._edge_intervals(cells, x_lines, y_lines, "y1", r0)
+            adjustments = self._covering_adjustments(intervals, c0, c1, attr, target)
+            if adjustments is None:
+                return None
+            return y_lines[r1] - y_lines[r0], adjustments
+        if attr == "x0":
+            target = x_lines[c0]
+            intervals = self._edge_intervals(cells, x_lines, y_lines, "x0", c1)
+            adjustments = self._covering_adjustments(intervals, r0, r1, attr, target)
+            if adjustments is None:
+                return None
+            return x_lines[c1] - x_lines[c0], adjustments
+
+        target = x_lines[c1]
+        intervals = self._edge_intervals(cells, x_lines, y_lines, "x1", c0)
+        adjustments = self._covering_adjustments(intervals, r0, r1, attr, target)
+        if adjustments is None:
+            return None
+        return x_lines[c1] - x_lines[c0], adjustments
+
+    def _edge_intervals(
+        self,
+        cells: list[_Cell],
+        x_lines: list[float],
+        y_lines: list[float],
+        attr: Literal["x0", "x1", "y0", "y1"],
+        line_index: int,
+    ) -> list[tuple[int, int, _Cell]]:
+        intervals: list[tuple[int, int, _Cell]] = []
+        for cell in cells:
+            c0 = self._nearest_index(cell.bbox.x0, x_lines)
+            c1 = self._nearest_index(cell.bbox.x1, x_lines)
+            r0 = self._nearest_index(cell.bbox.y0, y_lines)
+            r1 = self._nearest_index(cell.bbox.y1, y_lines)
+            if attr == "y0" and r0 == line_index:
+                intervals.append((c0, c1, cell))
+            elif attr == "y1" and r1 == line_index:
+                intervals.append((c0, c1, cell))
+            elif attr == "x0" and c0 == line_index:
+                intervals.append((r0, r1, cell))
+            elif attr == "x1" and c1 == line_index:
+                intervals.append((r0, r1, cell))
+        return intervals
+
+    def _covering_adjustments(
+        self,
+        intervals: list[tuple[int, int, _Cell]],
+        start: int,
+        end: int,
+        attr: str,
+        target: float,
+    ) -> list[tuple[_Cell, str, float]] | None:
+        adjustments: list[tuple[_Cell, str, float]] = []
+        cursor = start
+        for i0, i1, cell in sorted(intervals, key=lambda item: item[0]):
+            if i1 <= cursor:
+                continue
+            if i0 > cursor:
+                break
+            adjustments.append((cell, attr, target))
+            cursor = max(cursor, i1)
+            if cursor >= end:
+                return adjustments
+        return None
+
+    def _removed_gap_line(
+        self,
+        cells: list[_Cell],
+        x_lines: list[float],
+        y_lines: list[float],
+        attr: str,
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
+    ) -> bool:
+        if attr == "y0":
+            return not self._line_exists(
+                y_lines[r1], self._axis_lines(cells, axis="y")
+            )
+        if attr == "y1":
+            return not self._line_exists(
+                y_lines[r0], self._axis_lines(cells, axis="y")
+            )
+        if attr == "x0":
+            return not self._line_exists(
+                x_lines[c1], self._axis_lines(cells, axis="x")
+            )
+        if attr == "x1":
+            return not self._line_exists(
+                x_lines[c0], self._axis_lines(cells, axis="x")
+            )
+        return False
+
+    def _line_exists(self, line: float, lines: list[float]) -> bool:
+        return any(abs(value - line) < 0.5 for value in lines)
+
+    def _looks_like_alignment_gap(
+        self,
+        bbox: BBox,
+        x_lines: list[float],
+        y_lines: list[float],
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
+    ) -> bool:
+        rows = len(y_lines) - 1
+        cols = len(x_lines) - 1
+        col_widths = [x_lines[i + 1] - x_lines[i] for i in range(cols)]
+        row_heights = [y_lines[i + 1] - y_lines[i] for i in range(rows)]
+        col_widths.sort()
+        row_heights.sort()
+        median_col_width = col_widths[len(col_widths) // 2]
+        median_row_height = row_heights[len(row_heights) // 2]
+        narrow = (
+            bbox.width <= median_col_width * 0.25
+            or bbox.height <= median_row_height * 0.25
+        )
+        if narrow:
+            return True
+
+        on_edge = r0 == 0 or r1 == rows or c0 == 0 or c1 == cols
+        if not on_edge:
+            return False
+        return (
+            bbox.width <= median_col_width * 0.5
+            or bbox.height <= median_row_height * 0.5
+        )
 
     def _axis_attrs(self, axis: Literal["x", "y"]) -> tuple[str, str]:
         if axis == "x":
