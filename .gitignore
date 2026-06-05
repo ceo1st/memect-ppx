@@ -34,7 +34,8 @@
 !/skills/
 !/skills/ppx-parse/
 !/skills/ppx-parse/**
-
+!install.py
+!install.sh
 
 **/.DS_Store
 **/__pycache__/**
