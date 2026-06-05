@@ -63,7 +63,7 @@ class Parser:
         bbox = vobj.bbox
         # 获得来自pdf或者图片的线
         source, h_lines, v_lines = self._parse_lines(
-            page, bbox.expand(dx=2, dy=3, bound=page.bbox), mode
+            page, bbox, mode
         )
         raw_lines = h_lines + v_lines
         # 再清理一下，避免误差，更好的解析表格
@@ -142,14 +142,30 @@ class Parser:
     def _parse_pdf_lines(
         self, page: KPage, bbox: BBox
     ) -> tuple[list[KLine], list[KLine]]:
+        
+        def has_v_lines(h_line:KLine,v_lines:list[KLine],top:bool)->bool:
+            if not v_lines:
+                return False
+            if top:
+                v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+            else:
+                v_lines.sort(key=lambda line:line.bbox.y0)
+            
+            v_line = v_lines[0]
+            if top:
+                return v_line.bbox.y0-h_line.bbox.y0>=-1
+            else:
+                return v_line.bbox.y0-h_line.bbox.y0<=1
+            
         def clean1(h_lines:list[KLine],v_lines:list[KLine]):
-            v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+            #v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+            #或者和最高的垂直线没有连接的水平线去掉（对于没有左右垂直线的表格，可能会把正确的去掉，但是不影响解析）
             if len(h_lines)>=2 and page.bbox.y1-bbox.y1<=100:
                 #可能和页眉线相邻
                 h_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
                 line1=h_lines[0]
                 line2=h_lines[1]
-                if line1.bbox.y0-line2.bbox.y0<=5:
+                if line1.bbox.y0-line2.bbox.y0<=5 and not has_v_lines(line1,v_lines,True):
                     #--------line1---
                     #--------line2---
                     del h_lines[0]
@@ -159,7 +175,7 @@ class Parser:
                 h_lines.sort(key=lambda line:line.bbox.y0,reverse=False)
                 line1=h_lines[0]
                 line2=h_lines[1]
-                if line2.bbox.y0-line1.bbox.y0<=5:
+                if line2.bbox.y0-line1.bbox.y0<=5 and not has_v_lines(line1,v_lines,False):
                     #--------line2----
                     #--------line1----
                     del h_lines[0]
@@ -197,7 +213,9 @@ class Parser:
         #TODO 还需要去掉下划线，否则可能会把下划线识别为表格线，如：
         # xx____下划线
         #-------表格线
-        lines = bbox.get(page.pdf_lines, ratio=0.5)
+        
+        #expand后，可能会把靠得很近的水平线给多包含了，就需要删除
+        lines = bbox.expand(dx=2, dy=2, bound=page.bbox).get(page.pdf_lines, ratio=0.5)
         h_lines,v_lines=KLine.split(lines)
 
         clean2(h_lines,True)
@@ -211,55 +229,6 @@ class Parser:
     ) -> tuple[list[KLine], list[KLine]]:
         # TODO 暂时没有实现
         return [], []
-
-    def _fix1(self, page: KPage):
-        lines = page.pdf_lines
-        h_lines, v_lines = KLine.split(lines)
-
-        def has_v_lines(bbox: BBox) -> bool:
-            n = 0
-            for line in v_lines:
-                if (
-                    line.bbox.align("y", bbox, d=10)
-                    and bbox.x0 <= line.bbox.x0 <= bbox.x1
-                ):
-                    return True
-            return False
-
-        def get_vobjects(bbox: BBox) -> list[VObject]:
-            return bbox.get(page.vobjects, ratio=0.7)
-
-        vobjs = list(vobj for vobj in page.vobjects if vobj.is_table())
-        vobjs.sort(key=lambda vobj: vobj.bbox.y1, reverse=True)
-        tables: list[list[VObject]] = []
-        i = 0
-        while i < len(vobjs):
-            vobj1 = vobjs[i]
-            vobj2 = vobjs[i + 1] if i + 1 < len(vobjs) else None
-            if (
-                len(v_lines) > 0
-                and vobj2
-                and 0 <= vobj1.bbox.y0 - vobj2.bbox.y1 <= 20
-                and vobj1.bbox.width >= 100
-                and vobj1.bbox.height > 50
-                and vobj2.bbox.height > 50
-                and vobj1.bbox.align("x", vobj2.bbox, d=10)
-                and has_v_lines(BBox.join([vobj1.bbox, vobj2.bbox]))
-            ):
-                # 连接在一起的表格，被识别为了2个或者多个
-                # [table1]
-                # [title]
-                # [table2]
-                tables.append(get_vobjects(BBox.join([vobj1.bbox, vobj2.bbox])))
-                self._logger.warning(
-                    "第%s页，合并识别错误的表格，2个为一个", page.number
-                )
-                i += 2
-            else:
-                tables.append([vobj1])
-                i += 1
-
-        return tables
 
     def _do(
         self, fn: Callable[[KPage], None], pages: Sequence[KPage], max_workers: int = 0

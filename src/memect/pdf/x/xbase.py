@@ -548,10 +548,11 @@ class XCell:
                     return False
                 return None
             else:
-                #表示为后续表格，如果是首行
+                #如果为中间表格，判断首行或者尾行
+                #如果是最后一个表格，判断首行
                 if cell.table.main is not None:
                     #如果cell使用body table
-                    if cell.row_index==0:
+                    if cell.row_index==0 or (k+1<len(self.table.tables) and cell.row_index+cell.row_span==cell.table.row_num):
                         return False
                     return None
                 else:
@@ -561,7 +562,7 @@ class XCell:
                     else:
                         i=0
                     
-                    if cell.row_index==i:
+                    if cell.row_index==i or (k+1<len(self.table.tables) and cell.row_index+cell.row_span==cell.table.row_num):
                         return False
                     return None
         else:

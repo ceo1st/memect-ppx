@@ -438,6 +438,8 @@ class Tree extends EventTarget {
 
         this._setActive(el)
 
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
         return true
     }
 }

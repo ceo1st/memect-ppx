@@ -534,7 +534,7 @@ class DefaultParser:
                 #在底部的为下划线，在中间的为删除线
 
 
-        def make_textbox(page: KPage, vobj: VObject,use_figures:bool=False):
+        def make_text(page: KPage, vobj: VObject,use_figures:bool=False):
             if not vobj.is_any_text():
                 return
             # TODO 补充行内公式/行内图片
@@ -568,13 +568,13 @@ class DefaultParser:
                 page.objects.append(tb)
 
                 if verbose and debugger.allow("info", page=page.number):
-                    with debugger.group("textbox"):
+                    with debugger.group("text"):
                         for tl in tb.lines:
                             print(tl.text)
 
         def parse_page(page: KPage):
             for vobj in page.vobjects:
-                make_textbox(page, vobj)
+                make_text(page, vobj)
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
