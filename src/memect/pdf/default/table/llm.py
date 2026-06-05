@@ -60,7 +60,10 @@ class Parser:
                     draw.rectangle((x0, y0, x1, y1), fill=(255, 255, 255))
                     draw.text((x0, y0), text, font=font, fill=(0, 0, 0))
 
-                    anchors[text] = obj2
+                    anchors[text]=obj2
+            
+            vobj.cache['anchors']=anchors
+            # img.show()
 
             vobj.cache["anchors"] = anchors
             # img.show()

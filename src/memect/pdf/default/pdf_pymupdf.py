@@ -608,7 +608,7 @@ class Parser:
         
         if not kpage.pdf_chars:
             # 没有文字，就按图片解析，不管是什么样了
-            self._logger.info("第%s页没有文字，不需要再解析,paths=%s", kpage.number,len(paths))
+            self._logger.info("第%s页没有文字，不需要再解析", kpage.number)
             return
 
         # 如果多个图片组成一个大图，一样按图片解析，不管图片是背景还是扫描（可能覆盖文字）
