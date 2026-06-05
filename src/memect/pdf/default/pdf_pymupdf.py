@@ -28,7 +28,7 @@ from memect.pdf.base import (
 type _Path = dict[str, Any]
 
 
-class MSRectCleaner:
+class _MSRectCleaner:
     logger = logging.getLogger(f"{__module__}.{__qualname__}")
 
     def clean(self, paths: Sequence[_Path]) -> list[_Path]:
@@ -40,7 +40,7 @@ class MSRectCleaner:
         class _Rect:
             def __init__(self, path: _Path):
                 self.path = path
-                self.bbox: BBox = BBox(*path["bbox"])
+                self.bbox: BBox = path['bbox']#BBox(*path["bbox"])
                 self.stroke: Any = path.get("stroked")
                 self.fill: tuple[Any, Any] | None = (
                     (path.get("color"), path.get("alpha"))
@@ -53,9 +53,9 @@ class MSRectCleaner:
 
         def merge_paths(rects: Sequence[_Rect]) -> _Path:
             bbox = BBox.join([rect.bbox for rect in rects])
-            assert bbox is not None
+            #assert bbox is not None
             path = dict(rects[0].path)
-            path["bbox"] = list(bbox)
+            path["bbox"] = bbox
             path["isrect"] = True
             path["stroked"] = False
             return path
@@ -351,7 +351,6 @@ class Parser:
 
     def parse(self, kdoc: KDocument):
         with pymupdf.Document(filename=kdoc.file, filetype="pdf") as doc:
-            # 在一个文档中，使用的字体和颜色不会太多，如果相同的使用同一个对象即可
             for kpage in kdoc.working_pages:
                 self._parse_page(doc, kpage)
             
@@ -589,26 +588,21 @@ class Parser:
             flags = flags | pymupdf.TEXT_IGNORE_ACTUALTEXT
 
         timer = utils.Timer.start()
-        timer.mark('start gettext')
-        result: dict[str, Any] = page.get_text("rawdict", flags=flags)
-        timer.mark('end gettext')
-        width = result["width"]
-        height = result["height"]
-        matrix: Final = Matrix.lt_to_lb((width, height), kpage.size)
+        with timer.watch('text'):
+            result: dict[str, Any] = page.get_text("rawdict", flags=flags)
+        #matrix: Final = Matrix.lt_to_lb((result["width"], result["height"]), kpage.size)
+        matrix:Final = kpage.to_lb()
         kpage.pdf_chars.clear()
         #kpage.pdf_paths.clear()
         kpage.pdf_lines.clear()
         kpage.pdf_rects.clear()
         
-        paths:list[Any]=[]
         for block in result["blocks"]:
             type_ = block["type"]
             if type_ == 0:
                 parse_text(block)
             elif type_ == 1:
                 parse_image(block)
-            elif type_ == 3:
-                paths.append(block)
             else:
                 pass
         
@@ -621,33 +615,16 @@ class Parser:
         if self._parse_figures(doc, kpage):
             return
         
-        if paths:
-            #因为有些文档用很多线来渲染图片，为了减少计算，把图片中的线给去掉
-            pass
-        
-        def clean_paths(paths:list[Any]):
-            #先清除无用的线，避免有几十万的时候增加计算量
-            rects:list[Any]=[]
-            lines:list[Any]=[]
-            for vobj in kpage.vobjects:
-                if vobj.is_figure() or vobj.is_seal() or vobj.is_chart():
-                    vobj.bbox.expand(dx=2,dy=2).get(paths,ratio=0.5,remove=True)
-                else:
-                    #在文本框和表格区域的保留
-                    pass
-            #然后就可以转换为线了
-            for path in paths:
-                bbox = path['bbox']
-                if bbox[2]-bbox[0]>=5 and bbox[3]-bbox[1]>=5:
-                    if not path['stroked']:
-                        rects.append(path)
-                else:
-                    lines.append(path)
-            
-            #如果是矩形，可以合并？
-            #如果是线，合并
-
         if use_paths:
+            paths:list[Any]=[]
+            for block in result["blocks"]:
+                type_ = block["type"]
+                if type_ == 3:
+                    #从左上角坐标转换为左下角坐标
+                    block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
+                    paths.append(block)
+                else:
+                    pass
             self._parse_paths(doc,kpage,paths)
         else:
             # 如果没有一同返回path，就需要单独解析
@@ -821,9 +798,8 @@ class Parser:
                     pass
                 else:
                     vobj.bbox.expand(dx=2,dy=2).get(paths,ratio=0.5,remove=True)
-
+                    
             return paths
-        
         
         
         def split(paths:list[Any]):
@@ -843,12 +819,8 @@ class Parser:
             if not paths or not page.pdf_chars:
                 return list(paths)
 
-            matrix = page.to_lb()
 
-            def to_bbox(path: Any) -> BBox:
-                return BBox.from_list(path["bbox"], matrix=matrix)
-
-            items = [(path, to_bbox(path)) for path in paths]
+            items = [(path,path['bbox']) for path in paths]
 
             def is_h(bbox: BBox) -> bool:
                 return bbox.width >= 2 and bbox.height <= 3
@@ -954,9 +926,9 @@ class Parser:
             #TODO 后续为了提高速度，可以检查是否为：Creator: Microsoft® Office Word 2007 等制作的pdf
             #这样减少不必要的判断（虽然可能这个信息被删除了，导致漏判）
             if is_ms():
-                paths = MSRectCleaner().clean(paths)
+                paths = _MSRectCleaner().clean(paths)
             line_paths,rect_paths = split(paths)
-        
+
         #删除下划线
         line_paths = remove_underlines(line_paths)
         
@@ -978,9 +950,11 @@ class Parser:
             def draw_paths(paths:Sequence[Any]):
                 img = page.image.copy()
                 draw = PIL.ImageDraw.Draw(img)
-                m = Matrix().scale(img.width / page.width, img.height / page.height)
+                #m = Matrix().scale(img.width / page.width, img.height / page.height)
+                m = page.to_lt(img.size)
                 for path in paths:
-                    x0, y0, x1, y1 = BBox.from_list(path["bbox"], matrix=m)
+                    #x0, y0, x1, y1 = path['bbox']#BBox.from_list(path["bbox"], matrix=m)
+                    x0, y0, x1, y1 = path['bbox'].transform(m)
                     # color = path['color']
                     if path["stroked"]:
                         draw.line((x0, y0, x1, y1), fill=(0, 0, 255), width=2)
@@ -1555,7 +1529,8 @@ class LineParser:
                 line_width = bbox[y1] - bbox[y0]
                 y = (bbox[y1] + bbox[y0]) / 2
             # 转换为左下角为原点
-            bbox = bbox.set((y0, y), (y1, y)).transform(page.to_lb())
+            #bbox = bbox.set((y0, y), (y1, y)).transform(page.to_lb())
+            bbox = bbox.set((y0, y), (y1, y))
             return KLine(page, bbox, color=color, width=line_width)
 
         def make_lines(groups: list[list[Any]], is_h: bool = True):

@@ -316,6 +316,11 @@ class VObject:
         figure.vobject = self
         figure.subtype = str(self.type)
         return figure
+    
+    def set_bbox(self,bbox:BBox):
+        """在有些情况下可以改变bbox"""
+        self.bbox=bbox
+        self.quad=bbox.to_quad()
 
 
 class KDocument:
@@ -1095,19 +1100,27 @@ class KPage:
 
                 overlap_ratio = inter.area / vobj2.bbox.area
                 if overlap_ratio >= min_overlap_ratio:
-                    # 超过一半区域重叠，如果类型相同？合并，如：都是文本类型
-                    self._logger.warning(
-                        "删除重叠的对象,page=%s,large=%s,small=%s,overlap=%s,ratio=%.3f",
-                        self.number,
-                        vobj.bbox,
-                        vobj2.bbox,
-                        inter,
-                        overlap_ratio,
-                    )
-                    vobjects.remove(vobj2)
-                    removed_objects.append(vobj2)
-                    continue
+                    #[---title--]
+                    #[---table--]  =>如果稍微重叠一点，可以调整table的
+                    if vobj.is_table() and vobj2.is_any_text() and vobj2.bbox.y1>vobj.bbox.y1 and vobj2.bbox.y0>vobj.bbox.y0 and 0<vobj.bbox.y1-vobj2.bbox.y0<=6:
+                        
+                        self._logger.warning('第%s页，调整和表格重叠的文本,text=%s,table=%s',self.number,vobj2.bbox,vobj.bbox)
+                        vobj.set_bbox(vobj.bbox.adjust(y1=vobj2.bbox.y0))
+                    else:
+                        # 超过一半区域重叠，如果类型相同？合并，如：都是文本类型
+                        self._logger.warning(
+                            "删除重叠的对象,page=%s,large=%s,small=%s,overlap=%s,ratio=%.3f",
+                            self.number,
+                            vobj.bbox,
+                            vobj2.bbox,
+                            inter,
+                            overlap_ratio,
+                        )
+                        vobjects.remove(vobj2)
+                        removed_objects.append(vobj2)
+                        continue
                 # 如果仅仅部分区域重叠，合并为一个？
+
             i += 1
 
         for vobj in vobjects:
@@ -1116,6 +1129,9 @@ class KPage:
                 vobj.vobjects.extend(
                     vobj.bbox.get(removed_objects, ratio=0.7, remove=True)
                 )
+
+        
+        #还需要做一些简单的纠正，如：vobj和title重叠一点的
         return vobjects
 
     def draw(
@@ -2399,121 +2415,6 @@ class KTextline(KObject):
                     del lines[i]
                 else:
                     i += 1
-        page = objects[0].page
-        return [
-            cls(
-                page,
-                line[0].quad if len(line) == 1 else line.bbox.to_quad(),
-                objects=line,
-            )
-            for line in lines
-        ]
-
-    @classmethod
-    def parse2(cls, objects: Sequence[KObject]) -> list[Self]:
-        if not objects:
-            return []
-
-        def parse_line(objects: list[KObject]) -> Group[KObject]:
-            # 有行内公式，图片等
-            # 还有行间公式，图片等
-            # 还有上下标
-            line: Group[KObject] = Group()
-            line.append(objects.pop(0))
-            line.invalidate()
-            i = 0
-            while i < len(objects):
-                b1 = line.bbox
-                b2 = objects[i].bbox
-                # 表示有4个单位重叠
-                d = 4
-                if b1.over("y", b2, d=d) and abs(b1.height - b2.height) <= 5:
-                    # [b1][b2]
-                    # 如果为两行重叠的，分开，如：
-                    # [------line1----]
-                    #                  [----line2---]
-                    # 同时删除该对象
-                    line.append(objects.pop(i))
-                    line.invalidate()
-                # 已经按y1排序，不需要
-                elif b2.y1 <= b1.y0:
-                    # [b1]
-                    # [b2] =>接下来的都会更低，不需要再继续
-                    break
-                else:
-                    i += 1
-
-            line.sort(key=lambda obj: obj.bbox.x0)
-            # print('=======>line',[(c.text,c.bbox) for c in line if isinstance(c,Char)])
-            # 可能还需要补充连续的下标字符串，如：
-            # ABC[123]D => 123表示下标字符串
-            # ABC   D => 目前解析了D
-
-            return line
-
-        def is_subscript(i: int, objs: Sequence[KObject]) -> bool:
-            if isinstance(objs[i], KChar):
-                return objs[i].subtype == "subscript"
-            else:
-                return False
-
-        def is_superscript(i: int, objs: Sequence[KObject]) -> bool:
-            if isinstance(objs[i], KChar):
-                return objs[i].subtype == "superscript"
-            else:
-                return False
-
-        def fill_script(script: KChar, line: Group[KObject]) -> bool:
-            b1 = line.bbox
-            b2 = script.bbox
-            # 先快速判断
-            if script.subtype == "subscript":
-                # 如果为下标
-                if b1.y0 <= b2.y1 <= b1.cy:
-                    for i, char in enumerate(line):
-                        if char.bbox.x1 - 2 <= b2.x0 <= char.bbox.x1 + 2:
-                            line.insert(i + 1, script)
-                            line.invalidate()
-                            return True
-
-                return False
-            else:
-                # 为上标
-                # [---line---]
-                if b1.cy <= b2.y0 <= b1.y1:
-                    for i, char in enumerate(line):
-                        if char.bbox.x1 - 2 <= b2.x0 <= char.bbox.x1 + 2:
-                            line.insert(i + 1, script)
-                            line.invalidate()
-                            return True
-
-                return False
-
-        def fill_scripts(
-            is_subscript: bool, scripts: list[KChar], lines: list[Group[KObject]]
-        ):
-            if not scripts:
-                return
-
-            # 都是按从上到下排序过的
-            # 考虑到上下标的字符实际上并不多，所以就采用最简单的实现方式了
-            scripts.sort(key=lambda char: char.bbox.x0)
-            for script in scripts:
-                for line in lines:
-                    if fill_script(script, line):
-                        break
-
-        # TODO 可以先把上下标字符去掉，再排序，然后再把上下标字符插入到指定位置
-        objects = sorted(objects, key=lambda obj: obj.bbox.y1, reverse=True)
-        subscripts = cast(list[KChar], lists.remove2(objects, is_subscript))
-        superscripts = cast(list[KChar], lists.remove2(objects, is_superscript))
-        lines: list[Group[KObject]] = []
-        while objects:
-            lines.append(parse_line(objects))
-
-        fill_scripts(False, superscripts, lines)
-        fill_scripts(True, subscripts, lines)
-
         page = objects[0].page
         return [
             cls(

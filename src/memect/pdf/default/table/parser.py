@@ -2,8 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Callable, Final, Sequence
 
+from memect.base import lists, strs
 from memect.base.bbox import BBox
-from memect.pdf.base import KDocument, KLine, KPage, TableMode, VObject
+from memect.base.pattern import XPattern
+from memect.pdf.base import KDocument, KLine, KPage, KText, KTextline, TableMode, VObject
 from memect.pdf.default.table.wbk import WBKMode
 from memect.pdf.default.table.ybk import YBKMode
 from memect.pdf.model import ModelManager
@@ -30,6 +32,7 @@ class TableParser:
                     pass
 
     def parse(self, doc: KDocument, max_workers: int = 0):
+        self._fix(doc)
         if doc.params.table == TableMode.NO:
             # 不用解析表格，全部作为图片
             self._parse_as_figures(doc, max_workers=max_workers)
@@ -75,6 +78,10 @@ class TableParser:
         from .wbk import Parser
         Parser(self._manager).parse(doc,max_workers=max_workers,mode=WBKMode.AUTO)
 
+    def _fix(self,doc:KDocument):
+        for page in doc.working_pages:
+            self._fix1(page)
+
     def _fix1(self, page: KPage):
 
         """
@@ -111,34 +118,79 @@ class TableParser:
         def get_vobjects(bbox: BBox) -> list[VObject]:
             return bbox.get(page.vobjects, ratio=0.7)
 
+        def normalize_text(s:str)->str:
+            return strs.NText.get(s,mode='q2b',space='remove').text
+
+        def case1():
+            pass
+
+        def case2():
+            pass
+
+        def case3(vobj:VObject):
+            page=vobj.page
+            a_pattern=XPattern(
+                'fullmatch',
+                patterns=[
+                    r'[(]?单位[:：].+[)]?'
+                ]
+            )
+            pdf_chars = vobj.bbox.get(vobj.page.pdf_chars,ratio=0.8)
+            ocr_chars = vobj.ocr_chars
+            chars = pdf_chars+ocr_chars
+            lines = KTextline.parse(chars)
+            if len(lines)<=2:
+                return
+            
+            line = lines[0]
+            #如果第一行为单位，去掉？
+            #如果是有边框表格呢？明确包含的
+            if not a_pattern.fullmatch(normalize_text(line.text)):
+                return
+            page.objects.append(KText(page,line.quad,lines=[line]))
+            #重新调整这个的bbox，或者需要使用一个新的对象替代？
+            bbox=vobj.bbox.adjust(y1=line.bbox.y0-1)
+            #TODO 为final，不能够修改的，暂时在这里修改，因为如果准确了，就不需要fix
+            vobj.quad=bbox.to_quad()
+            vobj.bbox=bbox
+            lists.remove(vobj.ocr_chars,line.chars,strict=False)
+
+   
         vobjs = list(vobj for vobj in page.vobjects if vobj.is_table())
         vobjs.sort(key=lambda vobj: vobj.bbox.y1, reverse=True)
         tables: list[list[VObject]] = []
-        i = 0
-        while i < len(vobjs):
-            vobj1 = vobjs[i]
-            vobj2 = vobjs[i + 1] if i + 1 < len(vobjs) else None
-            if (
-                len(v_lines) > 0
-                and vobj2
-                and 0 <= vobj1.bbox.y0 - vobj2.bbox.y1 <= 20
-                and vobj1.bbox.width >= 100
-                and vobj1.bbox.height > 50
-                and vobj2.bbox.height > 50
-                and vobj1.bbox.align("x", vobj2.bbox, d=10)
-                and has_v_lines(BBox.join([vobj1.bbox, vobj2.bbox]))
-            ):
-                # 连接在一起的表格，被识别为了2个或者多个
-                # [table1]
-                # [title]
-                # [table2]
-                tables.append(get_vobjects(BBox.join([vobj1.bbox, vobj2.bbox])))
-                self._logger.warning(
-                    "第%s页，合并识别错误的表格，2个为一个", page.number
-                )
-                i += 2
-            else:
-                tables.append([vobj1])
-                i += 1
+
+        for vobj in vobjs:
+            case3(vobj)
+        
+
+        if False:
+        
+            i = 0
+            while i < len(vobjs):
+                vobj1 = vobjs[i]
+                vobj2 = vobjs[i + 1] if i + 1 < len(vobjs) else None
+                if (
+                    len(v_lines) > 0
+                    and vobj2
+                    and 0 <= vobj1.bbox.y0 - vobj2.bbox.y1 <= 20
+                    and vobj1.bbox.width >= 100
+                    and vobj1.bbox.height > 50
+                    and vobj2.bbox.height > 50
+                    and vobj1.bbox.align("x", vobj2.bbox, d=10)
+                    and has_v_lines(BBox.join([vobj1.bbox, vobj2.bbox]))
+                ):
+                    # 连接在一起的表格，被识别为了2个或者多个
+                    # [table1]
+                    # [title]
+                    # [table2]
+                    tables.append(get_vobjects(BBox.join([vobj1.bbox, vobj2.bbox])))
+                    self._logger.warning(
+                        "第%s页，合并识别错误的表格，2个为一个", page.number
+                    )
+                    i += 2
+                else:
+                    tables.append([vobj1])
+                    i += 1
 
         return tables

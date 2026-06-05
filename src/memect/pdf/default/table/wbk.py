@@ -83,7 +83,7 @@ class Parser:
                 page.objects.append(table)
                 i += 1
 
-    def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode):
+    def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode)->KTable:
         debugger = self._debugger.bind(page=page.number)
 
         def use_ybk(ybk: KTable, wbk: KTable) -> bool:
