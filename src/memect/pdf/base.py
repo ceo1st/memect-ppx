@@ -17,7 +17,6 @@ from typing import (
     Mapping,
     NotRequired,
     Self,
-    TextIO,
     TypeGuard,
     TypedDict,
     cast,
@@ -1079,6 +1078,85 @@ class KPage:
         # 2. 区域过大或者过小，不处理，这是模型的锅
         # 3. 区域重叠，如：大文本包含小文本，可能都是错误的，也可能都是正确的
 
+        def fix1(index:int,vobjs:list[VObject]):
+            #第一种：1个表格的，被识别为2个
+            #--t1--
+            #--title-- 这个被识别为普通标题，但是应该为表格内容，同时需要从page.objects中删除
+            #--t2--
+
+    
+            if index+2>=len(vobjs):
+                return False
+            
+            table1 = vobjs[index]
+            title = vobjs[index+1]
+            table2 = vobjs[index+2]
+
+            min_width=100
+            max_title_height=20
+            if not (table1.is_table() and title.is_title() and table2.is_table()):
+                return False
+            
+            if title.bbox.height>max_title_height or table1.bbox.width<min_width:
+                return False
+            
+            if not table1.bbox.align('x',table2.bbox,d=10):
+                return False
+
+            if not (-2<=table1.bbox.y0-title.bbox.y1<=5 and -2<=title.bbox.y0-table2.bbox.y1<=5 and abs(title.bbox.cx-table2.bbox.cx)<=10):
+                return False
+            
+            self._logger.warning(
+                "第%s页，合并表格，t1=%s,title=%s,t2=%s", self.number,table1.bbox,title.bbox,table2.bbox
+            )
+            del vobjs[index+1]
+            del vobjs[index+1]
+            table1.set_bbox(BBox.join2([table1,title,table2]))
+            return True
+            
+        def fix2(index:int,vobjs:list[VObject])->bool:
+            #第二种: 粘连在一起的表格，被识别为2个，可能是因为表头颜色不同？
+            #--t1--
+            #--------
+            #--t2--
+            min_width=200
+            max_gap=10
+            min_score=0.5
+            if index+1>=len(vobjs):
+                return False
+            t1=vobjs[index]
+            t2=vobjs[index+1]
+
+            if t1.score<min_score or t2.score<min_score:
+                return False
+            
+            if not (t1.is_table() and t2.is_table()):
+                return False
+            
+            if t1.bbox.y0-t2.bbox.y1>max_gap or t1.bbox.width<min_width:
+                #间距过大
+                return False
+            if not t1.bbox.align('x',t2.bbox,d=10):
+                #没有对齐
+                return False
+            
+            self._logger.warning('第%s页，合并表格，t1=%s,t2=%s',t1.bbox,t2.bbox)
+            t1.set_bbox(BBox.join2([t1,t2]))
+            del vobjs[index+1]
+            
+            return True
+
+        def fix(vobjs:list[VObject]):
+            fns=[fix1,fix2]
+            vobjs.sort(key=lambda vobj:vobj.bbox.y1,reverse=True)
+            i=0
+            while i<len(vobjs):
+                for fn in fns:
+                    if fn(i,vobjs):
+                        break
+                i+=1
+            pass
+
         raw_vobjects = vobjects
         vobjects = list(vobjects)
         # 可以删除太小的对象，目前仅仅删除为0
@@ -1100,10 +1178,9 @@ class KPage:
 
                 overlap_ratio = inter.area / vobj2.bbox.area
                 if overlap_ratio >= min_overlap_ratio:
-                    #[---title--]
-                    #[---table--]  =>如果稍微重叠一点，可以调整table的
-                    if vobj.is_table() and vobj2.is_any_text() and vobj2.bbox.y1>vobj.bbox.y1 and vobj2.bbox.y0>vobj.bbox.y0 and 0<vobj.bbox.y1-vobj2.bbox.y0<=6:
-                        
+                    if vobj.is_table() and vobj2.is_any_text() and overlap_ratio<0.5 and vobj2.bbox.cy-vobj.bbox.y1>-2:
+                        #[---title--]
+                        #[---table--]  =>如果稍微重叠一点，可以调整table的
                         self._logger.warning('第%s页，调整和表格重叠的文本,text=%s,table=%s',self.number,vobj2.bbox,vobj.bbox)
                         vobj.set_bbox(vobj.bbox.adjust(y1=vobj2.bbox.y0))
                     else:
@@ -1122,6 +1199,9 @@ class KPage:
                 # 如果仅仅部分区域重叠，合并为一个？
 
             i += 1
+        
+        #如果将来模型完善了，可以去掉这个修正
+        fix(vobjects)
 
         for vobj in vobjects:
             if vobj.is_table():
@@ -1130,8 +1210,6 @@ class KPage:
                     vobj.bbox.get(removed_objects, ratio=0.7, remove=True)
                 )
 
-        
-        #还需要做一些简单的纠正，如：vobj和title重叠一点的
         return vobjects
 
     def draw(

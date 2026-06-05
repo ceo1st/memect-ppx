@@ -5,17 +5,26 @@ from typing import Callable, Final, Sequence
 from memect.base import lists, strs
 from memect.base.bbox import BBox
 from memect.base.pattern import XPattern
-from memect.pdf.base import KDocument, KLine, KPage, KText, KTextline, TableMode, VObject
+from memect.pdf.base import (
+    KDocument,
+    KLine,
+    KPage,
+    KText,
+    KTextline,
+    TableMode,
+    VObject,
+)
 from memect.pdf.default.table.wbk import WBKMode
 from memect.pdf.default.table.ybk import YBKMode
 from memect.pdf.model import ModelManager
 
 
 class TableParser:
-    _logger = logging.getLogger(f'{__module__}.{__qualname__}')
-    def __init__(self,manager:ModelManager):
+    _logger = logging.getLogger(f"{__module__}.{__qualname__}")
+
+    def __init__(self, manager: ModelManager):
         super().__init__()
-        self._manager:Final = manager
+        self._manager: Final = manager
 
     def _do(
         self, fn: Callable[[KPage], None], pages: Sequence[KPage], max_workers: int = 0
@@ -36,8 +45,8 @@ class TableParser:
         if doc.params.table == TableMode.NO:
             # 不用解析表格，全部作为图片
             self._parse_as_figures(doc, max_workers=max_workers)
-        #elif doc.params.table == TableMode.LLM:
-            #self._parse_llm(doc, max_workers=max_workers)
+        # elif doc.params.table == TableMode.LLM:
+        # self._parse_llm(doc, max_workers=max_workers)
         elif doc.params.table == TableMode.YBK:
             # 全部按有边框
             self._parse_ybk(doc, max_workers=max_workers)
@@ -53,7 +62,7 @@ class TableParser:
         def parse_page(page: KPage):
             for vobj in page.vobjects:
                 if vobj.is_table():
-                    figure = vobj.make_figure(dx=2,dy=2)
+                    figure = vobj.make_figure(dx=2, dy=2)
                     page.objects.append(figure)
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
@@ -61,136 +70,66 @@ class TableParser:
     def _parse_llm(self, doc: KDocument, *, max_workers: int = 0):
         """使用llm来解析表格"""
         from .llm import Parser
-        Parser(self._manager).parse(doc,max_workers=max_workers)
+
+        Parser(self._manager).parse(doc, max_workers=max_workers)
 
     def _parse_ybk(self, doc: KDocument, *, max_workers: int = 0):
         """全部按有边框来解析"""
-        from .ybk import Parser        
-        Parser().parse(doc,max_workers=max_workers,mode=YBKMode.AUTO)
+        from .ybk import Parser
+
+        Parser().parse(doc, max_workers=max_workers, mode=YBKMode.AUTO)
 
     def _parse_wbk(self, doc: KDocument, *, max_workers: int = 0):
         """全部按无边框解析，表格的线仅仅用来参考"""
-        from .wbk import Parser        
-        Parser(self._manager).parse(doc,max_workers=max_workers,mode=WBKMode.ALL)
+        from .wbk import Parser
+
+        Parser(self._manager).parse(doc, max_workers=max_workers, mode=WBKMode.ALL)
 
     def _parse_auto(self, doc: KDocument, *, max_workers: int = 0):
         """自动选择最合适的"""
         from .wbk import Parser
-        Parser(self._manager).parse(doc,max_workers=max_workers,mode=WBKMode.AUTO)
 
-    def _fix(self,doc:KDocument):
+        Parser(self._manager).parse(doc, max_workers=max_workers, mode=WBKMode.AUTO)
+
+    def _fix(self, doc: KDocument):
         for page in doc.working_pages:
             self._fix1(page)
 
     def _fix1(self, page: KPage):
-
         """
         修正layout识别错误的表格
         """
 
-        #第一种：1个表格的，被识别为2个
-        #--t1--
-        #--title-- 这个被识别为普通标题，但是应该为表格内容，同时需要从page.objects中删除
-        #--t2--
+        def normalize_text(s: str) -> str:
+            return strs.NText.get(s, mode="q2b", space="remove").text
 
-        #第二种: 粘连在一起的表格，被识别为2个，可能是因为表头颜色不同？
-        #--t1--
-        #--------
-        #--t2--
-
-        #第三种：多包含内容
-        #----单位-- 可能包含了这些不属于表格的内容
-        #--t1-----
-
-        lines = page.pdf_lines
-        h_lines, v_lines = KLine.split(lines)
-
-        def has_v_lines(bbox: BBox) -> bool:
-            n = 0
-            for line in v_lines:
-                if (
-                    line.bbox.align("y", bbox, d=10)
-                    and bbox.x0 <= line.bbox.x0 <= bbox.x1
-                ):
-                    return True
-            return False
-
-        def get_vobjects(bbox: BBox) -> list[VObject]:
-            return bbox.get(page.vobjects, ratio=0.7)
-
-        def normalize_text(s:str)->str:
-            return strs.NText.get(s,mode='q2b',space='remove').text
-
-        def case1():
-            pass
-
-        def case2():
-            pass
-
-        def case3(vobj:VObject):
-            page=vobj.page
-            a_pattern=XPattern(
-                'fullmatch',
-                patterns=[
-                    r'[(]?单位[:：].+[)]?'
-                ]
-            )
-            pdf_chars = vobj.bbox.get(vobj.page.pdf_chars,ratio=0.8)
+        def case1(vobj: VObject):
+            # 第一种：多包含内容
+            # ----单位-- 可能包含了这些不属于表格的内容
+            # --t1-----
+            page = vobj.page
+            a_pattern = XPattern("fullmatch", patterns=[r"[(]?单位[:：].+[)]?"])
+            pdf_chars = vobj.bbox.get(vobj.page.pdf_chars, ratio=0.8)
             ocr_chars = vobj.ocr_chars
-            chars = pdf_chars+ocr_chars
+            chars = pdf_chars + ocr_chars
             lines = KTextline.parse(chars)
-            if len(lines)<=2:
+            if len(lines) <= 2:
                 return
-            
+
             line = lines[0]
-            #如果第一行为单位，去掉？
-            #如果是有边框表格呢？明确包含的
+            # 如果第一行为单位，去掉？
+            # 如果是有边框表格呢？明确包含的
             if not a_pattern.fullmatch(normalize_text(line.text)):
                 return
-            page.objects.append(KText(page,line.quad,lines=[line]))
-            #重新调整这个的bbox，或者需要使用一个新的对象替代？
-            bbox=vobj.bbox.adjust(y1=line.bbox.y0-1)
-            #TODO 为final，不能够修改的，暂时在这里修改，因为如果准确了，就不需要fix
-            vobj.quad=bbox.to_quad()
-            vobj.bbox=bbox
-            lists.remove(vobj.ocr_chars,line.chars,strict=False)
+            self._logger.warning('第%s页，修正表格，去掉单位，table=%s',page.number,vobj.bbox)
+            page.objects.append(KText(page, line.quad, lines=[line]))
+            # 重新调整这个的bbox，或者需要使用一个新的对象替代？
+            vobj.set_bbox(vobj.bbox.adjust(y1=line.bbox.y0 - 1))
+            lists.remove(vobj.ocr_chars, line.chars, strict=False)
 
-   
+
         vobjs = list(vobj for vobj in page.vobjects if vobj.is_table())
         vobjs.sort(key=lambda vobj: vobj.bbox.y1, reverse=True)
-        tables: list[list[VObject]] = []
 
         for vobj in vobjs:
-            case3(vobj)
-        
-
-        if False:
-        
-            i = 0
-            while i < len(vobjs):
-                vobj1 = vobjs[i]
-                vobj2 = vobjs[i + 1] if i + 1 < len(vobjs) else None
-                if (
-                    len(v_lines) > 0
-                    and vobj2
-                    and 0 <= vobj1.bbox.y0 - vobj2.bbox.y1 <= 20
-                    and vobj1.bbox.width >= 100
-                    and vobj1.bbox.height > 50
-                    and vobj2.bbox.height > 50
-                    and vobj1.bbox.align("x", vobj2.bbox, d=10)
-                    and has_v_lines(BBox.join([vobj1.bbox, vobj2.bbox]))
-                ):
-                    # 连接在一起的表格，被识别为了2个或者多个
-                    # [table1]
-                    # [title]
-                    # [table2]
-                    tables.append(get_vobjects(BBox.join([vobj1.bbox, vobj2.bbox])))
-                    self._logger.warning(
-                        "第%s页，合并识别错误的表格，2个为一个", page.number
-                    )
-                    i += 2
-                else:
-                    tables.append([vobj1])
-                    i += 1
-
-        return tables
+            case1(vobj)
