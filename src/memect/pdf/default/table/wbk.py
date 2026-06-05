@@ -11,6 +11,7 @@ from memect.pdf.base import (
     KDocument,
     KLine,
     KPage,
+    KPDFFigure,
     KTable,
     VObject,
 )
