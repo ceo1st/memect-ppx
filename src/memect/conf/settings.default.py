@@ -1,19 +1,21 @@
-from functools import lru_cache
 import logging
 import os
 import platform
-from pathlib import Path
 import sys
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Final
 
 from memect.base.utils import console
 
-if sys.platform != 'darwin':
+if sys.platform != "darwin":
     import onnxruntime
-    #directory=None 表示先查找pytorc的lib，再查找安装的nvidia包，再系统路径
-    #directory=''，nvidia的包，再系统路径
+
+    # directory=None 表示先查找pytorc的lib，再查找安装的nvidia包，再系统路径
+    # directory=''，nvidia的包，再系统路径
     onnxruntime.preload_dlls(directory=None)
-    #onnxruntime.print_debug_info()
+    # onnxruntime.print_debug_info()
+
 
 def is_running_in_docker() -> bool:
     # 在dockerfile中设置环境变量，就可以知道在docker运行了
@@ -135,7 +137,8 @@ def is_x86():
 def use_openvino():
     try:
         import openvino  # type: ignore
-        #glibc>=35的linux可以安装，但是无法正常运行，所以目前现在限制为x86
+
+        # glibc>=35的linux可以安装，但是无法正常运行，所以目前现在限制为x86
         return is_x86()
     except ImportError:
         return False
@@ -149,12 +152,12 @@ def get_device(model: str):
     elif use_gpu(model, vendor="dml"):
         return {"engine": "onnxruntime", "use_dml": True}
     elif is_apple_silicon():
-        #use_coreml:True 总是失败
-        #cpu+openvino比cpu+onnxruntime快
-        #2秒/张
-        #return {"engine": "onnxruntime", "use_coreml": False}
-        #1秒/张
-        return {'engine':'openvino'}
+        # use_coreml:True 总是失败
+        # cpu+openvino比cpu+onnxruntime快
+        # 2秒/张
+        # return {"engine": "onnxruntime", "use_coreml": False}
+        # 1秒/张
+        return {"engine": "openvino"}
     elif use_openvino():
         return {"engine": "openvino"}
     else:
@@ -236,9 +239,9 @@ _layout_device: Final = get_device("layout")
 # 显卡比cpu快,cpu+openvino和cpu+onnxruntime持平
 _table_device: Final = get_device("table")
 _formula_device: Final = get_device("formula")
-#cpu+onnxruntime比cpu+openvino快，不过复杂一些的模型，都需要50秒
-#FormulaPPModel不支持cpu+openvino，必须使用onnxruntime
-_formula_device['engine']='onnxruntime'
+# cpu+onnxruntime比cpu+openvino快，不过复杂一些的模型，都需要50秒
+# FormulaPPModel不支持cpu+openvino，必须使用onnxruntime
+_formula_device["engine"] = "onnxruntime"
 
 console.log(f"ocr={_ocr_device}")
 console.log(f"layout={_layout_device}")
@@ -333,9 +336,9 @@ settings: dict[str, Any] = {
                     "max_task_size": 10,
                 },
                 # paddle or glm or formula-pp or formula-mfr
-                "model": get_value("ppx_formula","formula-pp"),
+                "model": get_value("ppx_formula", "formula-pp"),
             },
-            "table_det": {
+            "table": {
                 # 识别表格的单元格
                 "name": "",
                 "enable": True,
@@ -346,36 +349,7 @@ settings: dict[str, Any] = {
                     # 因为这里使用单个模型，这个和后台llm的能力匹配即可
                     "max_task_size": 10,
                 },
-                "model": "table_det",
-            },
-            "table_llm": {
-                # 识别表格的单元格
-                "name": "",
-                "enable": True,
-                # 启动4个worker，可以同时执行4个请求
-                "max_workers": 4,
-                "use_process": False,
-                "scheduler": {
-                    "policy": "fifo",
-                    # 因为这里使用单个模型，这个和后台llm的能力匹配即可
-                    "max_task_size": 10,
-                },
-                # paddle or glm
-                "model": "paddle",
-            },
-            "text_llm": {
-                "name": "",
-                "enable": True,
-                # 启动4个worker，可以同时执行4个请求
-                "max_workers": 4,
-                "use_process": False,
-                "scheduler": {
-                    "policy": "fifo",
-                    # 因为这里使用单个模型，这个和后台llm的能力匹配即可
-                    "max_task_size": 10,
-                },
-                # paddle or glm
-                "model": "paddle",
+                "model": "table",
             },
         },
         "models": {
@@ -391,8 +365,8 @@ settings: dict[str, Any] = {
                     "Global.width_height_ratio": -1,
                     # 容易把正常的文本识别为旋转了180度
                     "Global.use_cls": False,
-                    #需要的内存和显存也更大
-                    "Global.max_side_len":7000,
+                    # 需要的内存和显存也更大
+                    "Global.max_side_len": 7000,
                     "Det.engine_type": _ocr_device["engine"],
                     "Cls.engine_type": _ocr_device["engine"],
                     "Rec.engine_type": _ocr_device["engine"],
@@ -477,6 +451,43 @@ settings: dict[str, Any] = {
                     "iou_thresh": 0.5,
                 },
             },
+            "table": {
+                "name": "TableModel",
+                "kwargs": {
+                    "model_path": get_model_path("./models/memect/table_det.onnx"),
+                    "score_threshold": 0.5,
+                    "engine": _table_device["engine"],
+                    "use_cuda": _table_device.get("use_cuda", False),
+                    "use_cann": _table_device.get("use_cann", False),
+                    "use_dml": _table_device.get("use_dml", False),
+                },
+            },
+            "formula-pp": {
+                # 在cpu下快，在gpu下很慢
+                "name": "FormulaPPModel",
+                "kwargs": {
+                    "model_dir": get_model_path("./models/PP-FormulaNet_plus-M_infer"),
+                    # 必须使用onnxruntime，不支持openvino
+                    "engine": "onnxruntime",
+                    "use_cuda": _formula_device.get("use_cuda", False),
+                    "use_cann": _formula_device.get("use_cann", False),
+                    "use_dml": _formula_device.get("use_dml", False),
+                },
+            },
+            "formula-mfr": {
+                # 在cpu下慢，在gpu下快
+                "name": "FormulaMfrModel",
+                "kwargs": {
+                    "model_dir": get_model_path("./models/mfr"),
+                    "engine": _formula_device["engine"],
+                    "use_cuda": _formula_device.get("use_cuda", False),
+                    "use_cann": _formula_device.get("use_cann", False),
+                    "use_dml": _formula_device.get("use_dml", False),
+                },
+            },
+
+            #下面这2个模型，支持formula，table，ocr
+            # 目前主要用来识别公式
             "paddle": {
                 "name": "LLMModel",
                 "kwargs": {
@@ -524,63 +535,6 @@ settings: dict[str, Any] = {
                     },
                 },
             },
-            "table_det": {
-                "name": "TableDetModel",
-                "kwargs": {
-                    "model_path": get_model_path("./models/memect/table_det.onnx"),
-                    "score_threshold": 0.5,
-                    "engine": _table_device["engine"],
-                    "use_cuda": _table_device.get("use_cuda", False),
-                    "use_cann": _table_device.get("use_cann", False),
-                    "use_dml": _table_device.get("use_dml", False),
-                },
-            },
-            
-            "formula-pp":{
-                #在cpu下快，在gpu下很慢
-                "name":"FormulaPPModel",
-                "kwargs":{
-                    "model_dir":get_model_path("./models/PP-FormulaNet_plus-M_infer"),
-                    #必须使用onnxruntime，不支持openvino
-                    "engine":"onnxruntime",
-                    "use_cuda":_formula_device.get('use_cuda',False),
-                    'use_cann':_formula_device.get('use_cann',False),
-                    "use_dml":_formula_device.get('use_dml',False)
-                }
-            },
-            "formula-mfr":{
-                #在cpu下慢，在gpu下快
-                "name":"MfrModel",
-                "kwargs":{
-                    "model_dir":get_model_path("./models/mfr"),
-                    "engine":_formula_device["engine"],
-                    "use_cuda":_formula_device.get('use_cuda',False),
-                    'use_cann':_formula_device.get('use_cann',False),
-                    "use_dml":_formula_device.get('use_dml',False)
-                }
-            },
-            "formula2": {
-                #目前没有使用这个模型
-                "name": "FormulaModel",
-                "kwargs": {
-                    "resizer_path": get_model_path(
-                        "./models/formula/image_resizer.onnx"
-                    ),
-                    "encoder_path": get_model_path(
-                        "./models/formula/encoder.onnx"
-                    ),
-                    "decoder_path": get_model_path(
-                        "./models/formula/decoder.onnx"
-                    ),
-                    "tokenizer_path": get_model_path(
-                        "./models/formula/tokenizer.json"
-                    ),
-                    'engine':_formula_device['engine'],
-                    'use_cuda':_formula_device.get('use_cuda',False),
-                    'use_cann':_formula_device.get('use_cann',False),
-                    'use_dml':_formula_device.get('use_dml',False)
-                },
-            },
         },
     },
     "pdf_parser": {
@@ -588,7 +542,7 @@ settings: dict[str, Any] = {
         "deepseek": {
             "model": {
                 "base_url": get_value("ppx_deepseek_url", "http://127.0.0.1:4000/v1"),
-                "api_key":"x",
+                "api_key": "x",
                 "scheduler": {
                     # fifo:按顺序执行
                     # balance: 公平执行
@@ -603,7 +557,7 @@ settings: dict[str, Any] = {
             "layout": "layout",
             "model": {
                 "base_url": get_value("ppx_paddle_url", "http://127.0.0.1:4001/v1"),
-                "api_key":"x",
+                "api_key": "x",
                 #'model':'paddleocr-vl-1.5',
                 "scheduler": {
                     # fifo:按顺序执行
@@ -619,7 +573,7 @@ settings: dict[str, Any] = {
             "layout": "layout",
             "model": {
                 "base_url": get_value("ppx_glm_url", "http://127.0.0.1:4002/v1"),
-                "api_key":"x",
+                "api_key": "x",
                 "scheduler": {
                     "policy": "balance",
                     # 单显卡一般就是10个并发，如果多显卡，可以设置更大
@@ -637,20 +591,30 @@ settings: dict[str, Any] = {
             "image": {},
             "table": {"ybk": {}, "wbk": {}, "llm": {}},
         },
-        "tree":{
-            "llm":{
-                #or anthropic
-                "provider":"openai",
-                "base_url":"",
-                "api_key":"",
-                "model":"",
-                "tempeature":0,
-                "max_tokens":2000
+        "tree": {
+            # 跨页/跨栏文本合并
+            "text": {},
+            # 跨页/跨栏表格合并
+            "table": {},
+            # 某些内容需要先分成一个逻辑组，也就是不需要细分层次
+            "group": {},
+            # 使用llm构建章节树
+            "llm": {
+                # or anthropic
+                "provider": "openai",
+                "base_url": "",
+                "api_key": "",
+                "model": "",
+                "tempeature": 0,
+                "max_tokens": 2000,
             },
-            'default':{
-                
-            }
-        }
+            # 根据pdf的outline构建章节树
+            "outline": {},
+            # 根据pdf的目录章节构建章节树
+            "toc": {},
+            # 根据一定的规则构建章节树
+            "default": {},
+        },
     },
     "pdf_service": {
         # 上传的文件的保存目录

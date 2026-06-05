@@ -111,8 +111,6 @@ class DefaultParser:
         self._formula_key: Final = "cache/default/formula"
         self._ocr_model: Final = manager.get(self._args.ocr)
         self._ocr_key: Final = "cache/default/ocr"
-        # self._llm_model:Final=ModelExecutor.get(self._args.llm)
-        # self._llm_key:Final='cache/default/llm'
 
         self._pdf_parser: Final = PdfParser(self._args.pdf)
         self._table_parser: Final = TableParser(manager)
@@ -135,6 +133,8 @@ class DefaultParser:
         self._parse_texts(doc)
         self._parse_figures(doc)
         self._parse_formulas(doc)
+        #加入特别功能处理，如：释义表格
+        #处理表格
         self._parse_tables(doc)
         if doc.params.mode == ParseMode.PPT:
             # 如果是按ppt，就不需要解析页面页脚等了
@@ -534,7 +534,7 @@ class DefaultParser:
                 #在底部的为下划线，在中间的为删除线
 
 
-        def make_textbox(page: KPage, vobj: VObject,use_figures:bool=False):
+        def make_text(page: KPage, vobj: VObject,use_figures:bool=False):
             if not vobj.is_any_text():
                 return
             # TODO 补充行内公式/行内图片
@@ -568,13 +568,13 @@ class DefaultParser:
                 page.objects.append(tb)
 
                 if verbose and debugger.allow("info", page=page.number):
-                    with debugger.group("textbox"):
+                    with debugger.group("text"):
                         for tl in tb.lines:
                             print(tl.text)
 
         def parse_page(page: KPage):
             for vobj in page.vobjects:
-                make_textbox(page, vobj)
+                make_text(page, vobj)
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 

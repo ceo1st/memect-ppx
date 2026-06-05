@@ -78,18 +78,20 @@ class Liner:
 
         #确保在bbox内，调整溢出的线
         self._ensure_lines(_lines,bbox)
-
         #确保水平线(y0==y1)垂直线(x0==x2)
         self._filter_lines(_lines,x_d=options.x_d,y_d=options.y_d)
         #如果存在间距很小的线，调整移动对齐
         self._align_lines(_lines,x_d=options.x_axis_d,y_d=options.y_axis_d)
-        #确保有4条边，且水平线和垂直线都相交，不存在“悬”线
-
         #把靠近的线连接为在一起，如：-- --  => -----
         self._join_lines(_lines,x_d=options.join_x_d,y_d=options.join_y_d)
         #确保水平线和垂直相交，不存在“悬”线
         self._cross_lines(_lines,bbox,min_width=options.min_h_length,min_height=options.min_v_length,x_d=options.cross_x_d,y_d=options.cross_y_d)
         
+        #因为可能存在双层线，需要去掉，仅仅去掉四周的，也可以通过增加options.x_d,y_d，但是这样是对所有的线
+        #-------line1------
+        #-------line2------
+        self._fix0(_lines)
+
         #彩色表头
         self._fix1(_lines)
         
@@ -453,6 +455,32 @@ class Liner:
         lines.extend(h_lines)
         lines.extend(v_lines)
 
+    def _fix0(self,lines:list[_Line]):
+
+        def fix(lines:list[_Line],is_h:bool):
+            h_lines,v_lines = self._split_lines(lines)
+            if is_h:
+                x0,y0,x1,y1=0,1,2,3
+                target_lines = h_lines
+            else:
+                x0,y0,x1,y1=1,0,3,2
+                target_lines = v_lines
+            
+            if len(target_lines)<2:
+                return
+            
+            target_lines.sort(key=lambda line:line[y1],reverse=True)
+            for i,j in [(0,1),(-1,-2)]:
+                if len(target_lines)<2:
+                    break
+                line1=target_lines[i]
+                line2=target_lines[j]
+                if abs(line1[x0]-line2[x0])<=2 and abs(line1[x1]-line2[x1])<=2 and abs(line1[y1]-line2[y1])<=3:
+                    lists.remove(lines,[line2],use_is=True)
+
+        fix(lines,True)
+        fix(lines,False)
+
     def _fix1(self,lines:list[_Line],*,is_h:bool=True):
         """彩色表格的线很难计算"""
         #[---][---][---] 彩色的表头，没有明显的单元格的线
@@ -632,6 +660,3 @@ class Liner:
                 break
 
         pass
-
-
-            

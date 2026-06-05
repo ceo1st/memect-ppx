@@ -110,8 +110,8 @@ class Builder:
         y_axis.append(bbox[3])
 
         y_axis.reverse()
-        print("===>table", table.bbox, (table.row_num, table.col_num))
-        print("x_axis", len(x_axis), x_axis)
-        print("y_axis", len(y_axis), y_axis)
+        #print("===>table", table.bbox, (table.row_num, table.col_num))
+        #print("x_axis", len(x_axis), x_axis)
+        #print("y_axis", len(y_axis), y_axis)
 
         return x_axis, y_axis

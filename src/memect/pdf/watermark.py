@@ -1,11 +1,10 @@
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pymupdf
 
 from .base import KDocument
-
 
 """
 PDF 水印清除工具 —— PyMuPDF 递归处理嵌套 Form XObject

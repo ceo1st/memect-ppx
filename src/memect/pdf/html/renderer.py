@@ -243,6 +243,7 @@ class HtmlRenderer:
                 #ids表示在页面渲染的对象的id，目的是点击后可以滚动到目标节点
                 data['xid']=node.id
                 data['ids']=[]
+                data['type']=node.type
                 return data
             tree={
                 'root':build_node(doc.tree.root)
@@ -250,10 +251,12 @@ class HtmlRenderer:
         else:
             tree={
                 'root':{
+                        'type':'page-root',
                         'text':'页面',
                         'number':1,
                         'children':[
                             {
+                                'type':'page',
                                 'text':f'第{page.number}页',
                                 'number':page.number
                             } for page in doc.pages
@@ -447,13 +450,14 @@ class HtmlRenderer:
         return [tag]
 
     def _render_table(self, table: KTable, offset: _Offset | None = None):
-        table.validate()
         m: Final = table.page.to_lt()
         bbox: Final = table.bbox.transform(m)
         tag = _Tag("table")
         tag.classes.append("table")
         tag.set_bbox(bbox, offset=offset, scale=self._scale)
         tag.set_data({'type':table.type,'subtype':table.subtype or 'wbk'})
+        #if table.merged:
+            #tag.set_data({'merged':'true'})
 
         # <table classe="table" style=""></table>
 
@@ -461,18 +465,12 @@ class HtmlRenderer:
 
         def get_x_axis() -> list[float]:
             axis = [None] * table.col_num
-            if any(c.bbox is None for c in table.cells):
-                # 来自llm的解析，单元格没有bbox，现在就平均分配好了
-                step = table.bbox.width / table.col_num
-                for i in range(table.col_num):
-                    axis[i] = table.bbox[0] + i * step
-            else:
-                for cell in table.cells:
-                    i = cell.col_index
-                    # j = cell.col_index+cell.col_span
-                    if axis[i] is None:
-                        assert cell.bbox is not None
-                        axis[i] = cell.bbox[0]
+            for cell in table.cells:
+                i = cell.col_index
+                # j = cell.col_index+cell.col_span
+                if axis[i] is None:
+                    assert cell.bbox is not None
+                    axis[i] = cell.bbox[0]
             axis.append(table.bbox[2])
             return axis
 
@@ -483,22 +481,17 @@ class HtmlRenderer:
                 td.attrs["colspan"] = cell.col_span
             if cell.row_span>1:
                 td.attrs["rowspan"] = cell.row_span
-            if cell.bbox is not None:
-                td.style["height"] = td.calc(cell.bbox.height, scale=self._scale)
-            else:
-                # TODO 仍然平均分配?
-                td.style["height"] = td.calc(
-                    table.bbox.height / table.row_num, scale=self._scale
-                )
-            
 
-            if cell.bbox is not None:
-                td.children.extend(self._render_objects(cell.objects, offset=offset))
-            else:
-                #如果是来自llm的，可能只有text
-                td.style['font-size']='9px'
-                td.style['font-family']='monospace'
-                td.children.append(cell.text)
+            td.style["height"] = td.calc(cell.bbox.height, scale=self._scale)
+            td.children.extend(self._render_objects(cell.objects, offset=offset))
+
+            if cell.subtype=='header':
+                td.set_data({'subtype':cell.subtype})
+
+            if cell.merged is True:
+                td.set_data({'cell-merged':'true'})
+
+
             return [td]
 
         x_axis = get_x_axis()
@@ -631,6 +624,8 @@ class HtmlRenderer:
         set_text_style(tag, span, scale=self._scale)
 
         tag.set_data({'width':span.bbox.width,'height':span.bbox.height})
+        if span.font.wingdings:
+            tag.set_data({'wingdings':'true'})
         tag.children.append(span.text)
         return [tag]
 
@@ -703,3 +698,5 @@ class HtmlRenderer:
             node = obj.doc.tree.root.lookup(obj)
             if node is not None:
                 tag.set_data({'xid':node.id})
+                if len(node.object.objects)>1:
+                    tag.set_data({'merged':''})
