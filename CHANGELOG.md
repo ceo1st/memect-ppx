@@ -6,7 +6,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.8] - 2026-06-06
+
+### ✨ Features
+
+- Add parser classes for PDF chapter structure, outlines, and table of contents
+- Implement chapter tree parsing from PDF outlines and TOC
+
+### 📌 Miscellaneous
+
+- 对于对象识别错误的表格，进行了修正
+- 修正之前线清除的问题，没有使用转换后的坐标
+- 完善了pdf表格的线的计算
+- 修改因为表格严格检查引起表格header/body的重新计算的问题
+- 完善了wingdings的识别
+- 修复无边框单元格区域溢出
+- 对于pdf表格存在双层边界线的问题，进行了优化
+- 去掉命名为联合资信的字典文件
+- 初步支持跨页表格合并
+- 提供了实验下的章节模版生成
+- 生成tree.md，也初步支持通过agent来快速满足需求
+- 完善了xtree_llm.py
+- 去掉了不必要的代码
+- 初步完成了章节树的3个分析模式
+
+### 📝 Documentation
+
+- Update section title from '安装' to 'UV安装' in README_zh-CN.md
+
+### 🔨 Chore
+
+- Merge dev/github into github-main-clean
+- Remove .claude/ from git tracking
+
+## [0.2.7] - 2026-05-22
 
 ### 📌 Miscellaneous
 
