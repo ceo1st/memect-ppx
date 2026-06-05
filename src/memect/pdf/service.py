@@ -19,9 +19,9 @@ from starlette.datastructures import UploadFile
 from memect.base.api import ApiError, ApiInfo, FileType
 from memect.base.config import get_settings
 from memect.base.task import Saver, Task, TaskManager, TaskManagerArgs
-from memect.base.utils import AutoCleaner, MyBaseModel, SafeExecutor
+from memect.base.utils import AutoCleaner, MyBaseModel
 from .base import ApiParams, KDocument, ParseParams
-from .parser import MPParser, MPParserArgs, Parser
+from .parser import MPParser, MPParserArgs
 
 
 def parse_params(params: Annotated[str | None, Query()] = None) -> ParseParams:

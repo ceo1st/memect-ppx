@@ -59,7 +59,7 @@ class BaseGrid(ABC):
     _logger: Logger = logging.getLogger(f"{__module__}.{__qualname__}")
     _debugger = XDebugger(f"{__module__}.{__qualname__}")
 
-    def __init__(self, lines: Sequence[_Line], items: Sequence[_Item] | None = None):
+    def __init__(self, lines: Sequence[_Line]):
         super().__init__()
         self.lines = lines
         self.col_num: int = 0
@@ -67,9 +67,6 @@ class BaseGrid(ABC):
         self.bbox = BBox.join(lines)
         self.cells: list[Cell] = []
         self._parse(lines)
-
-        if items:
-            self._fill(items)
 
     @abstractmethod
     def _parse(self, lines: Sequence[_Line]) -> None:
@@ -246,150 +243,6 @@ class BaseGrid(ABC):
             "col_num": self.col_num,
             "cells": [c.jsonify() for c in self.cells],
         }
-
-    def _fill[T: _Item](self, items: Sequence[T]):
-        """填充对象到单元格"""
-
-        #
-        debugger = self._debugger.bind()
-
-        def get_objects2(
-            bbox: BBox, items: list[T], *, remove_used: bool = True
-        ) -> list[T]:
-            i = 0
-            x0, y0, x1, y1 = bbox.to_int()
-            used_items: list[Any] = []
-            while i < len(items):
-                item = items[i]
-                # TODO 必须有一个bbox
-                b = item.bbox.to_int()
-                if b[3] < y0:
-                    # 不需要再继续了
-                    break
-                # 先比较y更快，因为先排除            
-                if b[1] >= y0 and b[3] <= y1 and b[0] >= x0 and b[2] <= x1:
-                    used_items.append(item)
-                    if remove_used:
-                        del items[i]
-                    else:
-                        i += 1
-                else:
-                    i += 1
-            
-            
-            # 简单的排序？
-            Sorter.sort(used_items)
-            return used_items
-        
-        def get_objects(
-            bbox: BBox, items: list[T], *, remove_used: bool = True,ratio:float=0.7
-        ) -> list[T]:
-            i = 0
-            x0, y0, x1, y1 = bbox.to_int()
-            used_items: list[Any] = []
-            while i < len(items):
-                item = items[i]
-                # TODO 必须有一个bbox
-                b = item.bbox.to_int()
-                if b[3] < y0:
-                    # 不需要再继续了
-                    break
-                # 先比较y更快，因为先排除
-                x_bbox = bbox.intersect(b)
-                if x_bbox is not None and x_bbox.area2/b.area2>=ratio:            
-                #if b[1] >= y0 and b[3] <= y1 and b[0] >= x0 and b[2] <= x1:
-                    used_items.append(item)
-                    if remove_used:
-                        del items[i]
-                    else:
-                        i += 1
-                else:
-                    i += 1
-            
-            
-            # 简单的排序？
-            Sorter.sort(used_items)
-            return used_items
-        items = sorted(items, key=lambda item: item.bbox.y1, reverse=True)
-        total = len(items)
-        for ratio in [0.7,0.6,0.5]:
-            if not items:
-                break
-            for cell in self.cells:
-                # TODO 如果是来自pdf解析的，可能会容易一些
-                # 如果是来自ocr的，获得的字符串可能跨单元格的，就需要切开
-                # TODO 对于和边界线重叠的，还需要仔细调整
-                # 如果是几十页的，单元格很多的，这一步速度很慢,2000*2000多个需要7秒的，如果是20个表格，还需要每次累加
-                # 如果不使用remove而是get，2000*2000=4百万，耗时18秒，每4.5秒执行100万次
-                # cell.objects = cell.bbox.adjust(dx=2,dy=2).remove(items)
-                if items:
-                    cell.objects.extend(get_objects(cell.bbox.expand(dx=1, dy=1), items,ratio=ratio))
-                else:
-                    break
-        
-
-        
-        if len(items) > 0:
-            # 如果是跨页表格合并，不应该执行到这里，因为使用的是cell的bbox，已经调整了bbox
-            # 所以，这里处理的都是单页的表格，单元格的数量不会太多，速度很快
-            #TODO 有些可能是靠近边界的空格，可以去掉的，怎么知道是空格？
-            from .base import KChar
-            space_items:list[Any]=[]
-            for item in items:
-                if isinstance(item,KChar) and item.text.isspace():
-                    space_items.append(item)
-
-            self._logger.warning(
-                "有items没有被填充到表格，total=%s,remain=%s,spaces=%s", total, len(items),len(space_items)
-            )
-
-            lists.remove(items,space_items,use_is=True)
-
-            if debugger.allow("info"):
-                with debugger.group("items"):
-                    for i, item in enumerate(items):
-                        debugger.console.print(i, item.bbox)
-            
-            # 一般就1-2个会溢出
-            for item in items:
-                # 主要考虑左右溢出的情况，如：
-                # ---|-  =>溢出了一些，需要判断是在左边还是在右边
-                overlapped_cells: list[tuple[float, Cell]] = []
-                b1 = item.bbox
-                for cell in self.cells:
-                    b2 = cell.bbox
-                    if b1.y0 >= b2.y0 and b1.y1 <= b2.y1:
-                        dx0 = b1.x0 - b2.x0
-                        dx1 = b1.x1 - b2.x1
-                        if dx0 <= 0 and dx1 >= 0:
-                            # -|--|-
-                            overlapped_cells.append((b2.width, cell))
-                        elif dx0 <= 0 and b1.x1 > b2.x0:
-                            # -|-- |
-                            overlapped_cells.append((b1.x1 - b2.x0, cell))
-                        elif dx1 >= 0 and b1.x0 < b2.x1:
-                            # |  --|-
-                            overlapped_cells.append((b2.x1 - b1.x0, cell))
-                        else:
-                            pass
-
-                        if len(overlapped_cells) > 1:
-                            # 正常情况下只会跨2个，超过就不需要再计算了，当然也可以去掉判断
-                            break
-                    pass
-
-                if len(overlapped_cells) > 0:
-                    overlapped_cells.sort(key=lambda obj: obj[0], reverse=True)
-                    _, cell = overlapped_cells[0]
-                    # 需要只是有一半距离才算？否则抛弃掉？
-                    cell.objects.append(item)
-                    self._logger.warning(
-                        "overflow item ,cell.bbox=%s,item.bbox=%s",
-                        cell.bbox,
-                        item.bbox,
-                    )
-                else:
-                    pass
 
 
 @dataclass

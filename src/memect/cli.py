@@ -1,26 +1,47 @@
 # coding=utf-8
 import json
 import os
-from pathlib import Path
 import re
 import sys
-from typing import Annotated, Any, Literal, Sequence
+from pathlib import Path
+from typing import Annotated, Any, Final, Literal, Sequence
 
 import httpx
 import typer
 
-from .pdf.base import Backend, OCRMode, ParseMode, TableMode
+from .pdf.base import Backend, OCRMode, ParseMode, TableMode, TreeBackend
 
-app = typer.Typer()
+app:Final= typer.Typer()
+_DOCTOR_DEFAULT = "__ppx_default_doctor__"
+_AGENT_DEFAULT = "./agent.json"
 
 
-def ensure_packages(
+def _normalize_argv(argv: list[str]) -> None:
+    if "parse" not in argv or ("--doctor" not in argv and "--agent" not in argv):
+        return
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--doctor":
+            next_index = index + 1
+            if next_index >= len(argv) or argv[next_index].startswith("-"):
+                argv.insert(next_index, _DOCTOR_DEFAULT)
+                index += 1
+        elif item == "--agent":
+            next_index = index + 1
+            if next_index >= len(argv) or argv[next_index].startswith("-"):
+                argv.insert(next_index, _AGENT_DEFAULT)
+                index += 1
+        index += 1
+
+
+def _ensure_packages(
     installed_packages: Sequence[str],
     uninstalled_packages: Sequence[str] | None = None,
     tool: str | None = None,
 ):
-    import subprocess
     import shutil
+    import subprocess
     import sys
     from importlib import metadata
 
@@ -153,6 +174,75 @@ def _parse_llm(s: str) -> dict[str, Any]:
         return json.loads(s)
 
 
+def _set_custom_values(
+    settings: dict[str, Any], text: str | dict[str, Any] | None, prefix: str
+):
+    if not text:
+        return
+    if isinstance(text, str):
+        data = json.loads(text)
+    else:
+        data = text
+    for k, v in data.items():
+        settings[f"{prefix}.{k}"] = v
+
+
+def _apply_formula_settings(
+    formula: str | None, custom_settings: dict[str, Any], params: Any | None = None
+) -> None:
+    if not formula:
+        return
+    if formula == "no":
+        if params is not None:
+            params.formula = False
+    elif formula in ("paddle", "glm"):
+        custom_settings["model_manager.executors.formula.model"] = formula
+    elif formula == "mfr":
+        custom_settings["model_manager.executors.formula.model"] = "formula-mfr"
+    elif formula == "pp":
+        custom_settings["model_manager.executors.formula.model"] = "formula-pp"
+    else:
+        formula_args = _parse_llm(formula)
+        if formula_args["name"] not in ("paddle", "glm"):
+            raise ValueError("formula llm只支持paddle或者glm")
+        custom_settings["model_manager.executors.formula.model"] = formula_args["name"]
+        custom_settings[
+            f"model_manager.models.{formula_args['name']}.kwargs.model"
+        ] = formula_args["model"]
+        custom_settings[
+            f"model_manager.models.{formula_args['name']}.kwargs.client.base_url"
+        ] = formula_args["base_url"]
+        if formula_args.get("api_key"):
+            custom_settings[
+                f"model_manager.models.{formula_args['name']}.kwargs.client.api_key"
+            ] = formula_args["api_key"]
+
+def _detect_gpu() -> dict[str, bool]:
+    import shutil
+    import subprocess
+
+    result: dict[str, bool] = {"nvidia": False, "cann": False}
+    # 检测 NVIDIA
+    try:
+        nvidia_smi = shutil.which("nvidia-smi")
+        if nvidia_smi:
+            out = subprocess.run([nvidia_smi], capture_output=True, text=True)
+            result["nvidia"] = out.returncode == 0
+    except FileNotFoundError:
+        result["nvidia"] = False
+
+    # 检测 昇腾 CANN
+    try:
+        npu_smi = shutil.which("npu-smi")
+        if npu_smi:
+            out = subprocess.run([npu_smi, "info"], capture_output=True, text=True)
+            result["cann"] = out.returncode == 0
+    except FileNotFoundError:
+        # 兜底：检查设备文件
+        result["cann"] = os.path.exists("/dev/davinci_manager")
+
+    return result
+
 @app.command()
 def start(
     host: Annotated[str | None, typer.Option(help="监听地址")] = None,
@@ -214,27 +304,25 @@ def parse(
         ),
     ] = 0,
     pages: Annotated[str | None, typer.Option(help="页码范围，如 1-3,5")] = None,
-    backend: Annotated[Backend | None, typer.Option()] = None,
+    backend: Annotated[Backend | None, typer.Option(help='表示使用哪个后台执行')] = None,
     llm: Annotated[
         str | None,
         typer.Option(
             help='使用指定的llm解析，可以为url，或者json格式，如：{"name":"deepseek","base_url":"","api_key":""}'
         ),
     ] = None,
-    # deepseek:Annotated[str|None,typer.Option(help="")]=None,
-    # paddle:Annotated[str|None,typer.Option(help="")]=None,
-    # glm:Annotated[str|None,typer.Option(help="")]=None,
-    mode: Annotated[ParseMode | None, typer.Option(help="")] = None,
-    ocr: Annotated[OCRMode | None, typer.Option(help="")] = None,
-    table: Annotated[TableMode | None, typer.Option(help="")] = None,
+    mode: Annotated[ParseMode | None, typer.Option(help="仅仅解析页，或者解析章节树")] = None,
+    ocr: Annotated[OCRMode | None, typer.Option(help="如何使用ocr")] = None,
+    table: Annotated[TableMode | None, typer.Option(help="如何解析表格")] = None,
     formula:Annotated[str|None,typer.Option(help='可以指定解析公式的paddle/glm的url，或者no|pp|mfr|paddle|glm，指定paddle/glm，需要先配置url，no表示不解析公式，仅仅保存为图片')]=None,
     # remove_watermark:Annotated[bool|None,typer.Option(help='设置是否需要清除水印')]=None,
+    tree:Annotated[TreeBackend|None,typer.Option(help='如何解析章节树')]=None,
     # all:Annotated[bool,typer.Option()]=None,
-    docx: Annotated[bool | None, typer.Option(help="")] = None,
-    pptx: Annotated[bool | None, typer.Option(help="")] = None,
-    md: Annotated[bool | None, typer.Option(help="")] = None,
-    html: Annotated[bool | None, typer.Option(help="")] = None,
-    doc_json: Annotated[bool | None, typer.Option("--json", help="")] = None,
+    md: Annotated[bool | None, typer.Option(help="生成markdown，默认为true")] = None,
+    doc_json: Annotated[bool | None, typer.Option("--json", help="输出json，默认为true")] = None,
+    docx: Annotated[bool | None, typer.Option(help="生成docx，默认为false")] = None,
+    pptx: Annotated[bool | None, typer.Option(help="生成pptx，默认为false")] = None,
+    html: Annotated[bool | None, typer.Option(help="生成html，默认为false")] = None,
     cpu: Annotated[
         Literal["all", "ocr", "layout","table","formula"] | None,
         typer.Option(help="强制使用cpu，即使当前有gpu"),
@@ -256,7 +344,7 @@ def parse(
     dev: Annotated[
         bool | None,
         typer.Option(
-            help="开发模式，保存中间结果和使用缓存结果，如果两次之间参数改变过大，建议删除缓存"
+            help="开发模式，保存中间结果和使用缓存结果，如果两次之间参数改变过大，需要先删除缓存"
         ),
     ] = None,
     debug: Annotated[
@@ -269,25 +357,24 @@ def parse(
         Path | None, typer.Option(help="解析参数文件，JSON 文件")
     ] = None,
     dry: Annotated[bool, typer.Option(help="表示仅仅测试设置参数等，不执行")] = False,
+    doctor_text: Annotated[
+        str | None,
+        typer.Option(
+            "--doctor",
+            help="解析后诊断。可不带说明，也可写：--doctor '解析内容太少'",
+        ),
+    ] = None,
+    agent: Annotated[
+        Path,
+        typer.Option("--agent", help="agent 配置文件，仅在 --doctor 时使用"),
+    ] = Path("./agent.json"),
 ) -> None:
     """解析 PDF 文件"""
-    from .base.config import setup, parse_kvs
+    from .base.config import parse_kvs, setup
     from .base.debug import XDebugger
+    from .base.utils import console
     from .pdf.base import KDocumentFactory, ParseParams
     from .pdf.parser import Parser
-    from .base.utils import console
-
-    def set_custom_values(
-        settings: dict[str, Any], text: str | dict[str, Any] | None, prefix: str
-    ):
-        if not text:
-            return
-        if isinstance(text, str):
-            data = json.loads(text)
-        else:
-            data = text
-        for k, v in data.items():
-            settings[f"{prefix}.{k}"] = v
 
     custom_settings: dict[str, Any] = {}
     log_custom_settings: dict[str, Any] = {}
@@ -297,53 +384,26 @@ def parse(
         log_custom_settings.update(parse_kvs(log_kvs))
     
     params = ParseParams.create(params_file or params_text)
-
     if llm:
         llm_args = _parse_llm(llm)
         name = llm_args.pop("name")
         backend = Backend(name)
-        set_custom_values(custom_settings, llm_args, f"pdf_parser.{name}.model")
+        _set_custom_values(custom_settings, llm_args, f"pdf_parser.{name}.model")
     else:
         # 常用的设置，更加简便
         # set_custom_values(custom_settings,deepseek,'pdf_parser.deepseek.model')
         # set_custom_values(custom_settings,paddle,'pdf_parser.paddle.model')
         # set_custom_values(custom_settings,glm,'pdf_parser.glm.model')
         pass
-
-
-
-    if formula:
-        if formula == 'no':
-            params.formula=False
-        elif formula in ('paddle','glm'):
-            custom_settings['model_manager.executors.formula.model']=formula
-        elif formula == 'mfr':
-            custom_settings['model_manager.executors.formula.model']='formula-mfr'
-        elif formula =='pp':
-            custom_settings['model_manager.executors.formula.model']='formula-pp'
-        else:
-            formula_args = _parse_llm(formula)
-            if formula_args['name'] not in ('paddle','glm'):
-                raise ValueError('')
-            custom_settings['model_manager.executors.formula.model']=formula_args['name']
-            custom_settings[f'model_manager.models.{formula_args['name']}.model']=formula_args['model']
-            custom_settings[f'model_manager.models.{formula_args['name']}.client.base_url']=formula_args['base_url']
-            
-
+    _apply_formula_settings(formula, custom_settings, params)
 
     if parallel is not None:
         # 如果使用gpu，将需要更大的内存
-        for n in ["ocr", "layout", "formula", "table_det"]:
+        for n in ["ocr", "layout", "formula", "table"]:
             custom_settings[f"model_manager.executors.{n}.max_workers"] = parallel
 
     _set_device(cpu, cuda=cuda)
 
-    setup(settings=custom_settings, conf_dir=conf)
-
-    if debug:
-        XDebugger.setup()
-
-    
     if dev is not None:
         params.dev = dev
     if backend is not None:
@@ -354,6 +414,7 @@ def parse(
 
     if pages:
         params.pagenos = _parse_pages(pages)
+    
 
     # if remove_watermark is not None:
     # params.remove_watermark=remove_watermark
@@ -362,6 +423,9 @@ def parse(
         params.ocr = ocr
     if table is not None:
         params.table = table
+    
+    if tree is not None:
+        params.tree.backend = tree
 
     if pptx is not None:
         params.pptx = pptx
@@ -376,6 +440,70 @@ def parse(
     
     if html is not None:
         params.html = html
+
+    docs: list[KDocumentFactory] = []
+
+    def enum_value(value: Any) -> Any:
+        return value.value if hasattr(value, "value") else value
+
+    def factory_out_dirs(items: Sequence[KDocumentFactory]) -> list[Path]:
+        result: list[Path] = []
+        for item in items:
+            result.append(
+                Path(item.out_dir) if item.out_dir else Path(f"{item.file}.out")
+            )
+        if not result:
+            if out_dir is not None:
+                result.append(out_dir)
+            else:
+                result.append(Path(f"{file}.out"))
+        return result
+
+    def run_parse_doctor(error: BaseException | None = None):
+        from .agent.parse_doctor import (
+            ParseDoctor,
+            ParseDoctorArgs,
+            format_report_console,
+        )
+
+        problem = (
+            "parse diagnosis"
+            if doctor_text is None or doctor_text == _DOCTOR_DEFAULT
+            else doctor_text
+        )
+        report = ParseDoctor(
+            ParseDoctorArgs(
+                problem=problem,
+                file=file,
+                out_dirs=factory_out_dirs(docs),
+                conf_dir=conf,
+                out_dir=out_dir,
+                as_doc=as_doc,
+                pages=pages,
+                backend=enum_value(params.backend),
+                llm=llm,
+                mode=enum_value(params.mode),
+                ocr=enum_value(params.ocr),
+                table=enum_value(params.table),
+                formula=formula
+                if formula is not None
+                else ("no" if not params.formula else None),
+                tree=enum_value(params.tree.backend),
+                cpu=cpu,
+                cuda=cuda,
+                params_text=params_text,
+                params_file=params_file,
+                custom_settings=custom_settings,
+                params_snapshot=params.model_dump(mode="json"),
+                parse_failed=error is not None,
+                error=error,
+                command=sys.argv,
+                agent_config=agent,
+            )
+        ).run()
+        console.rule("parse doctor")
+        console.print(format_report_console(report))
+        return report
 
     # 表示为多个文件，需要并行吗？可能需要比较多的内存
     def get_docs(dir_: Path):
@@ -401,18 +529,196 @@ def parse(
                     pass
 
     # 考虑到文件数不会太多，为了获得总数，使用list
-    if dry:
-        docs = list(get_docs(file))
-        console.print(params)
-        console.log(f"共需要解析:{len(docs)}")
+    try:
+        setup(settings=custom_settings, conf_dir=conf)
 
-    else:
-        # 如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
-        # 如果是远程，和正常一样调用
-        try:
-            Parser.batch(list(get_docs(file)), max_workers=max_workers)
-        finally:
-            pass
+        if debug:
+            XDebugger.setup()
+
+        docs = list(get_docs(file))
+        if dry:
+            console.print(params)
+            console.log(f"共需要解析:{len(docs)}")
+            if doctor_text is not None:
+                run_parse_doctor()
+        else:
+            # 如果已经启动了apiserver，可以在server执行，如果又是本地，可以直接读写文件，避免上传下载
+            # 如果是远程，和正常一样调用
+            Parser.batch(docs, max_workers=max_workers)
+            if doctor_text is not None:
+                run_parse_doctor()
+    except Exception as e:
+        if doctor_text is not None:
+            run_parse_doctor(error=e)
+            raise typer.Exit(code=1) from e
+        raise
+
+
+@app.command()
+def chapter(
+    out_dir: Annotated[
+        Path,
+        typer.Argument(help="解析输出目录，需包含 tree.md（如 a.pdf.out）"),
+    ],
+    agent: Annotated[
+        Path,
+        typer.Option("--agent", help="agent 配置文件"),
+    ] = Path("./agent.json"),
+    max_iter: Annotated[
+        int, typer.Option(help="最大迭代轮数")
+    ] = 4,
+    threshold: Annotated[
+        int, typer.Option(help="收敛分数阈值（0-100）")
+    ] = 85,
+) -> None:
+    """基于 tree.md 自迭代生成一级章节划分"""
+    from .agent2 import ChapterIterAgent
+    from .base.utils import console
+
+    if not out_dir.is_dir():
+        console.print(f"[error] 目录不存在: {out_dir}")
+        raise typer.Exit(code=1)
+    if not (out_dir / "tree.md").is_file():
+        console.print(f"[error] 缺少 tree.md: {out_dir / 'tree.md'}")
+        raise typer.Exit(code=1)
+    if not agent.is_file():
+        console.print(f"[error] agent 配置不存在: {agent}")
+        raise typer.Exit(code=1)
+
+    params_file = ChapterIterAgent(
+        out_dir=out_dir,
+        agent_json=agent,
+        max_iter=max_iter,
+        score_threshold=threshold,
+    ).run()
+    console.rule("chapter iter")
+    console.print(f"chapter-params: {params_file}")
+    console.print(f"summary: {out_dir / 'agent2' / 'summary.md'}")
+
+
+@app.command()
+def doctor(
+    file: Annotated[
+        Path | None, typer.Argument(help="PDF 文件、图片文件或图片目录", exists=False)
+    ] = None,
+    out_dir: Annotated[
+        Path | None, typer.Option("-o", "--out-dir", help="输出目录")
+    ] = None,
+    as_doc: Annotated[
+        bool,
+        typer.Option(
+            help="当file为目录且这个为true，表示为一个文档连续的页面，如：1.png,2.png,3.png"
+        ),
+    ] = False,
+    pages: Annotated[str | None, typer.Option(help="页码范围，如 1-3,5")] = None,
+    backend: Annotated[Backend | None, typer.Option(help="表示使用哪个后台执行")] = None,
+    llm: Annotated[
+        str | None,
+        typer.Option(
+            help='使用指定的llm解析，可以为url，或者json格式，如：{"name":"deepseek","base_url":"","api_key":""}'
+        ),
+    ] = None,
+    mode: Annotated[ParseMode | None, typer.Option(help="仅仅解析页，或者解析章节树")] = None,
+    ocr: Annotated[OCRMode | None, typer.Option(help="如何使用ocr")] = None,
+    table: Annotated[TableMode | None, typer.Option(help="如何解析表格")] = None,
+    formula: Annotated[
+        str | None,
+        typer.Option(
+            help="可以指定解析公式的paddle/glm的url，或者no|pp|mfr|paddle|glm"
+        ),
+    ] = None,
+    tree: Annotated[TreeBackend | None, typer.Option(help="如何解析章节树")] = None,
+    cpu: Annotated[
+        Literal["all", "ocr", "layout", "table", "formula"] | None,
+        typer.Option(help="强制使用cpu，即使当前有gpu"),
+    ] = None,
+    cuda: Annotated[
+        str | None,
+        typer.Option(help="指定使用哪些gpu，等同于CUDA_VISIBLE_DEVICES的设置"),
+    ] = None,
+    kvs: Annotated[
+        list[str] | None, typer.Option("--set", help='如：--set server.host="0.0.0.0"')
+    ] = None,
+    conf: Annotated[Path, typer.Option(help="自定义的配置目录")] = Path("./conf"),
+    params_text: Annotated[
+        str | None, typer.Option("--params", help="解析参数，JSON 字符串")
+    ] = None,
+    params_file: Annotated[
+        Path | None, typer.Option(help="解析参数文件，JSON 文件")
+    ] = None,
+    check_network: Annotated[
+        bool, typer.Option(help="是否检查llm网络和/models接口")
+    ] = True,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="输出json格式结果")
+    ] = False,
+) -> None:
+    """诊断配置、环境和输入文件"""
+    from .agent.doctor import Doctor, DoctorArgs
+    from .base.config import parse_kvs
+    from .base.utils import console
+
+    custom_settings: dict[str, Any] = {}
+    if kvs:
+        custom_settings.update(parse_kvs(kvs))
+
+    report = Doctor(
+        DoctorArgs(
+            file=file,
+            out_dir=out_dir,
+            as_doc=as_doc,
+            pages=pages,
+            backend=backend,
+            llm=llm,
+            mode=mode,
+            ocr=ocr,
+            table=table,
+            formula=formula,
+            tree=tree,
+            params_text=params_text,
+            params_file=params_file,
+            conf_dir=conf,
+            custom_settings=custom_settings,
+            cpu=cpu,
+            cuda=cuda,
+            check_network=check_network,
+        )
+    ).run()
+
+    if json_output:
+        console.print_json(data=report.model_dump(mode="json"))
+        if not report.ok:
+            raise typer.Exit(code=1)
+        return
+
+    counts = {"ok": 0, "warning": 0, "error": 0, "skipped": 0}
+    for check in report.checks:
+        counts[check.status] += 1
+
+    console.rule("doctor")
+    console.print(
+        {
+            "ok": report.ok,
+            "summary": counts,
+        }
+    )
+    for check in report.checks:
+        console.print(
+            f"[{check.status}] {check.id} ({check.kind}) {check.message}"
+        )
+        if check.details:
+            console.print(check.details)
+        if check.suggested_patches:
+            console.print(
+                {
+                    "suggested_patches": [
+                        patch.model_dump(mode="json")
+                        for patch in check.suggested_patches
+                    ]
+                }
+            )
+    if not report.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -422,20 +728,20 @@ def pdf2image(
         Path | None, typer.Option("-o", "--out-dir", help="输出目录")
     ] = None,
     pages: Annotated[str | None, typer.Option(help="页码范围，如 1-3,5")] = None,
-    scale: Annotated[int | None, typer.Option(help="设置scale")] = None,
+    scale: Annotated[int, typer.Option(help="设置scale")] = 2,
     max_size: Annotated[
-        str | None, typer.Option(help="设置最大宽度和高度，如：2000，或者2000,10000")
-    ] = None,
-    chunk_size: Annotated[
-        int | None, typer.Option(help="设置每批的大小，如：10")
-    ] = None,
-    use_job: Annotated[
-        bool, typer.Option(help="设置使用job的方式执行，主要是测试作用")
-    ] = False,
-    dev: Annotated[bool, typer.Option(help="开发模式，跳过pdf2image")] = False,
+        tuple[int,int], typer.Option(help="设置最大宽度和高度，如：2000，或者2000,10000")
+    ] = (2000,2000),
 ):
+    from memect.base.config import setup
+    from memect.pdf.pdf2image import Pdf2Image,DrawerArgs
+    if out_dir is None:
+        out_dir = Path(str(file)+'.out').joinpath('pages')
+    pagenos = _parse_pages(pages)
 
-    pass
+    setup()
+    args = DrawerArgs(file=file,out_dir=out_dir,max_scale=scale,max_size=max_size)
+    Pdf2Image().execute(args,pagenos=pagenos)
 
 
 @app.command()
@@ -464,31 +770,7 @@ def download():
     download_all()
 
 
-def detect_gpu() -> dict[str, bool]:
-    import subprocess
-    import shutil
 
-    result: dict[str, bool] = {"nvidia": False, "cann": False}
-    # 检测 NVIDIA
-    try:
-        nvidia_smi = shutil.which("nvidia-smi")
-        if nvidia_smi:
-            out = subprocess.run([nvidia_smi], capture_output=True, text=True)
-            result["nvidia"] = out.returncode == 0
-    except FileNotFoundError:
-        result["nvidia"] = False
-
-    # 检测 昇腾 CANN
-    try:
-        npu_smi = shutil.which("npu-smi")
-        if npu_smi:
-            out = subprocess.run([npu_smi, "info"], capture_output=True, text=True)
-            result["cann"] = out.returncode == 0
-    except FileNotFoundError:
-        # 兜底：检查设备文件
-        result["cann"] = os.path.exists("/dev/davinci_manager")
-
-    return result
 
 
 @app.command(help="根据需求安装其他的包，避免冲突")
@@ -530,7 +812,7 @@ def install(
         # 如果是windows，安装onnxruntime-directml
         # 如果是linux，安装onnxruntime-gpu
         # 如果是mac，不需要安装
-        result = detect_gpu()
+        result = _detect_gpu()
         console.log(f"detect gpu:{result}")
         if result["cann"]:
             installed_packages.append("onnxruntime-cann")
@@ -556,7 +838,7 @@ def install(
     console.log(
         f"gpu={gpu},install packages={installed_packages},uninstall packages={uninstalled_packages}"
     )
-    ensure_packages(installed_packages, uninstalled_packages, tool=tool)
+    _ensure_packages(installed_packages, uninstalled_packages, tool=tool)
 
     # opencv-python
     uninstalled_packages = [
@@ -573,10 +855,11 @@ def install(
     console.log(
         f"install packages={installed_packages},uninstall packages={uninstalled_packages}"
     )
-    ensure_packages(installed_packages, uninstalled_packages, tool=tool)
+    _ensure_packages(installed_packages, uninstalled_packages, tool=tool)
 
 
 def main() -> None:
+    _normalize_argv(sys.argv)
     app()
 
 

@@ -541,18 +541,19 @@ class _TableLayout:
         #可以简单调整一下bboxes的对齐
 
         for page,bboxes in tables:
-            table = KTable(page,BBox.join(bboxes),row_num=1,col_num=len(bboxes))
+            cells:list[KCell]=[]
             for col_index,cell_bbox in enumerate(bboxes):
                 objs = cell_bbox.get(page.objects,ratio=0.9,remove=True)
                 cell=KCell(page,cell_bbox,row_index=0,col_index=col_index,objects=objs)
-                table.cells.append(cell)
+                cells.append(cell)
+            table = KTable(page,BBox.join(bboxes),cells=cells)
             table.adjust()
             page.objects.append(table)
             if debugger.allow('draw',page=page.number):
                 page.draw(
                     ('page',None),
                     ('columns',bboxes,'number'),
-                    ('table',table.get_lines()),
+                    ('table',table.get_lines2()),
                     show_type=False,
                     dir='debug/default/tablelayout'
                 )

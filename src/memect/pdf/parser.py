@@ -137,6 +137,8 @@ class Parser:
 
             if doc.params.markdown:
                 doc.write("doc.md", doc.markdown())
+                if doc.tree is not None:
+                    doc.write('tree.md',doc.tree.markdown())
 
             if doc.params.doc_json:
                 doc.write("doc.json", doc.jsonify())

@@ -198,8 +198,60 @@ attribution, and compliance notes.
 ```bash
 ppx parse <input_path> -o <output_path>
 
-# Example
-ppx parse report.pdf -o output/
+#这个选项的值，根据显存要求设置
+#--gpu-memory-utilization
+
+#需要大概20G
+#https://modelscope.cn/models/deepseek-ai/DeepSeek-OCR-2
+#不能够使用vllm==0.19.1执行，生成乱码
+$vllm serve deepseek-ai/DeepSeek-OCR-2 --served-model-name deepseek-ocr-2 \
+--logits-processors vllm.model_executor.models.deepseek_ocr:NGramPerReqLogitsProcessor \
+--mm-processor-cache-gb 0 \
+--no-enable-prefix-caching \
+--port 4000 \
+--gpu-memory-utilization 0.8 
+
+
+#需要10G
+#https://modelscope.cn/models/PaddlePaddle/PaddleOCR-VL
+$vllm serve PaddlePaddle/PaddleOCR-VL \
+  --served-model-name paddleocr-vl \
+  --trust-remote-code \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --gpu-memory-utilization 0.5\
+  --port 4001
+
+#需要10G
+#也可以启动1.5版本，模型名字，端口号等都一样，配置等就都不需要改变
+#https://modelscope.cn/models/PaddlePaddle/PaddleOCR-VL-1.5
+$vllm serve PaddlePaddle/PaddleOCR-VL-1.5 \
+  --served-model-name paddleocr-vl \
+  --trust-remote-code \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --gpu-memory-utilization 0.5\
+  --port 4001
+
+$vllm serve PaddlePaddle/PaddleOCR-VL-1.6 \
+  --served-model-name paddleocr-vl \
+  --trust-remote-code \
+  --max-num-batched-tokens 16384 \
+  --no-enable-prefix-caching \
+  --mm-processor-cache-gb 0 \
+  --gpu-memory-utilization 0.5\
+  --port 4001
+
+#https://modelscope.cn/models/ZhipuAI/GLM-OCR
+$vllm serve ZhipuAI/GLM-OCR \
+--served-model-name glmocr \
+--max-num-batched-tokens 16384 \
+--max-model-len 16384 \
+--speculative-config '{"method": "mtp", "num_speculative_tokens": 1}' \
+--gpu-memory-utilization 0.5 \
+--port 4002
 ```
 
 ### Parse a single file

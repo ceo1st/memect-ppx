@@ -1,14 +1,14 @@
 import logging
 import math
 import re
-from typing import Any, Final, Literal, Sequence
+from typing import Any, Callable, Final, Literal, Sequence, cast
 
 import PIL
 import PIL.ImageDraw
 import pymupdf
 
 from memect.base import images, utils
-from memect.base.bbox import BBox, Quad
+from memect.base.bbox import BBox, Point, Quad
 from memect.base.debug import XDebugger
 from memect.base.matrix import Matrix
 from memect.pdf.base import (
@@ -20,7 +20,293 @@ from memect.pdf.base import (
     KLine,
     KPage,
     KPDFFigure,
+    PDFLink,
+    PDFNode,
 )
+
+
+type _Path = dict[str, Any]
+
+
+class _MSRectCleaner:
+    logger = logging.getLogger(f"{__module__}.{__qualname__}")
+
+    def clean(self, paths: Sequence[_Path]) -> list[_Path]:
+        """
+        老版本 Word 生成带背景色表格时，会按固定顺序输出多个 filled rect。
+        这里把这些碎片 path 合并为一个矩形 path，避免后续被拆成伪表格线。
+        """
+
+        class _Rect:
+            def __init__(self, path: _Path):
+                self.path = path
+                self.bbox: BBox = path['bbox']#BBox(*path["bbox"])
+                self.stroke: Any = path.get("stroked")
+                self.fill: tuple[Any, Any] | None = (
+                    (path.get("color"), path.get("alpha"))
+                    if not path.get("stroked") and path.get("alpha", 0) > 0
+                    else None
+                )
+
+            def __getitem__(self, index: int) -> float:
+                return self.bbox[index]
+
+        def merge_paths(rects: Sequence[_Rect]) -> _Path:
+            bbox = BBox.join([rect.bbox for rect in rects])
+            #assert bbox is not None
+            path = dict(rects[0].path)
+            path["bbox"] = bbox
+            path["isrect"] = True
+            path["stroked"] = False
+            return path
+
+        rects = [_Rect(path) for path in paths]
+
+        def is_shape_like(*rects: _Rect) -> bool:
+            if len(rects) < 2:
+                raise ValueError("至少2个")
+            for i in range(1, len(rects)):
+                r1 = rects[i - 1]
+                r2 = rects[i]
+                if r1.stroke or r2.stroke:
+                    return False
+                if not r1.fill or not r2.fill:
+                    return False
+                if r1.fill != r2.fill:
+                    return False
+            return True
+
+        def get_left_right(i: int, w_d: float = 5, y_d: float = 2) -> list[_Rect] | None:
+            if i + 1 >= len(rects):
+                return None
+            left_rect = rects[i]
+            right_rect = rects[i + 1]
+            if not is_shape_like(left_rect, right_rect):
+                return None
+
+            b1 = left_rect.bbox
+            b2 = right_rect.bbox
+            w1 = b1[2] - b1[0]
+            w2 = b2[2] - b2[0]
+
+            if b2[0] <= b1[2]:
+                return None
+            if abs(w2 - w1) > w_d:
+                return None
+            if abs(b1[1] - b2[1]) > y_d or abs(b1[3] - b2[3]) > y_d:
+                return None
+            return [left_rect, right_rect]
+
+        def get_contents(
+            i: int, left: _Rect, right: _Rect, x_d: float = 2, y_d: float = 2
+        ) -> list[_Rect]:
+            b1 = left.bbox
+            b2 = right.bbox
+            inner_bbox = BBox(b1[2], b1[1], b2[0], b1[3])
+            inner_bbox2 = BBox(
+                inner_bbox.x0 - x_d,
+                inner_bbox.y0 - y_d,
+                inner_bbox.x1 + x_d,
+                inner_bbox.y1 + y_d,
+            )
+            contents = []
+            while i < len(rects):
+                rect = rects[i]
+                if not is_shape_like(rect, left):
+                    break
+                if not inner_bbox2.contains(rect.bbox):
+                    break
+                contents.append(rect)
+                i += 1
+
+            if contents and (contents[0].bbox[3] - inner_bbox[3]) > y_d:
+                return []
+            if contents and (contents[-1].bbox[1] - inner_bbox[1]) > y_d:
+                return []
+
+            for i, rect in enumerate(contents):
+                b = rect.bbox
+                if abs(b[0] - inner_bbox[0]) > x_d or abs(b[2] - inner_bbox[2]) > x_d:
+                    return []
+                if i > 0 and (contents[i].bbox[3] - contents[i - 1].bbox[1]) > y_d:
+                    return []
+            return contents
+
+        def is_top_or_bottom(
+            left: _Rect,
+            right: _Rect,
+            rect: _Rect,
+            is_top: bool = True,
+            x_d: float = 2,
+            y_d: float = 2,
+        ) -> bool:
+            bbox = rect.bbox
+            left_bbox = left.bbox
+            right_bbox = right.bbox
+            if abs(bbox[0] - left_bbox[0]) > x_d or abs(bbox[2] - right_bbox[2]) > x_d:
+                return False
+
+            if is_top:
+                n1 = 1
+                n2 = 3
+            else:
+                n1 = 3
+                n2 = 1
+            if abs(bbox[n1] - left_bbox[n2]) > y_d:
+                return False
+            return is_shape_like(rect, left, right)
+
+        def case1(i: int) -> int:
+            if i + 3 >= len(rects):
+                return -1
+            top = rects[i]
+            pair = get_left_right(i + 1)
+            if not pair:
+                return -1
+            left, right = pair
+            if not is_top_or_bottom(left, right, top, is_top=True):
+                return -1
+
+            bottom = rects[i + 3]
+            if is_top_or_bottom(left, right, bottom, is_top=False):
+                i += 4
+            else:
+                i += 3
+
+            contents = get_contents(i, left, right)
+            if not contents:
+                return -1
+            return i + len(contents)
+
+        def case2(i: int) -> int:
+            pair = get_left_right(i)
+            if not pair:
+                return -1
+            left, right = pair
+            if i + 2 >= len(rects):
+                return -1
+
+            bottom = rects[i + 2]
+            if is_top_or_bottom(left, right, bottom, is_top=False):
+                i += 3
+            else:
+                i += 2
+
+            contents = get_contents(i, left, right)
+            if not contents:
+                return -1
+            return i + len(contents)
+
+        def case3(i: int) -> int:
+            if i + 1 >= len(rects):
+                return -1
+            right = rects[i]
+            main = rects[i + 1]
+            if not (abs(right[3] - main[3]) <= 1 and abs(right[1] - main[1]) <= 1):
+                return -1
+            if abs(main[2] - right[0]) > 1:
+                return -1
+            if right[2] - right[0] > 3:
+                return -1
+            if main[2] - main[0] < 10:
+                return -1
+            if right[3] - right[1] < 9:
+                return -1
+            if not is_shape_like(main, right):
+                return -1
+            return i + 2
+
+        def case4(i: int, x_d: float = 2, y_d: float = 2) -> int:
+            if i + 3 >= len(rects):
+                return -1
+            top = rects[i]
+            right = rects[i + 1]
+            bottom = rects[i + 2]
+            contents = rects[i + 3]
+            if not is_shape_like(top, right, bottom, contents):
+                return -1
+            if abs(top[2] - right[2]) > x_d or right[2] - right[0] > 10 or right[0] < top[0]:
+                return -1
+            if abs(top[1] - right[3]) > y_d:
+                return -1
+            if abs(bottom[2] - top[2]) > x_d or abs(bottom[0] - top[0]) > x_d:
+                return -1
+            if abs(bottom[3] - right[1]) > y_d:
+                return -1
+            if abs(contents[0] - top[0]) > x_d or abs(contents[2] - right[0]) > x_d:
+                return -1
+            if abs(contents[3] - top[1]) > y_d or abs(contents[1] - bottom[3]) > y_d:
+                return -1
+            return i + 4
+
+        def case5(i: int, x_d: float = 2, y_d: float = 2) -> int:
+            if i + 3 >= len(rects):
+                return -1
+            top = rects[i]
+            left = rects[i + 1]
+            bottom = rects[i + 2]
+            contents = rects[i + 3]
+            if not is_shape_like(top, left, bottom, contents):
+                return -1
+            if abs(top[0] - left[0]) > x_d or left[2] - left[0] > 10 or left[2] > top[2]:
+                return -1
+            if abs(top[1] - left[3]) > y_d:
+                return -1
+            if abs(bottom[0] - top[0]) > x_d or abs(bottom[2] - top[2]) > x_d:
+                return -1
+            if abs(bottom[3] - left[1]) > y_d:
+                return -1
+            if abs(contents[2] - top[2]) > x_d or abs(contents[0] - left[2]) > x_d:
+                return -1
+            if abs(contents[3] - top[1]) > y_d or abs(contents[1] - bottom[3]) > y_d:
+                return -1
+            return i + 4
+
+        def case6(i: int, x_d: float = 2, y_d: float = 2) -> int:
+            if i + 2 >= len(rects):
+                return -1
+            left = rects[i]
+            contents1 = rects[i + 1]
+            contents2 = rects[i + 2]
+            if not is_shape_like(left, contents1, contents2):
+                return -1
+            if left[2] - left[0] > 10:
+                return -1
+            if abs(contents1[0] - contents2[0]) > x_d or abs(contents1[2] - contents2[2]) > x_d:
+                return -1
+            if abs(contents1[1] - contents2[3]) > y_d:
+                return -1
+            if abs(left[2] - contents1[0]) > x_d or abs(left[2] - contents2[0]) > x_d:
+                return -1
+            if abs(left[3] - contents1[3]) > y_d or abs(left[1] - contents2[1]) > y_d:
+                return -1
+
+            bbox = BBox.join([rect.bbox for rect in rects[i : i + 3]])
+            assert bbox is not None
+            if bbox[3] - bbox[1] < 10 or bbox[2] - bbox[0] < 10:
+                return -1
+            return i + 3
+
+        cases: list[Callable[[int], int]] = [case1, case2, case3, case4, case5, case6]
+        new_paths: list[_Path] = []
+        i = 0
+        while i < len(rects):
+            j = -1
+            for case in cases:
+                j = case(i)
+                if j != -1:
+                    break
+
+            if j != -1:
+                new_paths.append(merge_paths(rects[i:j]))
+                i = j
+            else:
+                new_paths.append(rects[i].path)
+                i += 1
+
+        if isinstance(paths, list):
+            paths[:] = new_paths
+        return new_paths
 
 
 class Parser:
@@ -65,12 +351,14 @@ class Parser:
 
     def parse(self, kdoc: KDocument):
         with pymupdf.Document(filename=kdoc.file, filetype="pdf") as doc:
-            # 在一个文档中，使用的字体和颜色不会太多，如果相同的使用同一个对象即可
             for kpage in kdoc.working_pages:
                 self._parse_page(doc, kpage)
+            
+            self._parse_toc(doc,kdoc)
 
     def _parse_page(self, doc: pymupdf.Document, kpage: KPage):
         self._parse_rawdict(doc, kpage)
+        self._parse_links(doc,kpage)
 
     def _parse_rawdict(self, doc: pymupdf.Document, kpage: KPage):
         page: Final = doc[kpage.number - 1]
@@ -300,26 +588,21 @@ class Parser:
             flags = flags | pymupdf.TEXT_IGNORE_ACTUALTEXT
 
         timer = utils.Timer.start()
-        timer.mark('start gettext')
-        result: dict[str, Any] = page.get_text("rawdict", flags=flags)
-        timer.mark('end gettext')
-        width = result["width"]
-        height = result["height"]
-        matrix: Final = Matrix.lt_to_lb((width, height), kpage.size)
+        with timer.watch('text'):
+            result: dict[str, Any] = page.get_text("rawdict", flags=flags)
+        #matrix: Final = Matrix.lt_to_lb((result["width"], result["height"]), kpage.size)
+        matrix:Final = kpage.to_lb()
         kpage.pdf_chars.clear()
         #kpage.pdf_paths.clear()
         kpage.pdf_lines.clear()
         kpage.pdf_rects.clear()
         
-        paths:list[Any]=[]
         for block in result["blocks"]:
             type_ = block["type"]
             if type_ == 0:
                 parse_text(block)
             elif type_ == 1:
                 parse_image(block)
-            elif type_ == 3:
-                paths.append(block)
             else:
                 pass
         
@@ -332,34 +615,17 @@ class Parser:
         if self._parse_figures(doc, kpage):
             return
         
-        if paths:
-            #因为有些文档用很多线来渲染图片，为了减少计算，把图片中的线给去掉
-            pass
-        
-        def clean_paths(paths:list[Any]):
-            #先清除无用的线，避免有几十万的时候增加计算量
-            rects:list[Any]=[]
-            lines:list[Any]=[]
-            for vobj in kpage.vobjects:
-                if vobj.is_figure() or vobj.is_seal() or vobj.is_chart():
-                    vobj.bbox.expand(dx=2,dy=2).get(paths,ratio=0.5,remove=True)
-                else:
-                    #在文本框和表格区域的保留
-                    pass
-            #然后就可以转换为线了
-            for path in paths:
-                bbox = path['bbox']
-                if bbox[2]-bbox[0]>=5 and bbox[3]-bbox[1]>=5:
-                    if not path['stroked']:
-                        rects.append(path)
-                else:
-                    lines.append(path)
-            
-            #如果是矩形，可以合并？
-            #如果是线，合并
-
         if use_paths:
-            self._parse_paths(kpage,paths)
+            paths:list[Any]=[]
+            for block in result["blocks"]:
+                type_ = block["type"]
+                if type_ == 3:
+                    #从左上角坐标转换为左下角坐标
+                    block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
+                    paths.append(block)
+                else:
+                    pass
+            self._parse_paths(doc,kpage,paths)
         else:
             # 如果没有一同返回path，就需要单独解析
             #page.get_cdrawings()
@@ -501,7 +767,7 @@ class Parser:
         self._logger.warning('第%s页，图片=%s,没有文字遮挡的透明图片=%s',kpage.number,len(figures),len(no_chars_images))
         return False
 
-    def _parse_paths(self,page:KPage,paths:Sequence[Any]):
+    def _parse_paths(self,doc:pymupdf.Document,page:KPage,paths:Sequence[Any]):
         debugger = self._debugger.bind(page=page.number)
         raw_paths:Final=paths
 
@@ -532,9 +798,8 @@ class Parser:
                     pass
                 else:
                     vobj.bbox.expand(dx=2,dy=2).get(paths,ratio=0.5,remove=True)
-
+                    
             return paths
-        
         
         
         def split(paths:list[Any]):
@@ -549,22 +814,133 @@ class Parser:
                     line_paths.append(path)
             return line_paths,rect_paths
 
-        timer=utils.Timer.start()
-        timer.mark('start filter')
-        paths = filter1(paths)
-        paths = filter2(paths)
-        line_paths,rect_paths = split(paths)
-        timer.mark('end filter')
-        timer.mark('start merge')
-        h_lines,v_lines = LineParser().parse(page,line_paths)
-        page.pdf_lines.clear()
-        page.pdf_lines.extend(h_lines)
-        page.pdf_lines.extend(v_lines)
+        def remove_underlines(paths: Sequence[Any]) -> list[Any]:
+            """删除使用 path 渲染的文字下划线，避免后续被识别为表格线。"""
+            if not paths or not page.pdf_chars:
+                return list(paths)
 
-        #矩形的合并，目的是为了能够还原背景，非常复杂的计算
-        page.pdf_rects.clear()
-        page.pdf_rects.extend([])
-        timer.mark('end merge')
+
+            items = [(path,path['bbox']) for path in paths]
+
+            def is_h(bbox: BBox) -> bool:
+                return bbox.width >= 2 and bbox.height <= 3
+
+            def is_v(bbox: BBox) -> bool:
+                return bbox.height >= 2 and bbox.width <= 3
+
+            h_items = [(path, bbox) for path, bbox in items if is_h(bbox)]
+            v_bboxes = [bbox for _, bbox in items if is_v(bbox)]
+            if not h_items:
+                return list(paths)
+
+            def close_y(b1: BBox, b2: BBox) -> bool:
+                return abs(b1.cy - b2.cy) <= 2
+
+            def group_h_lines() -> list[list[tuple[Any, BBox]]]:
+                groups: list[list[tuple[Any, BBox]]] = []
+                for item in sorted(h_items, key=lambda a: (round(a[1].cy), a[1].x0)):
+                    _, bbox = item
+                    if not groups:
+                        groups.append([item])
+                        continue
+
+                    group = groups[-1]
+                    group_bbox = BBox.join([b for _, b in group])
+                    gap = bbox.x0 - group_bbox.x1
+                    if close_y(group_bbox, bbox) and gap <= 4:
+                        group.append(item)
+                    else:
+                        groups.append([item])
+                return groups
+
+            def over_x(b1: BBox, b2: BBox) -> float:
+                return max(0, min(b1.x1, b2.x1) - max(b1.x0, b2.x0))
+
+            def intersects_vline(bbox: BBox) -> bool:
+                y = bbox.cy
+                for vb in v_bboxes:
+                    if (
+                        vb.x0 - 1 <= bbox.x1
+                        and vb.x1 + 1 >= bbox.x0
+                        and vb.y0 - 1 <= y <= vb.y1 + 1
+                    ):
+                        return True
+                return False
+
+            def covered_chars(bbox: BBox) -> list[KChar]:
+                chars: list[KChar] = []
+                for char in page.pdf_chars:
+                    cb = char.bbox
+                    if over_x(bbox, cb) <= 0:
+                        continue
+                    # 左下坐标系中，文字下划线通常位于字符 bbox 下边缘附近。
+                    if abs(bbox.cy - cb.y0) <= max(2, cb.height * 0.3):
+                        chars.append(char)
+                return chars
+
+            def is_underline_group(group: list[tuple[Any, BBox]]) -> bool:
+                bbox = BBox.join([b for _, b in group])
+                if bbox.width < 6 or bbox.height > 3:
+                    return False
+                if bbox.width >= page.width * 0.6:
+                    return False
+                if intersects_vline(bbox):
+                    return False
+
+                chars = covered_chars(bbox)
+                if len(chars) < 2:
+                    return False
+
+                text_bbox = BBox.join2(chars)
+                if bbox.width > text_bbox.width + max(10, text_bbox.height):
+                    return False
+                if over_x(bbox, text_bbox) / max(1, bbox.width) < 0.6:
+                    return False
+
+                return True
+
+            underline_paths: set[int] = set()
+            for group in group_h_lines():
+                if is_underline_group(group):
+                    for path, _ in group:
+                        self._logger.warning('第%s页的表格有下划线:%s',page.number,path)
+                        underline_paths.add(id(path))
+            
+            if not underline_paths:
+                return list(paths)
+            
+            return [path for path in paths if id(path) not in underline_paths]
+
+        def is_ms()->bool:
+            producer:str|None = cast(str|None,doc.metadata.get('producer')) # type: ignore
+            if not producer:
+                return False
+            producer = producer.lower()
+            #2007的才处理？
+            return bool(re.search(r'microsoft',producer) and re.search(r'word[\s]*2007',producer))
+        
+        timer=utils.Timer.start()
+        with timer.watch('filter'):
+            paths = filter1(paths)
+            paths = filter2(paths)
+            #TODO 后续为了提高速度，可以检查是否为：Creator: Microsoft® Office Word 2007 等制作的pdf
+            #这样减少不必要的判断（虽然可能这个信息被删除了，导致漏判）
+            if is_ms():
+                paths = _MSRectCleaner().clean(paths)
+            line_paths,rect_paths = split(paths)
+
+        #删除下划线
+        line_paths = remove_underlines(line_paths)
+        
+        with timer.watch('merge'):
+            h_lines,v_lines = LineParser().parse(page,line_paths)
+            page.pdf_lines.clear()
+            page.pdf_lines.extend(h_lines)
+            page.pdf_lines.extend(v_lines)
+
+            #矩形的合并，目的是为了能够还原背景，非常复杂的计算
+            page.pdf_rects.clear()
+            page.pdf_rects.extend([])
 
         if debugger.allow('info'):
             debugger.print(f'第{page.number}页,耗时={timer.elapsed()}，原始路径={len(raw_paths)},line_paths={len(line_paths)},rect_paths={len(rect_paths)}，合并后=({len(h_lines)},{len(v_lines)})')
@@ -574,9 +950,11 @@ class Parser:
             def draw_paths(paths:Sequence[Any]):
                 img = page.image.copy()
                 draw = PIL.ImageDraw.Draw(img)
-                m = Matrix().scale(img.width / page.width, img.height / page.height)
+                #m = Matrix().scale(img.width / page.width, img.height / page.height)
+                m = page.to_lt(img.size)
                 for path in paths:
-                    x0, y0, x1, y1 = BBox.from_list(path["bbox"], matrix=m)
+                    #x0, y0, x1, y1 = path['bbox']#BBox.from_list(path["bbox"], matrix=m)
+                    x0, y0, x1, y1 = path['bbox'].transform(m)
                     # color = path['color']
                     if path["stroked"]:
                         draw.line((x0, y0, x1, y1), fill=(0, 0, 255), width=2)
@@ -585,9 +963,65 @@ class Parser:
                 return img
             lines=h_lines+v_lines
             page.draw(('page',None),('vobjects',page.vobjects),(f'raw paths={len(raw_paths)}',draw_paths(raw_paths)),(f'rect paths={len(rect_paths)}',draw_paths(rect_paths)),('rects',[]),(f'line paths={len(line_paths)}',draw_paths(line_paths)),(f'lines={len(h_lines)},{len(v_lines)}',lines),dir='debug/default/pymupdf')
+
+    def _parse_toc(self,doc:pymupdf.Document,kdoc:KDocument):
+        items = doc.get_toc(simple=False) # type: ignore
+        root = PDFNode()
+        for item in items:
+            node=PDFNode()
+            node.level=item[0]
+            node.title=item[1]
+            #1表示第一页，-1表示没有
+            node.page_number=item[2]
+            dest = item[3]
+            if dest['kind']==1:
+                #指向当前文档的某个页面的某个位置
+                #页码，0表示第一页
+                dest['page']
+                #为没有应用page.rotation前的坐标，如果页面应用了，这个也需要跟着变化
+                #pdf原始的值使用左下角坐标，但是pymupdf转换为左上角坐标，这里再转回来
+                page = kdoc.pages[node.page_number-1]
+                #TODO 后续还需要应用旋转
+                m=page.to_lb()
+                to=dest['to']
+                node.point=Point(to.x,to.y).transform(m)
+            elif dest['kind']==4:
+                #指向一个命名位置
+                dest['nameddest']
+                node.type='other'
+            else:
+                #其他的都是打开文件/跳转到其他pdf/或者打开uri
+                node.type='other'
+            root.get_last_node(node.level-1).add(node)
         
+        #最后去掉没有意义的
+        def clean(node:PDFNode):
+            if node.type!='title':
+                node.detach()
+            else:
+                for child in node.children:
+                    clean(child)
+        
+        clean(root)
+        kdoc.pdf_toc=root
 
+    def _parse_links(self,doc: pymupdf.Document, kpage: KPage):
+        page = doc.load_page(kpage.number-1)
+        #Annots中Subtype=Link
+        link = page.first_link
+        m = kpage.to_lb()
+        links:list[PDFLink]=[]
+        while link is not None:
+            dest = link.dest
+            if dest.kind==1:
+                #pymupdf已经转换为原点为左上角，现在需要转换为左下角
+                rect = link.rect.transform(m)
+                point = dest.lt.transform(m)
+                #print(link.xref,rect,dest.page,point)
+                links.append(PDFLink(BBox(rect.x0,rect.y0,rect.x1,rect.y1),dest.page,Point(point.x,point.y)))
 
+            link = link.next
+        kpage.pdf_links = tuple(links)
 
 class _Parser2:
     def _parse_texttrace(self, doc: pymupdf.Document, kpage: KPage):
@@ -1095,7 +1529,8 @@ class LineParser:
                 line_width = bbox[y1] - bbox[y0]
                 y = (bbox[y1] + bbox[y0]) / 2
             # 转换为左下角为原点
-            bbox = bbox.set((y0, y), (y1, y)).transform(page.to_lb())
+            #bbox = bbox.set((y0, y), (y1, y)).transform(page.to_lb())
+            bbox = bbox.set((y0, y), (y1, y))
             return KLine(page, bbox, color=color, width=line_width)
 
         def make_lines(groups: list[list[Any]], is_h: bool = True):

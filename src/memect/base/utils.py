@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -125,6 +126,14 @@ class Timer:
 
         elapseds["total"] = self.elapsed()
         return elapseds
+
+    @contextlib.contextmanager
+    def watch(self,name:str):
+        self.mark(f'start {name}')
+        try:
+            yield
+        finally:
+            self.mark(f'end {name}')
 
     @classmethod
     def start(cls) -> Self:
