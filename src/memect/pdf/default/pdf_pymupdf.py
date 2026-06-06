@@ -596,40 +596,45 @@ class Parser:
         #kpage.pdf_paths.clear()
         kpage.pdf_lines.clear()
         kpage.pdf_rects.clear()
-        
-        for block in result["blocks"]:
-            type_ = block["type"]
-            if type_ == 0:
-                parse_text(block)
-            elif type_ == 1:
-                parse_image(block)
-            else:
-                pass
+
+        with timer.watch('block'):
+            for block in result["blocks"]:
+                type_ = block["type"]
+                if type_ == 0:
+                    parse_text(block)
+                elif type_ == 1:
+                    parse_image(block)
+                else:
+                    pass
         
         if not kpage.pdf_chars:
             # 没有文字，就按图片解析，不管是什么样了
             self._logger.info("第%s页没有文字，不需要再解析", kpage.number)
             return
-
-        # 如果多个图片组成一个大图，一样按图片解析，不管图片是背景还是扫描（可能覆盖文字）
-        if self._parse_figures(doc, kpage):
-            return
         
-        if use_paths:
-            paths:list[Any]=[]
-            for block in result["blocks"]:
-                type_ = block["type"]
-                if type_ == 3:
-                    #从左上角坐标转换为左下角坐标
-                    block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
-                    paths.append(block)
-                else:
-                    pass
-            self._parse_paths(doc,kpage,paths)
-        else:
-            # 如果没有一同返回path，就需要单独解析
-            #page.get_cdrawings()
-            pass
+        with timer.watch('figure'):
+            # 如果多个图片组成一个大图，一样按图片解析，不管图片是背景还是扫描（可能覆盖文字）
+            if self._parse_figures(doc, kpage):
+                return
+        
+        with timer.watch('path'):
+            if use_paths:
+                paths:list[Any]=[]
+                for block in result["blocks"]:
+                    type_ = block["type"]
+                    if type_ == 3:
+                        #从左上角坐标转换为左下角坐标
+                        block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
+                        paths.append(block)
+                    else:
+                        pass
+                self._parse_paths(doc,kpage,paths)
+            else:
+                # 如果没有一同返回path，就需要单独解析
+                #page.get_cdrawings()
+                pass
+        
+        
 
     def _get_font(self, span: Any) -> KFont:
         #span={'flags':1,'font':'xxxx'}
@@ -677,6 +682,7 @@ class Parser:
             from shapely.geometry import box
             from shapely.ops import unary_union
 
+            bboxes = [b for b in bboxes if b[2]-b[0]>10 or b[3]-b[1]>10]
             # 如果需要再严格一点，获得
             # 使用page.rect还是page.bound()?
             page_box = box(*page.rect)
@@ -706,54 +712,66 @@ class Parser:
             return len(chars)>0
         
         debugger: Final = self._debugger.bind(page=kpage.number)
+        timer=utils.Timer.start()
         page = doc[kpage.number - 1]
         # 如果需要获得xref，这里需要通过digest来比较，而不是简单的/Im1 do => /Im1 1 0  => xref=1
         # 因为底层的实现没有返回渲染图片指令的name，无法根据name再获得xref，就只能够通过digest比较了
-        images: list[Any] = page.get_image_info()  # type: ignore
-        if is_full_page([image["bbox"] for image in images]):
-            return True
-        figures: list[KPDFFigure] = []
-        m = Matrix.lt_to_lb(kpage.size)
-        small_images: list[Any] = []
-        transparent_images: list[Any] = []
-        no_chars_images:list[Any]=[]
-        for image in images:
-            # number = image["number"]
-            # xref = image.get('xref',0)
-            transparent = image["has-mask"]
-            #bbox = image["bbox"]
-            bbox=BBox.from_list(image["bbox"], matrix=m)
-            if bbox.width <= 2 or bbox.height <= 2:
-                small_images.append(image)
-            elif transparent:
-                # TODO 不去掉也可以的
-                # 如果是透明的图片，也不要了，因为可能是普通的图，也可能是背景，
-                # 当然也可能是ocr文字（概率比较低，不应该去掉）
-                # 如果是背景，应该去掉，否则会认为是ocr文字，使用ocr处理，虽然也没有错，但是没有必要
-                if has_chars(bbox):
-                    # 这个例子使用带虚线的透明背景，应该去掉，因为不需要使用ocr
-                    # local/cases/test/16-线由小图片组成-解析非常耗时.pdf 52页
-                    transparent_images.append(image)
-                    #但是，如果有些表格有图片的，这些图片就需要保留
+        with timer.watch('get_image_info'):
+            #如果是1万多个小图片，如：微软的word2007制作的pdf，虚线使用小图片，需要1-2秒
+            images: list[Any] = page.get_image_info()  # type: ignore
+
+        #有些页面使用多个小图片组成，可能几百个
+        #但是，在有些情况下，虚线等也是使用小图片，可能为几万个，计算就非常非常的慢了
+        #
+        
+        with timer.watch('figure_as_page'):
+            if is_full_page([image["bbox"] for image in images]):
+                return True
+        
+        with timer.watch('figure'):
+            figures: list[KPDFFigure] = []
+            m = Matrix.lt_to_lb(kpage.size)
+            small_images: list[Any] = []
+            transparent_images: list[Any] = []
+            no_chars_images:list[Any]=[]
+            for image in images:
+                # number = image["number"]
+                # xref = image.get('xref',0)
+                transparent = image["has-mask"]
+                #bbox = image["bbox"]
+                raw_bbox = image['bbox']
+                if raw_bbox[2]-raw_bbox[0] <= 2 or raw_bbox[3]-raw_bbox[1] <= 2:
+                    small_images.append(image)
+                elif transparent:
+                    # TODO 不去掉也可以的
+                    # 如果是透明的图片，也不要了，因为可能是普通的图，也可能是背景，
+                    # 当然也可能是ocr文字（概率比较低，不应该去掉）
+                    # 如果是背景，应该去掉，否则会认为是ocr文字，使用ocr处理，虽然也没有错，但是没有必要
+                    bbox=BBox.from_list(image["bbox"], matrix=m)
+                    if has_chars(bbox):
+                        # 这个例子使用带虚线的透明背景，应该去掉，因为不需要使用ocr
+                        # local/cases/test/16-线由小图片组成-解析非常耗时.pdf 52页
+                        transparent_images.append(image)
+                        #但是，如果有些表格有图片的，这些图片就需要保留
+                    else:
+                        # 这个例子多数字符都是使用图片，就需要使用ocr
+                        # local/cases/test/文字都是小图片.pdf
+                        no_chars_images.append(image)
                 else:
-                    # 这个例子多数字符都是使用图片，就需要使用ocr
-                    # local/cases/test/文字都是小图片.pdf
-                    no_chars_images.append(image)
-            else:
-                # TODO 如果希望使用原始图片的，可以获得width/height，transform（用来计算是否左右旋转图片了，或者翻转了，或者直接就保留这个）
-                figure = KPDFFigure(
-                    kpage,
-                    BBox.from_list(image["bbox"], matrix=m).to_quad(),
-                    transparent=transparent,
+                    # TODO 如果希望使用原始图片的，可以获得width/height，transform（用来计算是否左右旋转图片了，或者翻转了，或者直接就保留这个）
+                    figure = KPDFFigure(
+                        kpage,
+                        BBox.from_list(image["bbox"], matrix=m).to_quad(),
+                        transparent=transparent,
+                    )
+                    figures.append(figure)
+            if len(small_images) > 0 or len(transparent_images) > 0:
+                self._logger.warning(
+                    "第%s页,小图片=%s,有文字透明图片=%s",
+                    kpage.number,
+                    len(small_images),
+                    len(transparent_images),
                 )
-                figures.append(figure)
-        if len(small_images) > 0 or len(transparent_images) > 0:
-            self._logger.warning(
-                "第%s页,小图片=%s,有文字透明图片=%s",
-                kpage.number,
-                len(small_images),
-                len(transparent_images),
-            )
         
         #保留pdf图片的目的，只是为了通过ocr补充需要，所以，如果可能为文字的，就保留
         kpage.pdf_figures.clear()
