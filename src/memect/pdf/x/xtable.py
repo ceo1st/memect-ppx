@@ -9,7 +9,7 @@ from memect.base import strs, utils
 from memect.base.bbox import BBox
 from memect.base.debug import XDebugger
 from memect.base.pattern import XPattern
-from memect.pdf.base import KCell, KFigure, KLine, KRect, KTable
+from memect.pdf.base import KCell, KFigure, KLine, KRect, KTable, KText
 
 from .xbase import XItem, XObject, XTable, XText, XTree
 
@@ -1368,7 +1368,8 @@ class _Builder:
                 # TODO 这个还是需要通过ai来完成
                 # 包括了矩形/线等
                 # cb2 = c2.body.content_bbox
-                cb2 = BBox.x_union(c2.body.texts())
+                #cb2 = BBox.x_union(c2.body.texts())
+                cb2 = BBox.join2([obj for obj in c2.objects if isinstance(obj,KText)],strict=False)
                 if cb2 is not None and cb2.y0 - c2.bbox.y0 >= c2.bbox.y1 - cb2.y1 + 10:
                     C(c2).merged = True
                     C(c2).reason = "c1和c2都跨行且有内容，但是c2剩余空间多"

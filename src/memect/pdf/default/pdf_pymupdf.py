@@ -26,6 +26,7 @@ from memect.pdf.base import (
 
 
 type _Path = dict[str, Any]
+type _FigureInfo = dict[str, Any]
 
 
 class _MSRectCleaner:
@@ -677,7 +678,7 @@ class Parser:
     def _parse_figures(self, doc: pymupdf.Document, kpage: KPage) -> bool:
         """解析图片，如果返回True，表示整个页面作为图片，不需要再解析"""
 
-        def is_full_page(bboxes: list[Any]):
+        def is_full_page(page:pymupdf.Page,bboxes: list[Any]):
             # 这里使用的坐标原点为页面左上角
             from shapely.geometry import box
             from shapely.ops import unary_union
@@ -712,8 +713,8 @@ class Parser:
             return len(chars)>0
         
         debugger: Final = self._debugger.bind(page=kpage.number)
-        timer=utils.Timer.start()
-        page = doc[kpage.number - 1]
+        timer:Final=utils.Timer.start()
+        page:Final= doc[kpage.number - 1]
         # 如果需要获得xref，这里需要通过digest来比较，而不是简单的/Im1 do => /Im1 1 0  => xref=1
         # 因为底层的实现没有返回渲染图片指令的name，无法根据name再获得xref，就只能够通过digest比较了
         with timer.watch('get_image_info'):
@@ -722,11 +723,14 @@ class Parser:
 
         #有些页面使用多个小图片组成，可能几百个
         #但是，在有些情况下，虚线等也是使用小图片，可能为几万个，计算就非常非常的慢了
-        #
+
         
         with timer.watch('figure_as_page'):
-            if is_full_page([image["bbox"] for image in images]):
+            if is_full_page(page,[image["bbox"] for image in images]):
                 return True
+        with timer.watch('figure_as_line'):
+            figure_lines = _FigureConnector().connect_figures(kpage, images)
+            kpage.pdf_lines.extend(figure_lines)
         
         with timer.watch('figure'):
             figures: list[KPDFFigure] = []
@@ -951,8 +955,9 @@ class Parser:
         line_paths = remove_underlines(line_paths)
         
         with timer.watch('merge'):
-            h_lines,v_lines = LineParser().parse(page,line_paths)
-            page.pdf_lines.clear()
+            h_lines,v_lines = _LineParser().parse(page,line_paths)
+            #可能已经存在了来自小图片组成的线
+            #page.pdf_lines.clear()
             page.pdf_lines.extend(h_lines)
             page.pdf_lines.extend(v_lines)
 
@@ -1474,7 +1479,7 @@ class _Parser2:
                     pass
 
 type _Rect = tuple[float, float, float, float]
-class LineParser:
+class _LineParser:
     """pdf的线可能是由很多个小矩形/小点等组成，这里合并为水平线和垂直线"""
     def __init__(
         self,
@@ -1690,7 +1695,7 @@ class LineParser:
         return [g for g in continuous_groups if is_valid(g)]
         # return continuous_groups
 
-class RectParser:
+class _RectParser:
     def __init__(self):
         super().__init__()
     
@@ -1703,98 +1708,112 @@ class RectParser:
         #|     |
         #--r5--
         pass
-class FigureConnector:
+
+
+type _Point = tuple[int, int]
+type _Segment = tuple[int, int, _FigureInfo]
+type _LineBBox = tuple[int, int, int, int]
+type _LineGroup = tuple[_LineBBox, list[_FigureInfo]]
+class _FigureConnector:
     """
     有些文件是使用很多小图片连接在一起画一条线，这些都是古老的pdf制作工具引起的了，新的pdf文件很少出现这种情况了。
 
     """
 
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
+    _min_line_length: Final = 5
+    _max_gap: Final = 2
+    _axis_tolerance: Final = 2
+
+
     def __init__(self):
         pass
 
-    def connect_figures(self, figures):
+    def connect_figures(self, page: KPage, figures: list[_FigureInfo]) -> list[KLine]:
         """
         使用image来画线，把图片连接起来，作为一条线处理
         """
-        h_map = {}
-        v_map = {}
 
-        def add(m, key, line):
-            # line=[s1,s2]
-            a = m.get(key, None)
-            if not a:
-                a = []
-                m[key] = a
-            a.append(line)
 
-        def calc_lines(m, fn):
-            lines = []
-            for k, v in m.items():
-                v = sorted(v, key=lambda a: a[0])
-                a = None
-                for b in v:
-                    # c=[s1,s2]
-                    if a is None:
-                        a = list(b)
-                    elif b[0] - a[1] <= 2:
-                        a[1] = max([a[1], b[1]])
+
+        def as_int(bbox: Sequence[float]) -> tuple[int, int, int, int]:
+            return (round(bbox[0]), round(bbox[1]), round(bbox[2]), round(bbox[3]))
+
+        def add(m: dict[int, list[_Segment]], key: int, point: _Point, figure: _FigureInfo) -> None:
+            line = m.get(key, None)
+            if line is None:
+                line = []
+                m[key] = line
+            line.append((min(point), max(point), figure))
+
+        def calc_lines(m: dict[int, list[_Segment]], is_h: bool) -> list[_LineGroup]:
+            lines: list[_LineGroup] = []
+            for k, segments in m.items():
+                sorted_segments = sorted(segments, key=lambda a: a[0])
+                current: list[_Segment] = []
+                start: int | None = None
+                end: int | None = None
+                for segment in sorted_segments:
+                    s0, s1, _ = segment
+                    if start is None or end is None:
+                        start, end = s0, s1
+                        current = [segment]
+                    elif s0 - end <= self._max_gap:
+                        end = max(end, s1)
+                        current.append(segment)
                     else:
-                        if a[1] - a[0] >= 5:
-                            lines.append(fn(k, a))
-                        a = list(b)
+                        if end - start >= self._min_line_length:
+                            bbox: _LineBBox = (start, k, end, k) if is_h else (k, start, k, end)
+                            lines.append((bbox, [seg[2] for seg in current]))
+                        start, end = s0, s1
+                        current = [segment]
 
-                if a is not None and a[1] - a[0] >= 5:
-                    lines.append(fn(k, a))
+                if start is not None and end is not None and end - start >= self._min_line_length:
+                    bbox = (start, k, end, k) if is_h else (k, start, k, end)
+                    lines.append((bbox, [seg[2] for seg in current]))
             return lines
 
         # 如果需要更加严格的，可以要求连接使用的图片都相同，暂时这里就忽略了
-        old_total=len(figures)
-        for figure in figures[:]:
-            bbox = figure['bbox']
+        old_total = len(figures)
+        h_map: dict[int, list[_Segment]] = {}
+        v_map: dict[int, list[_Segment]] = {}
+        for figure in figures:
+            bbox = cast(Sequence[float], figure["bbox"])
             x0, y0, x1, y1 = as_int(bbox)
             # 有些表有误差，不能够使用y0==y1,x0==x1
             # 因为一个图可能为垂直线或者水平线，所以需要添加到2个map中
-            used = False
-            if abs(y0 - y1) <= 1:
+            if abs(y0 - y1) <= self._axis_tolerance:
                 # 使用图片来显示水平线
-                y = min(y0,y1)
-                add(h_map, y, [x0, x1])
-                used = True
+                y = min(y0, y1)
+                add(h_map, y, (x0, x1), figure)
 
-            if abs(x0 - x1) <= 1:
+            if abs(x0 - x1) <= self._axis_tolerance:
                 # 垂直线
-                x = min(x0,x1)
-                add(v_map, x, [y0, y1])
-                used = True
-
-            if used:
-                figures.remove(figure)
+                x = min(x0, x1)
+                add(v_map, x, (y0, y1), figure)
         
-        h_lines = calc_lines(h_map, lambda k, a: [a[0], k, a[1], k])
-        v_lines = calc_lines(v_map, lambda k, a: [k, a[0], k, a[1]])
+        h_lines = calc_lines(h_map, True)
+        v_lines = calc_lines(v_map, False)
         # 这里作为线返回，还是作为一个图片返回，如：
         # {bbox:[],image:'',repeat:true}
-        lines = []
-        for b in h_lines + v_lines:
-            line = {
-                'bbox': b,
-                'stroke': {
-                    'width': 1,
-                    'color': [0, 0, 0]
-                },
-                # 标记是由图片组成的，方便debug
-                'source': 'figure'
-            }
+        lines: list[KLine] = []
+        used_figures: set[int] = set()
+        m = page.to_lb()
+        for b, line_figures in h_lines + v_lines:
+            #从左上角转换为左下角
+            bbox = BBox.from_list(b, matrix=m)
+            line = KLine(page, bbox)
             lines.append(line)
-        print(f'connect figures as line from={old_total} to={len(figures)} lines={len(lines)}')
-        #这里再删除很小的图片，因为begin_figure() 中没有清除
-        def is_small_figure(i,objs):
-            b = objs[i]['bbox']
-            if b[2]-b[0]<3 or b[3]-b[1]<3:
-                return True
-            else:
-                return False
-        removed_figures = remove_objects(figures,is_small_figure)
-        print(f'clean small figures={len(removed_figures)}')
+            used_figures.update(id(figure) for figure in line_figures)
 
+        if used_figures:
+            figures[:] = [figure for figure in figures if id(figure) not in used_figures]
+        if lines:
+            self._logger.info(
+                "connect figures as line from=%s to=%s lines=%s",
+                old_total,
+                len(figures),
+                len(lines),
+            )
+       
         return lines
