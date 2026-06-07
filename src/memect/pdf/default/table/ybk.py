@@ -72,7 +72,9 @@ class Parser:
         if table_lines:
             # 因为没有包括线的宽度，所以这里大一点
             bbox2 = BBox.join(table_lines)
-            if bbox2.expand(dx=5, dy=5).contains(bbox):
+
+            #dy需要大一些，是因为对象识别的时候，bbox可能大了一些，包含了部分的外部文本
+            if bbox2.expand(dx=5, dy=10).contains(bbox):
                 table_bbox = bbox2
             else:
                 # 虽然识别了线，但是可能只是局部的，也抛弃

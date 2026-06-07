@@ -86,7 +86,6 @@ class Liner:
         self._join_lines(_lines,x_d=options.join_x_d,y_d=options.join_y_d)
         #确保水平线和垂直相交，不存在“悬”线
         self._cross_lines(_lines,bbox,min_width=options.min_h_length,min_height=options.min_v_length,x_d=options.cross_x_d,y_d=options.cross_y_d)
-        
         #因为可能存在双层线，需要去掉，仅仅去掉四周的，也可以通过增加options.x_d,y_d，但是这样是对所有的线
         #-------line1------
         #-------line2------
@@ -439,6 +438,49 @@ class Liner:
             
 
 
+        def get_v_line(h_line:_Line,v_lines:Sequence[_Line])->_Line|None:
+            for v_line in v_lines:
+                if v_line[1]-2<=h_line[1]<=v_line[3]+2  and h_line[0]-2<=v_line[0]<=h_line[2]+2:
+                    #---|---
+                    print('=====>>',h_line,v_line)
+                    return v_line
+            return None
+        
+        def fix1(bbox:BBox,h_lines:list[_Line],v_lines:list[_Line],is_h:bool):
+            if len(h_lines)<2:
+                return
+            if is_h:
+                x0,y0,x1,y1=0,1,2,3
+            else:
+                x0,y0,x1,y1=1,0,3,2
+            #有些靠近表格边界的水平线误差较大，如下：
+            #--------------|
+            #-----------   |  =>误差较大
+            #--------------|
+            h_lines.sort(key=lambda line:line[x0])
+            ref_line = h_lines[0]
+            for line in h_lines[1:]:
+                d=line[x0]-ref_line[x0]
+                if 2<=d<=7 and get_v_line([line[x0],line[y0],line[x0],line[y0]],v_lines) is None:
+                    #-----ref_line---
+                    #  ---line------
+                    line[x0]=ref_line[x0]
+                elif d>7:
+                    break
+
+            h_lines.sort(key=lambda line:line[x1],reverse=True)
+            
+            ref_line=h_lines[0]
+            for line in h_lines[1:]:
+                d=ref_line[x1]-line[x1]
+                if 2<=d<=7 and get_v_line([line[x1],line[y0],line[x1],line[y0]],v_lines) is None:
+                    #-------ref_line------|
+                    #---------line-----   |
+                    line[x1]=ref_line[x1]
+                elif d>7:
+                    break
+
+
         h_lines,v_lines = self._split_lines(lines)
         remove_lines(h_lines,0,min_value=min_width)
         remove_lines(v_lines,1,min_value=min_height)
@@ -447,6 +489,11 @@ class Liner:
         if debug:
             h_lines.sort(key=lambda line:line[1])
             v_lines.sort(key=lambda line:line[0])
+        
+
+        #简单修正有些左右边界误差较大的
+        fix1(bbox,h_lines,v_lines,True)
+
         while True:
             if not fix_once(h_lines,v_lines,x_d=x_d,y_d=y_d):
                 break

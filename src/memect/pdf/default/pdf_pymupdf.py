@@ -1703,3 +1703,98 @@ class RectParser:
         #|     |
         #--r5--
         pass
+class FigureConnector:
+    """
+    有些文件是使用很多小图片连接在一起画一条线，这些都是古老的pdf制作工具引起的了，新的pdf文件很少出现这种情况了。
+
+    """
+
+    def __init__(self):
+        pass
+
+    def connect_figures(self, figures):
+        """
+        使用image来画线，把图片连接起来，作为一条线处理
+        """
+        h_map = {}
+        v_map = {}
+
+        def add(m, key, line):
+            # line=[s1,s2]
+            a = m.get(key, None)
+            if not a:
+                a = []
+                m[key] = a
+            a.append(line)
+
+        def calc_lines(m, fn):
+            lines = []
+            for k, v in m.items():
+                v = sorted(v, key=lambda a: a[0])
+                a = None
+                for b in v:
+                    # c=[s1,s2]
+                    if a is None:
+                        a = list(b)
+                    elif b[0] - a[1] <= 2:
+                        a[1] = max([a[1], b[1]])
+                    else:
+                        if a[1] - a[0] >= 5:
+                            lines.append(fn(k, a))
+                        a = list(b)
+
+                if a is not None and a[1] - a[0] >= 5:
+                    lines.append(fn(k, a))
+            return lines
+
+        # 如果需要更加严格的，可以要求连接使用的图片都相同，暂时这里就忽略了
+        old_total=len(figures)
+        for figure in figures[:]:
+            bbox = figure['bbox']
+            x0, y0, x1, y1 = as_int(bbox)
+            # 有些表有误差，不能够使用y0==y1,x0==x1
+            # 因为一个图可能为垂直线或者水平线，所以需要添加到2个map中
+            used = False
+            if abs(y0 - y1) <= 1:
+                # 使用图片来显示水平线
+                y = min(y0,y1)
+                add(h_map, y, [x0, x1])
+                used = True
+
+            if abs(x0 - x1) <= 1:
+                # 垂直线
+                x = min(x0,x1)
+                add(v_map, x, [y0, y1])
+                used = True
+
+            if used:
+                figures.remove(figure)
+        
+        h_lines = calc_lines(h_map, lambda k, a: [a[0], k, a[1], k])
+        v_lines = calc_lines(v_map, lambda k, a: [k, a[0], k, a[1]])
+        # 这里作为线返回，还是作为一个图片返回，如：
+        # {bbox:[],image:'',repeat:true}
+        lines = []
+        for b in h_lines + v_lines:
+            line = {
+                'bbox': b,
+                'stroke': {
+                    'width': 1,
+                    'color': [0, 0, 0]
+                },
+                # 标记是由图片组成的，方便debug
+                'source': 'figure'
+            }
+            lines.append(line)
+        print(f'connect figures as line from={old_total} to={len(figures)} lines={len(lines)}')
+        #这里再删除很小的图片，因为begin_figure() 中没有清除
+        def is_small_figure(i,objs):
+            b = objs[i]['bbox']
+            if b[2]-b[0]<3 or b[3]-b[1]<3:
+                return True
+            else:
+                return False
+        removed_figures = remove_objects(figures,is_small_figure)
+        print(f'clean small figures={len(removed_figures)}')
+
+        return lines

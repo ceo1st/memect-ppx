@@ -2913,6 +2913,125 @@ class KTable(KObject):
         return h_lines+v_lines
     
 
+    def strip(self,top:bool=True,bottom:bool=True,left:bool=False,right:bool=False,all:bool=False)->Self:
+        """去掉上下空白的行或者左右空白的列"""
+
+        def is_blank(cells:Sequence[KCell])->bool:
+            for c in cells:
+                if len(c.objects)!=0:
+                    return False
+            return True
+        
+        def is_flat_row(cells:Sequence[KCell],row_index:int)->bool:
+            for c in cells:
+                if c.row_index==row_index and c.row_span==1:
+                    pass
+                else:
+                    return False
+            return True
+        
+        def is_flat_column(cells:Sequence[KCell],col_index:int)->bool:
+            for c in cells:
+                if c.col_index==col_index and c.col_span==1:
+                    pass
+                else:
+                    return False
+            return True
+        
+        if all:
+            top=True
+            bottom=True
+            left=True
+            right=True
+
+        start_row_index=0
+        end_row_index = self.row_num
+        start_col_index=0
+        end_col_index=self.col_num
+        if top:
+            #去掉顶部空白的行
+            for i in range(self.row_num):
+                row = self.get_row(i)
+                #不能够存在跨行的，可以存在跨列，且所有单元格都为空
+                if is_blank(row) and is_flat_row(row,i):
+                    start_row_index=i+1
+                else:
+                    break
+        if bottom:
+            for i in range(self.row_num-1,-1,-1):
+                row = self.get_row(i)
+                if is_blank(row) and is_flat_row(row,i):
+                    end_row_index=i
+                else:
+                    break
+
+        if left:
+            for i in range(self.col_num):
+                col = self.get_column(i)
+                if is_blank(col) and is_flat_column(col,i):
+                    start_col_index=i+1
+                else:
+                    break
+
+        if right:
+            for i in range(self.col_num-1,-1,-1):
+                col = self.get_column(i)
+                if is_blank(col) and is_flat_column(col,i):
+                    end_col_index=i
+                else:
+                    break
+        
+        n1=end_row_index-start_row_index
+        n2=end_col_index-start_col_index
+        if n1==self.row_num and n2==self.col_num or n1==0 or n2==0:
+            #如果没有改变或者变成一行/一列都没有，就不改变
+            return self
+        
+        
+        new_cells:list[KCell]=[]
+        for cell in self.cells:
+            if start_row_index<=cell.row_index<end_row_index and start_col_index<=cell.col_index<end_col_index:
+                new_cells.append(cell)
+        
+        return self._from_cells(new_cells)
+        
+
+    def get_stripped_size(self)->tuple[int,int]:
+        """去掉空白行列后的size"""
+        def is_blank(cells:Sequence[KCell])->bool:
+            for c in cells:
+                if len(c.objects)!=0:
+                    return False
+            return True
+        
+        def is_flat_row(cells:Sequence[KCell],row_index:int)->bool:
+            for c in cells:
+                if c.row_index==row_index and c.row_span==1:
+                    pass
+                else:
+                    return False
+            return True
+        
+        def is_flat_column(cells:Sequence[KCell],col_index:int)->bool:
+            for c in cells:
+                if c.col_index==col_index and c.col_span==1:
+                    pass
+                else:
+                    return False
+            return True
+        
+        row_num=self.row_num
+        col_num=self.col_num
+        for i in range(self.row_num):
+            row = self.get_row(i)
+            if is_blank(row) and is_flat_row(row,i):
+                row_num-=1
+        for i in range(self.col_num):
+            col = self.get_column(i)
+            if is_blank(col) and is_flat_column(col,i):
+                col_num-=1
+        return (row_num,col_num)
+
     def _from_cells(self,cells:Sequence["KCell"])->Self:
         """根据选择的部分单元格构造一个新的表格，重新计算单元格"""
         h_lines,v_lines = self._get_lines(cells)
@@ -2923,6 +3042,7 @@ class KTable(KObject):
             cell = c1.copy(row_index=c2.row_index,col_index=c2.col_index,row_span=c2.row_span,col_span=c2.col_span)
             new_cells.append(cell)
         return self.__class__(self.page,grid.bbox,cells=new_cells,subtype=self.subtype)
+
 
     def jsonify(self) -> Any:
         data = {

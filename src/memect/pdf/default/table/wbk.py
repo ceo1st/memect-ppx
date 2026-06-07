@@ -86,8 +86,12 @@ class Parser:
     def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode)->KTable:
         debugger = self._debugger.bind(page=page.number)
 
-        def use_ybk(ybk: KTable, wbk: KTable) -> bool:
-            if ybk.row_num >= wbk.row_num and ybk.col_num >= wbk.col_num:
+        def use_ybk(ybk: KTable, wbk: KTable,use_stripped:bool=False) -> bool:
+            if use_stripped:
+                row_num,col_num = wbk.get_stripped_size()
+            else:
+                row_num,col_num = wbk.row_num,wbk.col_num
+            if ybk.row_num >= row_num and ybk.col_num >= col_num:
                 return True
             # 如果结构不一致，使用哪一个呢？
             # ybk有两种可能：完整有边框，局部有边框
@@ -101,6 +105,7 @@ class Parser:
         wbk_table = self._parse_wbk(page, index, vobj,steps=steps)
         table = wbk_table
         beautify = True
+        ybk_table:KTable|None=None
         if mode == WBKMode.AUTO:
             ybk_table = self._parse_ybk(page, index, vobj)
             if ybk_table is not None:
@@ -119,6 +124,18 @@ class Parser:
         # 之所以在这里再填充对象，只是避免表格内的图片/公式等多次解析，不影响什么
         result = table.cache.pop("result", None)
         result = TableFiller().fill(table, result)
+
+        strict=True
+        if strict and ybk_table is not None and table is wbk_table and use_ybk(ybk_table,table,use_stripped=True):
+            #去掉前后空白行再比较，因为可能对象识别的bbox过大，把外部的文本包含了部分（如：一半）
+            #这个时候就可以再次切换回来使用有边框
+            self._logger.warning('第%s页，去掉空白行/列，从wbk切换回ybk,bbox=%s',table.page.number,table.bbox)
+            result=TableFiller().fill(ybk_table,result)
+            table=ybk_table
+            beautify=False
+        elif table is wbk_table:
+            #仅仅去掉前后空白行
+            table = table.strip()
 
         if beautify:
             self._beautify(table)
