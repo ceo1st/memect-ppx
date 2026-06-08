@@ -383,6 +383,10 @@ class KDocument:
         self.pdf_toc: PDFNode | None = None
         """pdf的toc根节点"""
 
+        #在word中，可以包含文本/图片等任意内容，也可以使用list[KObject]或者XBlock
+        self._footnotes:dict[str,str]={}
+        """全局的脚注列表，就不记录字体的大小了，纯文本？"""
+
         from .x.xbase import XTree
 
         self.tree: XTree | None = None
@@ -1140,7 +1144,7 @@ class KPage:
                 #没有对齐
                 return False
             
-            self._logger.warning('第%s页，合并表格，t1=%s,t2=%s',t1.bbox,t2.bbox)
+            self._logger.warning('第%s页，合并表格，t1=%s,t2=%s',self.number,t1.bbox,t2.bbox)
             t1.set_bbox(BBox.join2([t1,t2]))
             del vobjs[index+1]
             
@@ -1827,8 +1831,10 @@ class KFont:
         force: bool = False,
     ) -> tuple[str, str]:
         from .wingdings import WingdingsRecognizer, wingdings2standard
-
-        if not force and 0xF020 <= ord(text) <= 0xF0FF:
+        
+        if text.isspace():
+            w_text=text
+        elif not force and 0xF020 <= ord(text) <= 0xF0FF:
             # 认为是准确的？
             w_text = text
         else:
@@ -1918,6 +1924,14 @@ class KChar(KObject):
         """如果是wingdings的字符，可以获得pua区域的文本，方便在生成docx的时候直接使用"""
         self.subtype = subtype
 
+        self.footnote_ref:KFootnoteRef|None=None
+        """如果该字符后面有一个上标引用了一个脚注"""
+
+        self.is_superscript=False
+        """表示为上标字符"""
+        self.is_subscript=False
+        """表示为下标字符"""
+
     def alike(self, obj: "KChar") -> bool:
         c1 = self
         c2 = obj
@@ -1988,76 +2002,6 @@ class KChar(KObject):
             return True
 
 
-class KText2(KObject):
-    """表示文本，可以来自llm，没有单个字符位置，来自默认解析，有单个字符位置"""
-
-    type = "text"
-
-    def __init__(
-        self, page: KPage, quad: Quad | BBox, *, text: str, md_text: str | None = None
-    ):
-        super().__init__(page, quad)
-        self.text: Final = text
-        self._md_text: Final = md_text
-        """表示原始的markdown"""
-
-    def markdown(self) -> str:
-        # 如果有原始的markdown，就返回，如：##xxxx，或者xxx*zz*vvvv
-        if self._md_text:
-            return self._md_text
-        return _md_escape(self.text)
-
-    def jsonify(self):
-        return {"type": "text", "bbox": self.bbox.jsonify(), "text": self.text}
-
-    @classmethod
-    def from_markdown(cls, page: KPage, bbox: BBox | Quad, text: str) -> Self:
-        """根据markdown构造"""
-        text = cls.md_unescape(text)
-        return cls(page, bbox, text=text, md_text=text)
-
-    @classmethod
-    def md_escape(cls, text: str) -> str:
-        return _md_escape(text)
-
-    @classmethod
-    def md_unescape(cls, text: str) -> str:
-        """将 markdown 文本还原为纯文本，行内公式保留，还是$xx$"""
-        # TODO 将来复杂的情况，如：可以为代码，html，或者公式，这些如何处理？
-        # ```code```
-        # <table></table>
-        # $$xxx$$
-
-        # 1. 移除标题标记 (# ## ### 等)
-        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-
-        # 2. 移除粗体 (**text** 或 __text__)
-        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-        text = re.sub(r"__(.+?)__", r"\1", text)
-
-        # 3. 移除斜体 (*text* 或 _text_)
-        text = re.sub(r"\*(.+?)\*", r"\1", text)
-        text = re.sub(r"_(.+?)_", r"\1", text)
-
-        # 4. 移除删除线 (~~text~~)
-        text = re.sub(r"~~(.+?)~~", r"\1", text)
-
-        # 5. 移除行内代码 (`code`)
-        text = re.sub(r"`(.+?)`", r"\1", text)
-
-        # 6. 移除链接 [text](url) -> text
-        text = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", text)
-
-        # 7. 移除图片 ![alt](url) -> alt
-        text = re.sub(r"!\[(.+?)\]\(.+?\)", r"\1", text)
-
-        # 8. 移除转义符 (\* \# 等)
-        text = re.sub(r"\\([`*_+\-!{}#.\\])", r"\1", text)
-
-        # 9. 行内公式（$xxx$）
-        # 如何转换为文本？把公式扔了？或者不做改变？
-
-        return text
 
 
 class KSpan(KObject):
@@ -3778,6 +3722,7 @@ class KPageFooter(KObject):
         return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
 
 
+
 class KPageFootnote(KObject):
     type = "pagefootnote"
 
@@ -3790,6 +3735,31 @@ class KPageFootnote(KObject):
         return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
 
     pass
+
+class KFootnote:
+    def __init__(self,id:str,objects:Sequence[KObject]):
+        super().__init__()
+        self.id:Final=id
+
+        #如果需要先跨页合并对象也可以使用XObject，目前就不合并了，因为最终在word中，输出多个对象即可
+        #而且多数情况都只是输出文本
+        self.objects:Final[Sequence[KObject]]=tuple(objects)
+    
+    @property
+    def text(self)->str:
+        #TODO 在生成word需要去掉开头的序号，因为会自动生成
+        return ''.join( obj.text for obj in self.objects if isinstance(obj,KText))
+
+class KFootnoteRef:
+    def __init__(self,chars:Sequence[KChar]):
+        super().__init__()
+        assert len(chars)>0
+        self.chars:Final= chars
+        self.no:Final =''.join(c.text for c in chars)
+        """来自原文的脚注序号，如：1"""
+        self.footnote:KFootnote|None=None
+        """该引用对应的脚注对象"""
+        
 
 
 class KPDFFigure(KObject):

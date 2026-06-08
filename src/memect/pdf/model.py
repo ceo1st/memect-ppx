@@ -872,6 +872,10 @@ class LLMTableModel(LLMModel):
             return KTable.parse_otsl(text)
 
 
+class MinerUModel(Model):
+    """使用mineru的模型，支持layout/ocr等"""
+    pass
+
 class MockModel(Model):
     def __init__(self):
         super().__init__()

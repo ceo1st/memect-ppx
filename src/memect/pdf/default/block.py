@@ -740,7 +740,23 @@ class BlockParser:
                     # [source]
                     continue
 
-                # 如果是图表，单个或者多个，或者图+表格一边一个，都合并在一起，而不是分开
+                if len(line)==2:
+                    #local/cases/json2doc/layout/footnote/3-1.pdf 第14页
+                    pass
+                    #复杂的情况，存在分栏，情况就复杂了，可能为
+                    #text1|text2
+                    #part1|part2 =>为一个整体
+                    #或者
+                    #text1|text2
+                    #part1|part2  => [text1,part1] -> [text2,part2]
+
+                    #如何判断？
+                    #text1|text3
+                    #part1|part2
+                    #text2|text4   => 如果有text2且text2后到text3，part1和part2就是分开的，对于这种，目前仅仅支持pdf解析
+                    #              => 如果有text2且text2后到text4，part1和part2就是合并的
+
+                    # 如果是图表，单个或者多个，或者图+表格一边一个，都合并在一起，而不是分开
                 if not bbox.intersect_any(objects, ratio=0.2):
                     # 如果当前line没有和其他对象相交
                     # 严格的还根据title，判断序号？
@@ -778,6 +794,8 @@ class BlockParser:
                     # [figure1][figure2]    => 对齐在一行
                     # [source1][source2]    => 对齐在一行
                     # 如果没有对齐，每个part都作为一个独立的表格
+
+
                     table = self._make_table(
                         page,
                         line,
