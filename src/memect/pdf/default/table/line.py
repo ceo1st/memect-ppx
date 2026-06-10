@@ -442,7 +442,6 @@ class Liner:
             for v_line in v_lines:
                 if v_line[1]-2<=h_line[1]<=v_line[3]+2  and h_line[0]-2<=v_line[0]<=h_line[2]+2:
                     #---|---
-                    print('=====>>',h_line,v_line)
                     return v_line
             return None
         

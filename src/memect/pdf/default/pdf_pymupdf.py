@@ -434,9 +434,10 @@ class Parser:
             is_clipped = bool(char_flags & 32)
 
             font = self._get_font(span)
-            if debugger.allow("info"):
+            if verbose and debugger.allow("info"):
                 with debugger.group("span"):
                     print("".join(c["c"] for c in span["chars"]))
+                    #print([c["bbox"] for c in span['chars']])
                     print(
                         {
                             "bold": is_bold,

@@ -35,6 +35,7 @@ from memect.base.bbox import BBox, Point, Quad
 from memect.base.matrix import Matrix
 from memect.base.strs import NText
 from memect.base.utils import AutoCleaner, MyBaseModel, safe_write
+from memect.pdf import chars
 from memect.pdf.grid import Grid
 from memect.base.zip import Archiver
 from memect.pdf.sort import Sorter
@@ -1093,9 +1094,30 @@ class KPage:
                 return False
             
             table1 = vobjs[index]
-            title = vobjs[index+1]
-            table2 = vobjs[index+2]
+            title:VObject|None=None
+            table2:VObject|None=None
+            #不能够这么简单的，因为还需要支持跨栏的情况
+            #title = vobjs[index+1]
+            #table2 = vobjs[index+2]
+            for k in range(index+1,len(vobjs)):
+                obj2 = vobjs[k]
+                if obj2.bbox.y1<=table1.bbox.y0 and table1.bbox.over('x',obj2.bbox,d=20):
+                    title=obj2
+                    index=k
+                    break
+            
+            if title is None:
+                return False
 
+            for k in range(index+1,len(vobjs)):
+                obj2 = vobjs[k]
+                if obj2.bbox.y1<=title.bbox.y0 and table1.bbox.over('x',obj2.bbox,d=20):
+                    table2=obj2
+                    index=k
+                    break
+            
+            if table2 is None:
+                return False
             min_width=100
             max_title_height=20
             if not (table1.is_table() and title.is_title() and table2.is_table()):
@@ -1113,8 +1135,8 @@ class KPage:
             self._logger.warning(
                 "第%s页，合并表格，t1=%s,title=%s,t2=%s", self.number,table1.bbox,title.bbox,table2.bbox
             )
-            del vobjs[index+1]
-            del vobjs[index+1]
+            vobjs.remove(title)
+            vobjs.remove(table2)
             table1.set_bbox(BBox.join2([table1,title,table2]))
             return True
             
@@ -1129,12 +1151,17 @@ class KPage:
             if index+1>=len(vobjs):
                 return False
             t1=vobjs[index]
-            t2=vobjs[index+1]
-
-            if t1.score<min_score or t2.score<min_score:
+            if not t1.is_table() or t1.score<min_score:
                 return False
             
-            if not (t1.is_table() and t2.is_table()):
+            #查找t2，但是不是简单的vobjs[index+1]，因为可能多栏布局
+            t2:VObject|None=None
+            for k in range(index+1,len(vobjs)):
+                t2=vobjs[k]
+                if t2.bbox.y1<=t1.bbox.y0 and t1.bbox.over('x',t2.bbox,d=20):
+                    break
+
+            if t2 is None or not t2.is_table() or t2.score<min_score:
                 return False
             
             if t1.bbox.y0-t2.bbox.y1>max_gap or t1.bbox.width<min_width:
@@ -1146,7 +1173,7 @@ class KPage:
             
             self._logger.warning('第%s页，合并表格，t1=%s,t2=%s',self.number,t1.bbox,t2.bbox)
             t1.set_bbox(BBox.join2([t1,t2]))
-            del vobjs[index+1]
+            vobjs.remove(t2)
             
             return True
 
@@ -1675,7 +1702,7 @@ class KObject:
 
     @property
     def content_bbox(self) -> BBox | None:
-        return None
+        return self._bbox
 
     @quad.setter
     def quad(self, quad: Quad):
@@ -1927,11 +1954,6 @@ class KChar(KObject):
         self.footnote_ref:KFootnoteRef|None=None
         """如果该字符后面有一个上标引用了一个脚注"""
 
-        self.is_superscript=False
-        """表示为上标字符"""
-        self.is_subscript=False
-        """表示为下标字符"""
-
     def alike(self, obj: "KChar") -> bool:
         c1 = self
         c2 = obj
@@ -1943,9 +1965,27 @@ class KChar(KObject):
             and c1.color == c2.color
             and c1.font == c2.font
             and c1.source == c2.source
+            and c1.subtype==c2.subtype
             and abs(c1.bbox.height - c2.bbox.height) <= 2
         )
+    
+    def is_superscript(self)->bool:
+        """表示为上标字符"""
+        return self.subtype=='superscript'
+    
+    def is_subscript(self)->bool:
+        """表示为下标字符"""
+        return self.subtype=='subscript'
 
+    @cached_property
+    def index(self)->int:
+        """获得书写顺序，仅仅对来自pdf字符有效，其他的都返回-1"""
+        try:
+            return self.page.pdf_chars.index(self)
+        except ValueError:
+            return -1
+
+    
     @cached_property
     def min_bbox(self) -> BBox:
         if self.text in "》】）｝］？；。：，！、":
@@ -3707,7 +3747,7 @@ class KPageHeader(KObject):
 
     @property
     def content_bbox(self) -> BBox | None:
-        return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
+        return BBox.join([obj.content_bbox for obj in self.objects],strict=False)
 
 
 class KPageFooter(KObject):
@@ -3719,7 +3759,7 @@ class KPageFooter(KObject):
 
     @property
     def content_bbox(self) -> BBox | None:
-        return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
+        return BBox.join([obj.content_bbox for obj in self.objects],strict=False)
 
 
 
@@ -3732,7 +3772,7 @@ class KPageFootnote(KObject):
 
     @property
     def content_bbox(self) -> BBox | None:
-        return BBox.join([obj.bbox for obj in self.objects]) if self.objects else None
+        return BBox.join([obj.content_bbox for obj in self.objects],strict=False)
 
     pass
 

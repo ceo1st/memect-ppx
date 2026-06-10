@@ -67,15 +67,23 @@ class Parser:
         )
         raw_lines = h_lines + v_lines
         # 再清理一下，避免误差，更好的解析表格
-        table_lines = Liner().parse([line.bbox for line in raw_lines], page=page)
+        from .line import Options
+        options=Options(y_axis_d=4)
+        table_lines = Liner().parse([line.bbox for line in raw_lines], page=page,options=options)
         table_bbox = bbox
         if table_lines:
             # 因为没有包括线的宽度，所以这里大一点
             bbox2 = BBox.join(table_lines)
 
             #dy需要大一些，是因为对象识别的时候，bbox可能大了一些，包含了部分的外部文本
-            if bbox2.expand(dx=5, dy=10).contains(bbox):
-                table_bbox = bbox2
+            #bbox2可能小了，如：彩色表格，可能丢失了前后的水平线，合理的做法是
+            #bbox可能小了，没有包含边界线
+            #bbox可能大了一点
+            if bbox2.expand(dx=10, dy=10).contains(bbox):
+                #有下面2种可能，如何处理？
+                #线完整，bbox2正确，去掉了部分溢出的文本（因为table_bbox过大）
+                #线不完整，bbox2不正确，丢失了部分文本（table_bbox正确）
+                table_bbox=bbox2
             else:
                 # 虽然识别了线，但是可能只是局部的，也抛弃
                 table_lines = []
@@ -212,6 +220,50 @@ class Parser:
                     i+=1
             
             pass
+        
+        def clean3(bbox:BBox,h_lines:list[KLine],v_lines:list[KLine]):
+            #----line1------
+            # [--table--]
+            #----line2------ 
+            #因为会影响表格，因为对象识别的原因，表格的区域可能大了一点，包含了line1或者line2，需要去掉line1和line2
+            #如果是严格的有边框表格，有左右垂直线，容易判断
+            #如果是没有左右垂直线的表格，line1可能也是表格的线
+            if not v_lines:
+                return
+            
+            if len(h_lines)<2:
+                return
+            
+            h_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+            v_lines.sort(key=lambda line:line.bbox.y1,reverse=True)
+
+            h_line1 = h_lines[0]
+            h_line2 = h_lines[1]
+            v_line = v_lines[0]
+            #先处理第一种可能，就是粘连在一起了，bbox也无法区分，这种情况，就认为不是没有左右垂直线表格，直接去掉
+            #h_line1.bbox.over('x',h_line2.bbox,d=20) and h_line1.bbox.y0-h_line2.bbox.y0<=3
+            
+            if h_line1.bbox.over('x',h_line2.bbox,d=20) and h_line1.bbox.y0-h_line2.bbox.y0<=3 or h_line1.bbox.y0-bbox.y1>=1 and h_line1.bbox.y0-h_line2.bbox.y1<=8 and h_line1.bbox.y0-v_line.bbox.y1>=3:
+                #-------h_line1---- 去掉这一条
+                #----bbox.y1-------
+                #-------h_line2---- 保留这一条
+                self._logger.warning('第%s页，删除错误的表格上线,table=%s,line=%s',page.number,bbox,h_line1.bbox)
+                del h_lines[0]
+            
+            if len(h_lines)<2:
+                return
+            
+            h_line1=h_lines[-1]
+            h_line2=h_lines[-2]
+            v_line=v_lines[-1]
+            
+            if h_line1.bbox.over('x',h_line2.bbox,d=20) and h_line2.bbox.y0-h_line1.bbox.y0<=3 or bbox.y0-h_line1.bbox.y1>=1 and h_line2.bbox.y0-h_line1.bbox.y0<=8 and v_line.bbox.y0-h_line1.bbox.y1>=3:
+                #----h_line2----- 保留这一条
+                #----bbox.y0-----
+                #----h_line1----- 删除这一条
+                self._logger.warning('第%s页，删除错误的表格底线,table=%s,line=%s',page.number,bbox,h_line1.bbox)
+                del h_lines[-1]
+
         #TODO 还需要去掉下划线，否则可能会把下划线识别为表格线，如：
         # xx____下划线
         #-------表格线
@@ -224,6 +276,9 @@ class Parser:
         clean2(v_lines,False)
         #TODO 如果有页眉线页脚线，可能会重叠或者相邻，需要先去掉，避免多识别一列
         clean1(h_lines,v_lines)
+
+        clean3(bbox,h_lines,v_lines)
+
         return h_lines,v_lines
 
     def _parse_image_lines(

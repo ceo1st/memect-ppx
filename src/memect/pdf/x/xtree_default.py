@@ -105,11 +105,9 @@ template3 = {
 }
 
 
-
-
 default_template: dict[str, Any] = {
     "chapters": [
-        {"title": "<首页>","type":"plain"},
+        {"title": "<首页>", "type": "plain"},
         {
             "titles": [
                 r"重大事项提示|特别提示|重要提示",
@@ -117,7 +115,7 @@ default_template: dict[str, Any] = {
                 r"释义",
                 r"前言",
                 r".*跟踪评级报告",
-                  r".*评级报告",
+                r".*评级报告",
             ],
             # 或者满足style的也是标题？
             "style": {
@@ -128,8 +126,7 @@ default_template: dict[str, Any] = {
                 "top": True,
                 "top_ratio": 0.35,
             },
-            "deep":False,
-
+            "deep": False,
         },
         {
             # 目录，可以有0-n个目录章节
@@ -144,31 +141,23 @@ default_template: dict[str, Any] = {
                 # ===============================
                 r"^第([1-9][0-9]?)节",
             ],
-            "style":{},
+            "style": {},
             "deep": True,
-        },{
-            "titles":[
-                r'附件.+',
-                r'附录.+'
-            ],
-            "deep":True
-        },{
-            "titles":[
-                r'权利与免责声明'
-            ],
-            'deep':False
-        }
+        },
+        {"titles": [r"附件.+", r"附录.+"], "deep": True},
+        {"titles": [r"权利与免责声明"], "deep": False},
     ]
 }
 
 
 class ChapterType(StrEnum):
-    TOC=auto()
+    TOC = auto()
     """表示为目录章节，不需要解析层次"""
-    PLAIN=auto()
+    PLAIN = auto()
     """表示为不需要解析层次，如：封面/首页等"""
-    NORMAL=auto()
+    NORMAL = auto()
     """表示需要解析层次"""
+
 
 class Chapter:
     def __init__(
@@ -179,7 +168,7 @@ class Chapter:
         *,
         anchor: int | None = None,
         fixed_end: bool = False,
-        type:ChapterType=ChapterType.NORMAL
+        type: ChapterType = ChapterType.NORMAL,
     ):
         super().__init__()
         self.title = title
@@ -192,13 +181,13 @@ class Chapter:
         """章节边界下标；原文标题章节为标题自身下标，逻辑章节为start。"""
         self.fixed_end = fixed_end
         """True表示end由明确规则决定，不再自动扩展到下一个章节。"""
-        self.type=type
+        self.type = type
         """表示章节的类型"""
         self.provisional_end = False
         """True表示end只是当前搜索上界，后续章节还没确定。"""
-    
+
     @property
-    def doc(self)->KDocument:
+    def doc(self) -> KDocument:
         return self.title.doc
 
 
@@ -218,7 +207,7 @@ class ChapterSpec:
         self.min_keyword_size: int = 2
         """表示需要满足多少个不同的keyword正则表达式"""
 
-        self.type=ChapterType.NORMAL
+        self.type = ChapterType.NORMAL
         """toc表示为目录章节，normal表示普通章节，plain表示为不需要解析层次结构"""
 
         self.chapters: list[Chapter] = []
@@ -257,9 +246,7 @@ class ChapterSpec:
             return False
         if self.titles:
             text = strs.NText.get(xtext.text, mode="q2b", space="remove").text
-            return any(
-                self._match_pattern(pattern, text) for pattern in self.titles
-            )
+            return any(self._match_pattern(pattern, text) for pattern in self.titles)
         return bool(self.style)
 
     def match_keywords(self, texts: Sequence[str]) -> bool:
@@ -422,24 +409,23 @@ class Parser:
     def __init__(self, args: Mapping[str, Any] | None = None):
         super().__init__()
 
-
     def parse(self, xtree: XTree) -> bool:
-        template = xtree.doc.params.tree.template 
+        template = xtree.doc.params.tree.template
         if not template:
             template = default_template
-        elif not template.get('chapters'):
-            #如果没有定义，就是对default_template的补充
-            titles1 = template.get('titles1')
-            titles2 = template.get('titles2')
-            template=copy.deepcopy(default_template)
+        elif not template.get("chapters"):
+            # 如果没有定义，就是对default_template的补充
+            titles1 = template.get("titles1")
+            titles2 = template.get("titles2")
+            template = copy.deepcopy(default_template)
             if titles1:
-                template['chapters'][1]['titles']=titles1
+                template["chapters"][1]["titles"] = titles1
             if titles2:
-                template['chapters'][3]['titles']=titles2
+                template["chapters"][3]["titles"] = titles2
         else:
             pass
         doc_spec = DocSpec(template)
-        
+
         xobjects = xtree.xobjects
         if not xobjects:
             return False
@@ -480,8 +466,8 @@ class Parser:
 
         if index + 1 >= len(xobjects):
             return
-        
-        doc:Final = xobjects[0].doc
+
+        doc: Final = xobjects[0].doc
         # total_page = self._total_page(xobjects)
         total_page = xobjects[0].pages[0].doc.page_count
         start_page = self._resolve_page(spec.pages[0], total_page)
@@ -524,11 +510,11 @@ class Parser:
 
         spec.chapters.append(
             Chapter(
-                XText.create_title(doc,spec.title or "<正文>"),
+                XText.create_title(doc, spec.title or "<正文>"),
                 start,
                 end,
                 fixed_end=fixed_end,
-                type=spec.type
+                type=spec.type,
             )
         )
         spec.done = True
@@ -542,8 +528,8 @@ class Parser:
             return
         if spec.type != ChapterType.TOC:
             return
-        
-        doc:Final = xobjects[0].doc
+
+        doc: Final = xobjects[0].doc
         start = doc_spec.get_start(index)
         end = doc_spec.get_end(index, len(xobjects))
         tocs = self._find_toc_chapters(spec, start, end, xobjects)
@@ -556,7 +542,7 @@ class Parser:
                 # 目录2
                 spec.chapters.append(
                     Chapter(
-                        XText.create_title(doc,"<正文>"),
+                        XText.create_title(doc, "<正文>"),
                         tocs[i - 1].end,
                         toc.anchor,
                         fixed_end=True,
@@ -571,9 +557,10 @@ class Parser:
         self, spec: ChapterSpec, start: int, end: int, xobjects: Sequence[XObject]
     ) -> list[Chapter]:
         from .xtoc import XTOCParser
+
         if not xobjects:
             return []
-        doc:Final = xobjects[0].doc
+        doc: Final = xobjects[0].doc
         chapters: list[Chapter] = []
         for toc_start, toc_end, _ in XTOCParser().find(xobjects[start:end]):
             anchor = start + toc_start
@@ -583,7 +570,7 @@ class Parser:
                 title = title_obj
                 content_start = anchor + 1
             else:
-                title = XText.create_title(doc,spec.title or "<目录>")
+                title = XText.create_title(doc, spec.title or "<目录>")
                 content_start = anchor
             chapters.append(
                 Chapter(
@@ -592,7 +579,7 @@ class Parser:
                     end_index,
                     anchor=anchor,
                     fixed_end=True,
-                    type=ChapterType.TOC
+                    type=ChapterType.TOC,
                 )
             )
         return chapters
@@ -636,13 +623,13 @@ class Parser:
                 j = xobjects.index(titles[k + 1])
             else:
                 j = end
-            chapter = Chapter(title, i, j, anchor=anchor,type=spec.type)
+            chapter = Chapter(title, i, j, anchor=anchor, type=spec.type)
             spec.chapters.append(chapter)
-        
+
         if spec.chapters and self._has_pending_next_spec(doc_spec, index):
             spec.chapters[-1].provisional_end = True
 
-        #不管是否有章节，都标记为done
+        # 不管是否有章节，都标记为done
         spec.done = True
 
     def _has_pending_next_spec(self, doc_spec: DocSpec, index: int) -> bool:
@@ -674,9 +661,11 @@ class Parser:
         end = doc_spec.get_end(index, len(xobjects))
         if start >= end:
             return
-        
+
         doc = xobjects[0].doc
-        spec.chapters.append(Chapter(XText.create_title(doc,spec.title), start, end,type=spec.type))
+        spec.chapters.append(
+            Chapter(XText.create_title(doc, spec.title), start, end, type=spec.type)
+        )
         spec.done = True
 
     def _normalize_chapters(self, doc_spec: DocSpec, end: int) -> list[Chapter]:
@@ -685,8 +674,8 @@ class Parser:
             chapters.extend(spec.chapters)
         if not chapters:
             return []
-        
-        doc:Final = chapters[0].doc
+
+        doc: Final = chapters[0].doc
         chapters.sort(key=lambda c: (c.anchor, c.start, c.end))
         unique: list[Chapter] = []
         seen: set[tuple[int, int, str]] = set()
@@ -712,10 +701,10 @@ class Parser:
             for chapter in unique
             if chapter.start < chapter.end or chapter.title.objects
         ]
-        return self._fill_body_chapters(doc,normalized, end)
+        return self._fill_body_chapters(doc, normalized, end)
 
     def _fill_body_chapters(
-        self,doc:KDocument,chapters: Sequence[Chapter], end: int
+        self, doc: KDocument, chapters: Sequence[Chapter], end: int
     ) -> list[Chapter]:
         result: list[Chapter] = []
         cursor = 0
@@ -724,7 +713,7 @@ class Parser:
             if cursor < chapter_start:
                 result.append(
                     Chapter(
-                        XText.create_title(doc,"<正文>"),
+                        XText.create_title(doc, "<正文>"),
                         cursor,
                         chapter_start,
                         fixed_end=True,
@@ -735,7 +724,7 @@ class Parser:
         if cursor < end:
             result.append(
                 Chapter(
-                    XText.create_title(doc,"<正文>"),
+                    XText.create_title(doc, "<正文>"),
                     cursor,
                     end,
                     fixed_end=True,
@@ -754,7 +743,7 @@ class Parser:
         return chapter.end
 
     def _rebuild_tree(self, xtree: XTree, chapters: Sequence[Chapter]):
-        strict=True
+        strict = True
         used: set[XObject] = set()
         for xobj in xtree.xobjects:
             xobj.node.deatch()
@@ -768,23 +757,23 @@ class Parser:
 
             children: list[XObject] = []
             for xobj in xtree.xobjects[chapter.start : chapter.end]:
-                #TODO 如果出现下面的，应该是代码写错误了
+                # TODO 如果出现下面的，应该是代码写错误了
                 if xobj is title or xobj in used:
                     if strict:
-                        raise RuntimeError('代码写错了')
+                        raise RuntimeError("代码写错了")
                     continue
                 children.append(xobj)
                 used.add(xobj)
             if children:
                 title.node.add(*children)
-            
-            if chapter.type==ChapterType.NORMAL:
+
+            if chapter.type == ChapterType.NORMAL:
                 ChapterParser().parse(title.node)
-        
+
         #
         remains = [xobj for xobj in xtree.xobjects if xobj not in used]
         if strict and remains:
-            raise RuntimeError('代码写错了')
+            raise RuntimeError("代码写错了")
         if remains:
             xtree.root.add(*remains)
 
@@ -1031,10 +1020,7 @@ class ChapterParser:
     def _looks_like_non_title_number_body(self, body: str) -> bool:
         if not body:
             return False
-        return bool(
-            re.match(r"^\d", body)
-            or re.match(r"^[-－–—~～至到]", body)
-        )
+        return bool(re.match(r"^\d", body) or re.match(r"^[-－–—~～至到]", body))
 
     def _supplement_compact_parent_titles(
         self,
