@@ -6,6 +6,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.10] - 2026-06-11
+
+### ✨ Features
+
+- 完善脚注解析，支持跨页表格合并、跨页段落合并
+- 初步支持脚注（footnote）识别
+
+### 🐛 Fixes
+
+- 修正有边框表格水平线未对齐的问题
+- 处理由大量小图片组成虚线的情况
+
+### ⚡ Performance
+
+- 优化海量小图片下的解析速度
+
+### 🔨 Chore
+
+- Merge dev/github into github-main-clean
+
+## [0.2.9] - 2026-06-09
+
+### 🔨 Chore
+
+- 添加一键安装脚本 install.sh / install.py
+
 ## [0.2.8] - 2026-06-06
 
 ### ✨ Features

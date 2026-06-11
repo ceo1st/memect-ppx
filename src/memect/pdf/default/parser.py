@@ -33,6 +33,7 @@ from memect.pdf.base import (
     KFont,
     KFormula,
     KObject,
+    KPDFFigure,
     KPage,
     KSpan,
     KText,
@@ -226,15 +227,16 @@ class DefaultParser:
                     chars = [c for c in chars if not c.text.isspace()]
                     # 目前ocr无法识别出个别无效的字符，特别是图标化的字符，如：无序列表的第一个字符
                     invalid_chars = [c for c in chars if not c.is_valid()]
-
                     if vobj.is_table():
                         # TODO 如果为表格，有些图片为单元格的图片，有些为文字图片（也就是部分文字使用图片表示）
                         # 如何区分，做个简单的假设，单元格的图片比较大，而文字图片比较小
                         figures = [
                             figure for figure in figures if figure.bbox.height <= 20
                         ]
-
-                    if len(chars) == 0:
+                    
+                    if is_logo(vobj,figures,chars):
+                        pass
+                    elif len(chars) == 0:
                         # 如果没有字符，就使用ocr（也有可能原文是一个logo或者其他，不管了）
                         objs.append((vobj, [vobj.quad]))
                     elif len(figures) > 0 or len(invalid_chars) > 0:
@@ -243,6 +245,7 @@ class DefaultParser:
                         # 如果在表格中，可能为普通的图片，也可能为特殊效果的文字
                         # 有些图片为单个字符，为了避免截图过小，合并连续的多个图片
                         # groups = merge_figures(figures+invalid_chars)
+
                         groups = merge_bboxes(figures + invalid_chars)
                         objs.append((vobj, [get_bbox(group) for group in groups]))
                         # TODO 可以把无效的pdf字符也删除了？或者后续直接1对1匹配即可？
@@ -259,6 +262,27 @@ class DefaultParser:
                         pass
 
             return objs
+        
+        def is_logo(vobj:VObject,figures:Sequence[KPDFFigure],chars:Sequence[KChar])->bool:
+            #TODO 如果有图片且在页眉页脚，然后为[图片+pdf文字的]，多数情况都是logo，跳过识别文字？
+            #从概率上99.99%为logo，0.01%为文字
+            #如果是ppt，就没有页眉页脚
+            if len(figures)!=1:
+                return False
+            
+            if len(chars)==0:
+                return False
+            
+            page=vobj.page
+            if page.bbox.height<500:
+                return False
+            if not (page.bbox.y1-vobj.bbox.y0<=70 or vobj.bbox.y1-page.bbox.y0<=70):
+                #页眉页脚
+                return False
+
+            #第一种：文字logo+文字
+            #第二种：文字logo，大一些或者小一些，没有跟着文字
+            return True
 
         def merge_bboxes(objs: Sequence[KObject]):
             # 需要排序吗？不需要，按书写顺序？

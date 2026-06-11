@@ -11,8 +11,10 @@ from memect.pdf.base import (
     KPage,
     KText,
     KTextline,
+    OCRMode,
     TableMode,
     VObject,
+    VObjectType,
 )
 from memect.pdf.default.table.wbk import WBKMode
 from memect.pdf.default.table.ybk import YBKMode
@@ -42,6 +44,10 @@ class TableParser:
 
     def parse(self, doc: KDocument, max_workers: int = 0):
         self._fix(doc)
+        if doc.params.ocr==OCRMode.NO:
+            #如果不使用ocr，仅仅pdf，那么，当表格原文就是图片的时候，一样作为图片
+            self._parse_no_ocr(doc,max_workers=max_workers)
+        
         if doc.params.table == TableMode.NO:
             # 不用解析表格，全部作为图片
             self._parse_as_figures(doc, max_workers=max_workers)
@@ -64,6 +70,24 @@ class TableParser:
                 if vobj.is_table():
                     figure = vobj.make_figure(dx=2, dy=2)
                     page.objects.append(figure)
+
+        self._do(parse_page, doc.working_pages, max_workers=max_workers)
+    
+    def _parse_no_ocr(self,doc:KDocument,*,max_workers:int=0):
+        def parse_page(page: KPage):
+            for i,vobj in enumerate(page.vobjects):
+                if vobj.is_table():
+                    for figure in page.pdf_figures:
+                        xa = vobj.bbox.intersect(figure.bbox)
+                        if xa and xa.area/vobj.bbox.area>0.8:
+                            self._logger.warning('第%s页的表格，原表格为图片，且当前不使用ocr，不解析该表格,bbox=%s',page.number,figure.bbox)
+                            #TODO 使用原图大小？
+                            page.objects.append(figure.make_figure())
+                            #标记这个对象被处理过了？或者删除这个对象
+                            #现在使用新的对象替代，因为作为图片处理了
+                            #page.vobjects.remove(vobj)
+                            page.vobjects[i]=VObject(vobj.page,VObjectType.FIGURE,vobj.quad,score=vobj.score,raw_type=vobj.raw_type)
+                            break
 
         self._do(parse_page, doc.working_pages, max_workers=max_workers)
 
@@ -93,7 +117,8 @@ class TableParser:
 
     def _fix(self, doc: KDocument):
         for page in doc.working_pages:
-            self._fix1(page)
+            #self._fix1(page)
+            pass
 
     def _fix1(self, page: KPage):
         """
@@ -107,6 +132,10 @@ class TableParser:
             # 第一种：多包含内容
             # ----单位-- 可能包含了这些不属于表格的内容
             # --t1-----
+
+            #例外的情况，下面这种就不能够删除了
+            #单位：%   xx   xx
+            #xxxxx    xx   xx
             page = vobj.page
             a_pattern = XPattern("fullmatch", patterns=[r"[(]?单位[:：].+[)]?"])
             pdf_chars = vobj.bbox.get(vobj.page.pdf_chars, ratio=0.8)
