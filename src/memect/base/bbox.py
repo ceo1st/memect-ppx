@@ -547,11 +547,11 @@ class BBox(tuple[float,float,float,float]):
 
     @overload
     @classmethod
-    def join2(cls,objs:Sequence[Any],*,strict:bool=True)->"BBox":
+    def join2(cls,objs:Sequence[Any],*,strict:bool=True)->"BBox|None":
         ...
 
     @classmethod
-    def join2(cls,objs:Sequence[Any],*,strict:bool=True):
+    def join2(cls,objs:Sequence[Any],*,strict:bool=True)->"BBox|None":
         bboxes:list[_BBox|None]=[]
         for obj in objs:
             bbox = cls.get_bbox(obj,strict=strict)

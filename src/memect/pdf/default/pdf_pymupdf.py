@@ -26,6 +26,7 @@ from memect.pdf.base import (
 
 
 type _Path = dict[str, Any]
+type _FigureInfo = dict[str, Any]
 
 
 class _MSRectCleaner:
@@ -433,9 +434,10 @@ class Parser:
             is_clipped = bool(char_flags & 32)
 
             font = self._get_font(span)
-            if debugger.allow("info"):
+            if verbose and debugger.allow("info"):
                 with debugger.group("span"):
                     print("".join(c["c"] for c in span["chars"]))
+                    #print([c["bbox"] for c in span['chars']])
                     print(
                         {
                             "bold": is_bold,
@@ -596,40 +598,45 @@ class Parser:
         #kpage.pdf_paths.clear()
         kpage.pdf_lines.clear()
         kpage.pdf_rects.clear()
-        
-        for block in result["blocks"]:
-            type_ = block["type"]
-            if type_ == 0:
-                parse_text(block)
-            elif type_ == 1:
-                parse_image(block)
-            else:
-                pass
+
+        with timer.watch('block'):
+            for block in result["blocks"]:
+                type_ = block["type"]
+                if type_ == 0:
+                    parse_text(block)
+                elif type_ == 1:
+                    parse_image(block)
+                else:
+                    pass
         
         if not kpage.pdf_chars:
             # 没有文字，就按图片解析，不管是什么样了
             self._logger.info("第%s页没有文字，不需要再解析", kpage.number)
             return
-
-        # 如果多个图片组成一个大图，一样按图片解析，不管图片是背景还是扫描（可能覆盖文字）
-        if self._parse_figures(doc, kpage):
-            return
         
-        if use_paths:
-            paths:list[Any]=[]
-            for block in result["blocks"]:
-                type_ = block["type"]
-                if type_ == 3:
-                    #从左上角坐标转换为左下角坐标
-                    block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
-                    paths.append(block)
-                else:
-                    pass
-            self._parse_paths(doc,kpage,paths)
-        else:
-            # 如果没有一同返回path，就需要单独解析
-            #page.get_cdrawings()
-            pass
+        with timer.watch('figure'):
+            # 如果多个图片组成一个大图，一样按图片解析，不管图片是背景还是扫描（可能覆盖文字）
+            if self._parse_figures(doc, kpage):
+                return
+        
+        with timer.watch('path'):
+            if use_paths:
+                paths:list[Any]=[]
+                for block in result["blocks"]:
+                    type_ = block["type"]
+                    if type_ == 3:
+                        #从左上角坐标转换为左下角坐标
+                        block['bbox']=BBox.from_list(block["bbox"], matrix=matrix)
+                        paths.append(block)
+                    else:
+                        pass
+                self._parse_paths(doc,kpage,paths)
+            else:
+                # 如果没有一同返回path，就需要单独解析
+                #page.get_cdrawings()
+                pass
+        
+        
 
     def _get_font(self, span: Any) -> KFont:
         #span={'flags':1,'font':'xxxx'}
@@ -672,11 +679,12 @@ class Parser:
     def _parse_figures(self, doc: pymupdf.Document, kpage: KPage) -> bool:
         """解析图片，如果返回True，表示整个页面作为图片，不需要再解析"""
 
-        def is_full_page(bboxes: list[Any]):
+        def is_full_page(page:pymupdf.Page,bboxes: list[Any]):
             # 这里使用的坐标原点为页面左上角
             from shapely.geometry import box
             from shapely.ops import unary_union
 
+            bboxes = [b for b in bboxes if b[2]-b[0]>10 or b[3]-b[1]>10]
             # 如果需要再严格一点，获得
             # 使用page.rect还是page.bound()?
             page_box = box(*page.rect)
@@ -706,54 +714,69 @@ class Parser:
             return len(chars)>0
         
         debugger: Final = self._debugger.bind(page=kpage.number)
-        page = doc[kpage.number - 1]
+        timer:Final=utils.Timer.start()
+        page:Final= doc[kpage.number - 1]
         # 如果需要获得xref，这里需要通过digest来比较，而不是简单的/Im1 do => /Im1 1 0  => xref=1
         # 因为底层的实现没有返回渲染图片指令的name，无法根据name再获得xref，就只能够通过digest比较了
-        images: list[Any] = page.get_image_info()  # type: ignore
-        if is_full_page([image["bbox"] for image in images]):
-            return True
-        figures: list[KPDFFigure] = []
-        m = Matrix.lt_to_lb(kpage.size)
-        small_images: list[Any] = []
-        transparent_images: list[Any] = []
-        no_chars_images:list[Any]=[]
-        for image in images:
-            # number = image["number"]
-            # xref = image.get('xref',0)
-            transparent = image["has-mask"]
-            #bbox = image["bbox"]
-            bbox=BBox.from_list(image["bbox"], matrix=m)
-            if bbox.width <= 2 or bbox.height <= 2:
-                small_images.append(image)
-            elif transparent:
-                # TODO 不去掉也可以的
-                # 如果是透明的图片，也不要了，因为可能是普通的图，也可能是背景，
-                # 当然也可能是ocr文字（概率比较低，不应该去掉）
-                # 如果是背景，应该去掉，否则会认为是ocr文字，使用ocr处理，虽然也没有错，但是没有必要
-                if has_chars(bbox):
-                    # 这个例子使用带虚线的透明背景，应该去掉，因为不需要使用ocr
-                    # local/cases/test/16-线由小图片组成-解析非常耗时.pdf 52页
-                    transparent_images.append(image)
-                    #但是，如果有些表格有图片的，这些图片就需要保留
+        with timer.watch('get_image_info'):
+            #如果是1万多个小图片，如：微软的word2007制作的pdf，虚线使用小图片，需要1-2秒
+            images: list[Any] = page.get_image_info()  # type: ignore
+
+        #有些页面使用多个小图片组成，可能几百个
+        #但是，在有些情况下，虚线等也是使用小图片，可能为几万个，计算就非常非常的慢了
+
+        
+        with timer.watch('figure_as_page'):
+            if is_full_page(page,[image["bbox"] for image in images]):
+                return True
+        with timer.watch('figure_as_line'):
+            figure_lines = _FigureConnector().connect_figures(kpage, images)
+            kpage.pdf_lines.extend(figure_lines)
+        
+        with timer.watch('figure'):
+            figures: list[KPDFFigure] = []
+            m = Matrix.lt_to_lb(kpage.size)
+            small_images: list[Any] = []
+            transparent_images: list[Any] = []
+            no_chars_images:list[Any]=[]
+            for image in images:
+                # number = image["number"]
+                # xref = image.get('xref',0)
+                transparent = image["has-mask"]
+                #bbox = image["bbox"]
+                raw_bbox = image['bbox']
+                if raw_bbox[2]-raw_bbox[0] <= 2 or raw_bbox[3]-raw_bbox[1] <= 2:
+                    small_images.append(image)
+                elif transparent:
+                    # TODO 不去掉也可以的
+                    # 如果是透明的图片，也不要了，因为可能是普通的图，也可能是背景，
+                    # 当然也可能是ocr文字（概率比较低，不应该去掉）
+                    # 如果是背景，应该去掉，否则会认为是ocr文字，使用ocr处理，虽然也没有错，但是没有必要
+                    bbox=BBox.from_list(image["bbox"], matrix=m)
+                    if has_chars(bbox):
+                        # 这个例子使用带虚线的透明背景，应该去掉，因为不需要使用ocr
+                        # local/cases/test/16-线由小图片组成-解析非常耗时.pdf 52页
+                        transparent_images.append(image)
+                        #但是，如果有些表格有图片的，这些图片就需要保留
+                    else:
+                        # 这个例子多数字符都是使用图片，就需要使用ocr
+                        # local/cases/test/文字都是小图片.pdf
+                        no_chars_images.append(image)
                 else:
-                    # 这个例子多数字符都是使用图片，就需要使用ocr
-                    # local/cases/test/文字都是小图片.pdf
-                    no_chars_images.append(image)
-            else:
-                # TODO 如果希望使用原始图片的，可以获得width/height，transform（用来计算是否左右旋转图片了，或者翻转了，或者直接就保留这个）
-                figure = KPDFFigure(
-                    kpage,
-                    BBox.from_list(image["bbox"], matrix=m).to_quad(),
-                    transparent=transparent,
+                    # TODO 如果希望使用原始图片的，可以获得width/height，transform（用来计算是否左右旋转图片了，或者翻转了，或者直接就保留这个）
+                    figure = KPDFFigure(
+                        kpage,
+                        BBox.from_list(image["bbox"], matrix=m).to_quad(),
+                        transparent=transparent,
+                    )
+                    figures.append(figure)
+            if len(small_images) > 0 or len(transparent_images) > 0:
+                self._logger.warning(
+                    "第%s页,小图片=%s,有文字透明图片=%s",
+                    kpage.number,
+                    len(small_images),
+                    len(transparent_images),
                 )
-                figures.append(figure)
-        if len(small_images) > 0 or len(transparent_images) > 0:
-            self._logger.warning(
-                "第%s页,小图片=%s,有文字透明图片=%s",
-                kpage.number,
-                len(small_images),
-                len(transparent_images),
-            )
         
         #保留pdf图片的目的，只是为了通过ocr补充需要，所以，如果可能为文字的，就保留
         kpage.pdf_figures.clear()
@@ -933,8 +956,9 @@ class Parser:
         line_paths = remove_underlines(line_paths)
         
         with timer.watch('merge'):
-            h_lines,v_lines = LineParser().parse(page,line_paths)
-            page.pdf_lines.clear()
+            h_lines,v_lines = _LineParser().parse(page,line_paths)
+            #可能已经存在了来自小图片组成的线
+            #page.pdf_lines.clear()
             page.pdf_lines.extend(h_lines)
             page.pdf_lines.extend(v_lines)
 
@@ -1456,7 +1480,7 @@ class _Parser2:
                     pass
 
 type _Rect = tuple[float, float, float, float]
-class LineParser:
+class _LineParser:
     """pdf的线可能是由很多个小矩形/小点等组成，这里合并为水平线和垂直线"""
     def __init__(
         self,
@@ -1672,7 +1696,7 @@ class LineParser:
         return [g for g in continuous_groups if is_valid(g)]
         # return continuous_groups
 
-class RectParser:
+class _RectParser:
     def __init__(self):
         super().__init__()
     
@@ -1685,3 +1709,112 @@ class RectParser:
         #|     |
         #--r5--
         pass
+
+
+type _Point = tuple[int, int]
+type _Segment = tuple[int, int, _FigureInfo]
+type _LineBBox = tuple[int, int, int, int]
+type _LineGroup = tuple[_LineBBox, list[_FigureInfo]]
+class _FigureConnector:
+    """
+    有些文件是使用很多小图片连接在一起画一条线，这些都是古老的pdf制作工具引起的了，新的pdf文件很少出现这种情况了。
+
+    """
+
+    _logger=logging.getLogger(f'{__module__}.{__qualname__}')
+    _min_line_length: Final = 5
+    _max_gap: Final = 2
+    _axis_tolerance: Final = 2
+
+
+    def __init__(self):
+        pass
+
+    def connect_figures(self, page: KPage, figures: list[_FigureInfo]) -> list[KLine]:
+        """
+        使用image来画线，把图片连接起来，作为一条线处理
+        """
+
+
+
+        def as_int(bbox: Sequence[float]) -> tuple[int, int, int, int]:
+            return (round(bbox[0]), round(bbox[1]), round(bbox[2]), round(bbox[3]))
+
+        def add(m: dict[int, list[_Segment]], key: int, point: _Point, figure: _FigureInfo) -> None:
+            line = m.get(key, None)
+            if line is None:
+                line = []
+                m[key] = line
+            line.append((min(point), max(point), figure))
+
+        def calc_lines(m: dict[int, list[_Segment]], is_h: bool) -> list[_LineGroup]:
+            lines: list[_LineGroup] = []
+            for k, segments in m.items():
+                sorted_segments = sorted(segments, key=lambda a: a[0])
+                current: list[_Segment] = []
+                start: int | None = None
+                end: int | None = None
+                for segment in sorted_segments:
+                    s0, s1, _ = segment
+                    if start is None or end is None:
+                        start, end = s0, s1
+                        current = [segment]
+                    elif s0 - end <= self._max_gap:
+                        end = max(end, s1)
+                        current.append(segment)
+                    else:
+                        if end - start >= self._min_line_length:
+                            bbox: _LineBBox = (start, k, end, k) if is_h else (k, start, k, end)
+                            lines.append((bbox, [seg[2] for seg in current]))
+                        start, end = s0, s1
+                        current = [segment]
+
+                if start is not None and end is not None and end - start >= self._min_line_length:
+                    bbox = (start, k, end, k) if is_h else (k, start, k, end)
+                    lines.append((bbox, [seg[2] for seg in current]))
+            return lines
+
+        # 如果需要更加严格的，可以要求连接使用的图片都相同，暂时这里就忽略了
+        old_total = len(figures)
+        h_map: dict[int, list[_Segment]] = {}
+        v_map: dict[int, list[_Segment]] = {}
+        for figure in figures:
+            bbox = cast(Sequence[float], figure["bbox"])
+            x0, y0, x1, y1 = as_int(bbox)
+            # 有些表有误差，不能够使用y0==y1,x0==x1
+            # 因为一个图可能为垂直线或者水平线，所以需要添加到2个map中
+            if abs(y0 - y1) <= self._axis_tolerance:
+                # 使用图片来显示水平线
+                y = min(y0, y1)
+                add(h_map, y, (x0, x1), figure)
+
+            if abs(x0 - x1) <= self._axis_tolerance:
+                # 垂直线
+                x = min(x0, x1)
+                add(v_map, x, (y0, y1), figure)
+        
+        h_lines = calc_lines(h_map, True)
+        v_lines = calc_lines(v_map, False)
+        # 这里作为线返回，还是作为一个图片返回，如：
+        # {bbox:[],image:'',repeat:true}
+        lines: list[KLine] = []
+        used_figures: set[int] = set()
+        m = page.to_lb()
+        for b, line_figures in h_lines + v_lines:
+            #从左上角转换为左下角
+            bbox = BBox.from_list(b, matrix=m)
+            line = KLine(page, bbox)
+            lines.append(line)
+            used_figures.update(id(figure) for figure in line_figures)
+
+        if used_figures:
+            figures[:] = [figure for figure in figures if id(figure) not in used_figures]
+        if lines:
+            self._logger.info(
+                "connect figures as line from=%s to=%s lines=%s",
+                old_total,
+                len(figures),
+                len(lines),
+            )
+       
+        return lines

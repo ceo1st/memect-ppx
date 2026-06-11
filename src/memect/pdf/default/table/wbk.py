@@ -23,13 +23,17 @@ from .ybk import YBKMode
 class _Cell:
     """目的是为了方便调整bbox，而且知道原对象"""
 
-    def __init__(self, source: Any):
+    def __init__(self, source: Any, *, generated: bool = False):
         super().__init__()
 
         self.bbox: BBox = source.bbox.large if hasattr(source, "bbox") else source
+        self.original_bbox: Final = self.bbox
+        """模型原始bbox，用于后续判断边界被吸附前的错位关系"""
         self.content_bbox:BBox|None=None
         """如果设置了，表示为单元格的内容bbox"""
         self.source: Final = source
+        self.generated: Final = generated
+        """表示这个cell是Builder补出来的空格，不是模型直接检测出来的格子"""
 
 
 
@@ -86,8 +90,46 @@ class Parser:
     def _parse_table(self, page: KPage, index: int, vobj: VObject, mode: WBKMode)->KTable:
         debugger = self._debugger.bind(page=page.number)
 
-        def use_ybk(ybk: KTable, wbk: KTable) -> bool:
-            if ybk.row_num >= wbk.row_num and ybk.col_num >= wbk.col_num:
+        def use_ybk(ybk: KTable, wbk: KTable,use_stripped:bool=False) -> bool:
+            if use_stripped:
+                row_num,col_num = wbk.get_stripped_size()
+            else:
+                row_num,col_num = wbk.row_num,wbk.col_num
+            
+            if ybk.row_num==row_num and ybk.col_num==col_num:
+                #TODO 即使结构一致，可能还是需要理解为有边框，特别是彩色表格，如：
+                #有边框识别如下：2*3，4个单元格
+                #xx  xx  xx   => 被识别为1列
+                #xx| xx| xx 
+
+                #无边框识别为如下：也是2*3，6个单元格
+                #xx|xx|xx
+                #xx|xx|xx
+
+                #TODO 再比较单元格数量？
+                if len(ybk.cells)>=len(wbk.cells):
+                    return True
+                
+                if col_num<=2:
+                    return True
+                #如果ybk列span多的，就信任无边框？
+                wbk_ok=0
+                ybk_ok=0
+                ok=0
+                for i in range(row_num):
+                    row1 = ybk.get_row(i)
+                    row2 = wbk.get_row(i)
+                    if len(row1)==len(row2):
+                        ok+=1
+                    elif len(row1)==1 and len(row2)==col_num:
+                        wbk_ok+=1
+                    elif len(row2)==1 and len(row1)==col_num:
+                        ybk_ok+=1
+                
+                if wbk_ok-ybk_ok>=2:
+                    return False
+            
+            if ybk.row_num >= row_num and ybk.col_num >= col_num:
                 return True
             # 如果结构不一致，使用哪一个呢？
             # ybk有两种可能：完整有边框，局部有边框
@@ -101,6 +143,7 @@ class Parser:
         wbk_table = self._parse_wbk(page, index, vobj,steps=steps)
         table = wbk_table
         beautify = True
+        ybk_table:KTable|None=None
         if mode == WBKMode.AUTO:
             ybk_table = self._parse_ybk(page, index, vobj)
             if ybk_table is not None:
@@ -119,6 +162,20 @@ class Parser:
         # 之所以在这里再填充对象，只是避免表格内的图片/公式等多次解析，不影响什么
         result = table.cache.pop("result", None)
         result = TableFiller().fill(table, result)
+
+        strict=True
+        if strict and ybk_table is not None and table is wbk_table and use_ybk(ybk_table,table,use_stripped=True):
+            #去掉前后空白行再比较，因为可能对象识别的bbox过大，把外部的文本包含了部分（如：一半）
+            #这个时候就可以再次切换回来使用有边框
+            self._logger.warning('第%s页，去掉空白行/列，从wbk切换回ybk,bbox=%s',table.page.number,table.bbox)
+            result=TableFiller().fill(ybk_table,result)
+            table=ybk_table
+            beautify=False
+        elif table is wbk_table:
+            #仅仅去掉前后空白行
+            table = table.strip()
+            
+            pass
 
         if beautify:
             self._beautify(table)
@@ -169,7 +226,7 @@ class Parser:
         cells = Builder().build(cells)
         self._adjust_items(cells)
         if cells:
-            bbox = bbox.union(BBox.join2(cells))
+            bbox = BBox.join2(cells)
         table = Builder().make_table(page,bbox,cells)
         table.vobject = vobj
         table.subtype = "wbk"
@@ -376,7 +433,13 @@ class Builder:
         self._snap_outlier_edges(cells, axis="y")
         self._snap_to_grid(cells, axis="x")
         self._snap_to_grid(cells, axis="y")
+        self._align_neighbor_y_edges(cells)
+        self._snap_to_grid(cells, axis="y")
         self._fill_missing(cells)
+        self._repair_staggered_generated_cells(cells, axis="y")
+        self._repair_staggered_generated_cells(cells, axis="x")
+        self._snap_to_grid(cells, axis="x")
+        self._snap_to_grid(cells, axis="y")
         return cells
 
     def make_table(
@@ -495,6 +558,114 @@ class Builder:
             self._adjust_edge(cell, lo_attr, new_lo)
             self._adjust_edge(cell, hi_attr, new_hi)
 
+    def _align_neighbor_y_edges(self, cells: list[_Cell]):
+        """对齐相邻列中应属于同一行的上下边界。"""
+        if len(cells) < 2:
+            return
+
+        tolerance = self._neighbor_y_tolerance(cells)
+        x_tolerance = self._edge_tolerance(cells, "x")
+        for attr in ("y0", "y1"):
+            groups: list[set[int]] = []
+            edge_to_group: dict[int, int] = {}
+
+            def add_pair(i: int, j: int):
+                gi = edge_to_group.get(i)
+                gj = edge_to_group.get(j)
+                if gi is None and gj is None:
+                    edge_to_group[i] = edge_to_group[j] = len(groups)
+                    groups.append({i, j})
+                elif gi is None and gj is not None:
+                    groups[gj].add(i)
+                    edge_to_group[i] = gj
+                elif gi is not None and gj is None:
+                    groups[gi].add(j)
+                    edge_to_group[j] = gi
+                elif gi is not None and gj is not None and gi != gj:
+                    keep, drop = (gi, gj) if gi < gj else (gj, gi)
+                    groups[keep].update(groups[drop])
+                    for edge_index in groups[drop]:
+                        edge_to_group[edge_index] = keep
+                    groups[drop].clear()
+
+            for i, c1 in enumerate(cells):
+                for j in range(i + 1, len(cells)):
+                    c2 = cells[j]
+                    if not self._x_neighbors(c1.bbox, c2.bbox, x_tolerance):
+                        continue
+                    if not self._same_row_band(c1.bbox, c2.bbox):
+                        continue
+                    if (
+                        abs(getattr(c1.bbox, attr) - getattr(c2.bbox, attr))
+                        > tolerance
+                    ):
+                        continue
+                    add_pair(i, j)
+
+            for group in groups:
+                if len(group) < 2:
+                    continue
+                target = self._best_y_edge_target(cells, group, attr, tolerance)
+                old_bboxes = [(cells[i], cells[i].bbox) for i in group]
+                for i in group:
+                    self._adjust_edge(cells[i], attr, target)
+                if any(cell.bbox.height <= 0 for cell, _ in old_bboxes):
+                    for cell, bbox in old_bboxes:
+                        cell.bbox = bbox
+
+    def _neighbor_y_tolerance(self, cells: list[_Cell]) -> float:
+        heights = sorted(cell.bbox.height for cell in cells if cell.bbox.height > 0)
+        if not heights:
+            return 4.0
+        q1 = heights[len(heights) // 4]
+        median = heights[len(heights) // 2]
+        return max(
+            self._edge_tolerance(cells, "y") * 2,
+            min(q1 * 0.35, median * 0.18, 16.0),
+        )
+
+    def _x_neighbors(self, b1: BBox, b2: BBox, tolerance: float) -> bool:
+        overlap = min(b1.x1, b2.x1) - max(b1.x0, b2.x0)
+        if overlap > min(b1.width, b2.width) * 0.15:
+            return True
+        gap = max(b1.x0 - b2.x1, b2.x0 - b1.x1, 0)
+        return gap <= tolerance
+
+    def _same_row_band(self, b1: BBox, b2: BBox) -> bool:
+        overlap = min(b1.y1, b2.y1) - max(b1.y0, b2.y0)
+        if overlap <= 0:
+            return False
+        return overlap / min(b1.height, b2.height) >= 0.65
+
+    def _best_y_edge_target(
+        self,
+        cells: list[_Cell],
+        group: set[int],
+        attr: str,
+        tolerance: float,
+    ) -> float:
+        candidates = [getattr(cells[i].bbox, attr) for i in group]
+
+        def score(value: float) -> tuple[int, float]:
+            supporters = [
+                cell
+                for cell in cells
+                if abs(getattr(cell.bbox, attr) - value) <= tolerance
+            ]
+            intervals = sorted((cell.bbox.x0, cell.bbox.x1) for cell in supporters)
+            coverage = 0.0
+            end: float | None = None
+            for x0, x1 in intervals:
+                if end is None or x0 > end:
+                    coverage += x1 - x0
+                    end = x1
+                elif x1 > end:
+                    coverage += x1 - end
+                    end = x1
+            return len(supporters), coverage
+
+        return max(candidates, key=score)
+
     def _fill_missing(self, cells: list[_Cell]):
         x_lines = self._axis_lines(cells, axis="x")
         y_lines = self._axis_lines(cells, axis="y")
@@ -553,9 +724,206 @@ class Builder:
                     continue
                 cells.append(
                     _Cell(
-                        BBox(x_lines[c], y_lines[r], x_lines[c_end], y_lines[r_end])
+                        BBox(x_lines[c], y_lines[r], x_lines[c_end], y_lines[r_end]),
+                        generated=True,
                     )
                 )
+
+    def _repair_staggered_generated_cells(
+        self, cells: list[_Cell], *, axis: Literal["x", "y"]
+    ):
+        """消除交叉跨行/跨列造成的伪补格。"""
+        changed = True
+        while changed:
+            changed = False
+            for gap in list(cells):
+                if (
+                    gap not in cells
+                    or not gap.generated
+                    or gap.content_bbox is not None
+                ):
+                    continue
+                plan = self._staggered_generated_cell_plan(cells, gap, axis=axis)
+                if plan is None:
+                    continue
+
+                cell, attr, target = plan
+                old_bbox = cell.bbox
+                self._adjust_edge(cell, attr, target)
+                if not self._bbox_contains(cell.bbox, gap.bbox, tolerance=0.5):
+                    cell.bbox = old_bbox
+                    continue
+                if self._generated_gap_has_conflict(cells, gap, cell):
+                    cell.bbox = old_bbox
+                    continue
+
+                cells.remove(gap)
+                changed = True
+                break
+
+    def _staggered_generated_cell_plan(
+        self,
+        cells: list[_Cell],
+        gap: _Cell,
+        *,
+        axis: Literal["x", "y"],
+    ) -> tuple[_Cell, str, float] | None:
+        lo_attr, hi_attr, cross_lo_attr, cross_hi_attr = self._stagger_axis_attrs(
+            axis
+        )
+        tolerance = self._edge_tolerance(cells, axis)
+        candidates: list[tuple[float, _Cell, str, float]] = []
+
+        for cell in cells:
+            if cell is gap or cell.generated:
+                continue
+            if (
+                self._axis_overlap_ratio(
+                    cell.bbox, gap.bbox, cross_lo_attr, cross_hi_attr
+                )
+                < 0.8
+            ):
+                continue
+
+            if (
+                abs(getattr(cell.bbox, lo_attr) - getattr(gap.bbox, hi_attr))
+                <= tolerance
+            ):
+                boundary = getattr(cell.original_bbox, lo_attr)
+                if self._has_stagger_cross_evidence(
+                    cells,
+                    gap,
+                    boundary,
+                    axis=axis,
+                    ignore=cell,
+                ):
+                    candidates.append(
+                        (
+                            self._stagger_merge_score(cell, gap, axis),
+                            cell,
+                            lo_attr,
+                            getattr(gap.bbox, lo_attr),
+                        )
+                    )
+            if (
+                abs(getattr(cell.bbox, hi_attr) - getattr(gap.bbox, lo_attr))
+                <= tolerance
+            ):
+                boundary = getattr(cell.original_bbox, hi_attr)
+                if self._has_stagger_cross_evidence(
+                    cells,
+                    gap,
+                    boundary,
+                    axis=axis,
+                    ignore=cell,
+                ):
+                    candidates.append(
+                        (
+                            self._stagger_merge_score(cell, gap, axis),
+                            cell,
+                            hi_attr,
+                            getattr(gap.bbox, hi_attr),
+                        )
+                    )
+
+        if not candidates:
+            return None
+        _, cell, attr, target = max(candidates, key=lambda item: item[0])
+        return cell, attr, target
+
+    def _has_stagger_cross_evidence(
+        self,
+        cells: list[_Cell],
+        gap: _Cell,
+        boundary: float,
+        *,
+        axis: Literal["x", "y"],
+        ignore: _Cell,
+    ) -> bool:
+        lo_attr, hi_attr, cross_lo_attr, cross_hi_attr = self._stagger_axis_attrs(axis)
+        tolerance = self._edge_tolerance(cells, axis)
+        cross_tolerance = self._edge_tolerance(cells, "x" if axis == "y" else "y")
+
+        for cell in cells:
+            if cell is gap or cell is ignore:
+                continue
+            if not (
+                getattr(cell.bbox, lo_attr) < boundary - tolerance
+                and getattr(cell.bbox, hi_attr) > boundary + tolerance
+            ):
+                continue
+            if (
+                self._axis_overlap_ratio(
+                    cell.bbox, gap.bbox, cross_lo_attr, cross_hi_attr
+                )
+                > 0.15
+            ):
+                continue
+            cross_gap = max(
+                getattr(gap.bbox, cross_lo_attr) - getattr(cell.bbox, cross_hi_attr),
+                getattr(cell.bbox, cross_lo_attr) - getattr(gap.bbox, cross_hi_attr),
+                0,
+            )
+            if cross_gap <= cross_tolerance:
+                return True
+        return False
+
+    def _stagger_merge_score(
+        self, cell: _Cell, gap: _Cell, axis: Literal["x", "y"]
+    ) -> float:
+        lo_attr, hi_attr, _, _ = self._stagger_axis_attrs(axis)
+        cell_size = getattr(cell.bbox, hi_attr) - getattr(cell.bbox, lo_attr)
+        gap_size = getattr(gap.bbox, hi_attr) - getattr(gap.bbox, lo_attr)
+        content_bonus = 1.0 if cell.content_bbox is not None else 0.0
+        return cell_size - gap_size + content_bonus
+
+    def _generated_gap_has_conflict(
+        self, cells: list[_Cell], gap: _Cell, merged_cell: _Cell
+    ) -> bool:
+        for cell in cells:
+            if cell is gap or cell is merged_cell:
+                continue
+            overlap = cell.bbox.intersect(gap.bbox)
+            if overlap is None:
+                continue
+            if overlap.area / min(cell.bbox.area, gap.bbox.area) > 0.1:
+                return True
+        return False
+
+    def _bbox_contains(
+        self, outer: BBox, inner: BBox, *, tolerance: float = 0.0
+    ) -> bool:
+        return (
+            outer.x0 <= inner.x0 + tolerance
+            and outer.y0 <= inner.y0 + tolerance
+            and outer.x1 >= inner.x1 - tolerance
+            and outer.y1 >= inner.y1 - tolerance
+        )
+
+    def _axis_overlap_ratio(
+        self,
+        b1: BBox,
+        b2: BBox,
+        lo_attr: str,
+        hi_attr: str,
+    ) -> float:
+        overlap = min(getattr(b1, hi_attr), getattr(b2, hi_attr)) - max(
+            getattr(b1, lo_attr), getattr(b2, lo_attr)
+        )
+        if overlap <= 0:
+            return 0.0
+        size = min(
+            getattr(b1, hi_attr) - getattr(b1, lo_attr),
+            getattr(b2, hi_attr) - getattr(b2, lo_attr),
+        )
+        return float(overlap / size) if size > 0 else 0.0
+
+    def _stagger_axis_attrs(
+        self, axis: Literal["x", "y"]
+    ) -> tuple[str, str, str, str]:
+        if axis == "y":
+            return "y0", "y1", "x0", "x1"
+        return "x0", "x1", "y0", "y1"
 
     def _align_missing(
         self,

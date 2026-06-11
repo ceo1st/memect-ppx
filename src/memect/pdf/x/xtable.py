@@ -9,7 +9,7 @@ from memect.base import strs, utils
 from memect.base.bbox import BBox
 from memect.base.debug import XDebugger
 from memect.base.pattern import XPattern
-from memect.pdf.base import KCell, KFigure, KLine, KRect, KTable
+from memect.pdf.base import KCell, KFigure, KLine, KRect, KTable, KText
 
 from .xbase import XItem, XObject, XTable, XText, XTree
 
@@ -690,6 +690,9 @@ class _Builder:
                     break
                 xtable = self._merge(xtable, tables[i])
                 i += 1
+        
+        #有时候，在全部合并后，再全局参考哪些还需合并的，因为仅仅看相邻的表格，可能不够
+        #需要多看几个表格
 
         # 记录由哪些表格组成，注意：不是working_tables(去掉看重复的表头)
         # xtable.tables=tuple(tables)
@@ -1368,7 +1371,8 @@ class _Builder:
                 # TODO 这个还是需要通过ai来完成
                 # 包括了矩形/线等
                 # cb2 = c2.body.content_bbox
-                cb2 = BBox.x_union(c2.body.texts())
+                #cb2 = BBox.x_union(c2.body.texts())
+                cb2 = BBox.join2([obj for obj in c2.objects if isinstance(obj,KText)],strict=False)
                 if cb2 is not None and cb2.y0 - c2.bbox.y0 >= c2.bbox.y1 - cb2.y1 + 10:
                     C(c2).merged = True
                     C(c2).reason = "c1和c2都跨行且有内容，但是c2剩余空间多"
@@ -1448,6 +1452,26 @@ class _Builder:
                     C(c2).reason = "c2上下有空间"
                 else:
                     pass
+        
+        def case12(i:int):
+            """根据空间判断"""
+            #[c1]
+            #----------------
+            #[c2]  =>
+            #[c3]  =>如果c3为垂直居中对齐，而c1占据全部空间，c2内容出现在顶部，且有大量空间声音，就可以认为c1和c2需要合并，否则c2应该居中
+            #      =>有时候某个单元格内容太多，导致一页只有一个单元格，无法判断，就需要考虑多页？
+            #[c4]
+            c1, c2 = align_cells[i]
+            s1 = C(c1).text2
+            s2 = C(c2).text2
+            cb1 = c1.content_bbox
+            cb2 = c2.content_bbox
+            #TODO 这里关键是需要先确定该列的内容是否居中书写
+            if s1 and s2 and cb1 and cb2 and cb1.expand(dx=6,dy=6).contains(c1.bbox) and c2.bbox.y1-cb2.y1<=5 and cb2.y0-c2.bbox.y0>=20:
+                #严格的判断最后一行也写满
+                C(c2).merged=True
+                C(c2).reason='该列的内容为居中书写，c2现在为顶部，合并'
+                pass
 
         def do_final():
             """对于没有办法知道是否合并的，最终都给一个决定"""
@@ -1630,6 +1654,8 @@ class _Builder:
                 case9,
                 case10,
                 case11,
+                #不够严谨，暂时先禁用
+                case12,
             ]
             # 先执行？如果有不对齐的，就已经可以推理多数了？
             # 也可以注释掉

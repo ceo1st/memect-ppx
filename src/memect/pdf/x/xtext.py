@@ -26,6 +26,7 @@ class XTextParser:
         super().__init__()
         self._sentence_pattern: Final = sentence_pattern
         self._title_pattern: Final = title_pattern
+        self._field_labels: Final = field_labels
 
     def parse(self, xtree: XTree):
         doc: Final = xtree.doc
@@ -193,11 +194,53 @@ class XTextParser:
     def _has_hard_reject(self, t1: KText, t2: KText) -> bool:
         if self._has_sentences(t1, t2):
             return True
+        if self._looks_like_field_line(t1):
+            return True
+        if self._looks_like_field_line(t2):
+            return True
         if self._looks_like_title_start(t1):
             return True
         if self._looks_like_title_start(t2):
             return True
         return False
+
+    def _looks_like_field_line(self, t: KText) -> bool:
+        text = t.text2.strip()
+        if not text or len(text) > 120 or len(t.lines) > 2:
+            return False
+
+        sep_index = self._find_field_sep(text)
+        if sep_index <= 0 or sep_index == len(text) - 1:
+            return False
+
+        label = text[:sep_index].strip()
+        value = text[sep_index + 1 :].strip()
+        if not label or not value:
+            return False
+
+        normalized_label = label.replace(" ", "").replace("\u3000", "")
+        if normalized_label in self._field_labels:
+            return True
+
+        if len(normalized_label) > 12:
+            return False
+        if any(ch in normalized_label for ch in "，。；、,.!?！？/\\"):
+            return False
+
+        return all(self._is_field_label_char(ch) for ch in normalized_label)
+
+    def _find_field_sep(self, text: str) -> int:
+        indexes = [i for i in (text.find("："), text.find(":")) if i >= 0]
+        return min(indexes) if indexes else -1
+
+    def _is_field_label_char(self, ch: str) -> bool:
+        return (
+            "\u4e00" <= ch <= "\u9fff"
+            or "A" <= ch <= "Z"
+            or "a" <= ch <= "z"
+            or "0" <= ch <= "9"
+            or ch in "（）()_-"
+        )
 
     def _looks_like_title_start(self, t: KText) -> bool:
         text = t.text2.strip()
@@ -373,12 +416,43 @@ sentence_pattern: Final = XPattern(
     ],
 )
 
+field_labels: Final = frozenset(
+    {
+        "名称",
+        "姓名",
+        "法定代表人",
+        "负责人",
+        "执行事务合伙人",
+        "注册地址",
+        "办公地址",
+        "住所",
+        "联系地址",
+        "通讯地址",
+        "联系人",
+        "联系电话",
+        "电话",
+        "传真",
+        "网址",
+        "网站",
+        "电子邮箱",
+        "邮箱",
+        "邮政编码",
+        "邮编",
+        "经办人",
+        "项目负责人",
+        "签字会计师",
+        "签字注册会计师",
+    }
+)
+
 title_pattern: Final = XPattern(
     "fullmatch",
     join=False,
     patterns=[
         r"[0-9]+([.．][0-9]+)*[.．、]\s*\S.{0,50}",
         r"[（(]?[0-9]+[）)]\s*\S.{0,50}",
+        r"[（(][一二三四五六七八九十]+[）)]\s*\S.{0,50}",
+        r"[一二三四五六七八九十]+[）)]\s*\S.{0,50}",
         r"[一二三四五六七八九十]+[、.．]\s*\S.{0,50}",
     ],
 )
