@@ -11,6 +11,7 @@ from memect.pdf.base import (
     Group,
     KBlock,
     KCell,
+    KChar,
     KDocument,
     KFigure,
     KObject,
@@ -719,6 +720,86 @@ class BlockParser:
         # json2doc/report/6.pdf 11页等
         tables: list[KTable] = []
 
+        def is_continue(i:int,j:int)->bool:
+            if i+1==j:
+                return True
+            elif j-i<=0:
+                return False
+            else:
+                chars = page.pdf_chars[i+1:j]
+                #print('chars=',[c.text for c in chars])
+                if all(c.text.isspace() for c in chars):
+                    return True
+                else:
+                    return False
+                
+        def get_below_object(part:Part):
+            for obj in sorted(objects,key=lambda obj:obj.bbox.y1,reverse=True):
+                if obj.bbox.y1<=min(part.bbox.y0+10,part.bbox.y1) and obj.bbox.over('x',part.bbox,d=20):
+                    #[-part-]|[-part-]
+                    #[-obj-] |[-obj-]
+                    return obj
+            return None
+        
+        def get_last_char(part:Part)->KChar|None:
+            block = part.make_block()
+            if block.objects and isinstance(block.objects[-1],KText):
+                text = block.objects[-1]
+                if text.objects and isinstance(text.objects[-1],KChar):
+                    return text.objects[-1]
+            return None
+        
+        def case1(line:list[Part])->bool:
+            #local/cases/json2doc/layout/footnote/3-1.pdf 第14页
+            #复杂的情况，存在分栏，情况就复杂了，可能为
+            #text1|text2
+            #part1|part2 =>为一个整体
+            #或者
+            #text1|text2
+            #part1|part2  => [text1,part1] -> [text2,part2]
+
+            #如何判断？
+            #text1|text3
+            #part1|part2
+            #text2|text4   => 如果有text2且text2后到text3，part1和part2就是分开的，对于这种，目前仅仅支持pdf解析
+            #              => 如果有text2且text2后到text4，part1和part2就是合并的
+
+            if len(line)!=2:
+                return False
+            
+            part1 = line[0]
+            part2 = line[1]
+            obj1 = get_below_object(part1)
+            obj2 = get_below_object(part2)
+            if obj1 is obj2:
+                #[part1]|[part2]  =>可以合并
+                #---obj1--------
+                return False
+            
+            if isinstance(obj1,KText) and isinstance(obj2,KText) and len(obj1.objects)>0 and len(obj2.objects)>0: 
+                #[obj1]|[obj2]
+                #简单的判断书写顺序
+                c1=obj1.objects[0]
+                c2=obj2.objects[0]
+
+                if isinstance(c1,KChar) and isinstance(c2,KChar):
+                    k1 = c1.index
+                    k2 = c2.index
+                    
+                    if k1!=-1 and k2!=-1:
+                        c3 = get_last_char(part1)
+                        c4 = get_last_char(part2)
+                        k3 = c3.index if c3 else -1
+                        k4 = c4.index if c4 else -1
+                        
+                        if k3!=-1 and k4!=-1 and is_continue(k3,k1) and is_continue(k4,k2):
+                            parse_lines([[part] for part in line])
+                            return True
+            
+            return False
+            
+            
+
         def parse_lines(lines: list[list[Part]]):
             # 如果是左右分栏，可以在这里就把part给切开了
             # 可以使用获得的初步分栏信息避免分栏的问题
@@ -740,7 +821,10 @@ class BlockParser:
                     # [source]
                     continue
 
-                # 如果是图表，单个或者多个，或者图+表格一边一个，都合并在一起，而不是分开
+                if case1(line):
+                    continue
+
+                    # 如果是图表，单个或者多个，或者图+表格一边一个，都合并在一起，而不是分开
                 if not bbox.intersect_any(objects, ratio=0.2):
                     # 如果当前line没有和其他对象相交
                     # 严格的还根据title，判断序号？
@@ -778,6 +862,8 @@ class BlockParser:
                     # [figure1][figure2]    => 对齐在一行
                     # [source1][source2]    => 对齐在一行
                     # 如果没有对齐，每个part都作为一个独立的表格
+
+
                     table = self._make_table(
                         page,
                         line,
@@ -1128,6 +1214,7 @@ class BlockParser:
             return True
         else:
             return False
+
 
 
 class _Parser1:

@@ -324,7 +324,7 @@ settings: dict[str, Any] = {
                     "max_task_size": 10,
                 },
                 # or layout_v3
-                "model": "layout_v2",
+                "model": "layout_v3",
             },
             "formula": {
                 "name": "formula",

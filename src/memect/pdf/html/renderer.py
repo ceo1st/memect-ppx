@@ -15,6 +15,7 @@ from memect.pdf.base import (
     KFormula,
     KObject,
     KPage,
+    KPageFootnote,
     KSpan,
     KTable,
     KText,
@@ -310,11 +311,12 @@ class HtmlRenderer:
         def render_header(tag:_Tag):
             if not page.header.objects:
                 return
-            
+            m = page.to_lt()
             bbox = page.header.bbox.transform(m)
             header = _Tag("div")
             header.classes.append("header")
             header.set_bbox(bbox,scale=scale)
+            header.set_data({'type':'header'})
             header.children.extend(
                 self._render_objects(page.header.objects, offset=(bbox[0], bbox[1]))
             )
@@ -324,11 +326,12 @@ class HtmlRenderer:
         def render_footer(tag:_Tag):
             if not page.footer.objects:
                 return
-            
+            m = page.to_lt()
             bbox = page.footer.bbox.transform(m)
             footer = _Tag("div")
             footer.classes.append("footer")
             footer.set_bbox(bbox,scale=scale)
+            footer.set_data({'type':'footer'})
             footer.children.extend(
                 self._render_objects(page.footer.objects, offset=(bbox[0], bbox[1]))
             )
@@ -336,7 +339,23 @@ class HtmlRenderer:
             tag.children.append(footer)
 
         def render_footnotes(tag:_Tag):
-            pass
+            if not page.footnotes:
+                return
+            for footnote in page.footnotes:
+                render_footnote(tag,footnote)
+
+        def render_footnote(tag:_Tag,footnote:KPageFootnote):
+            m = page.to_lt()
+            bbox = footnote.bbox.transform(m)
+            footnote_tag = _Tag("div")
+            footnote_tag.classes.append("footnote")
+            footnote_tag.set_bbox(bbox,scale=scale)
+            footnote_tag.set_data({'type':'footnote'})
+            footnote_tag.children.extend(
+                self._render_objects(footnote.objects, offset=(bbox[0], bbox[1]))
+            )
+            #这里的就不显示阅读顺序了
+            tag.children.append(footnote_tag)
 
         def render_read_order():
             m=page.to_lt()
@@ -693,6 +712,8 @@ class HtmlRenderer:
             tags.extend(self._render_object(obj, offset=offset))
         return tags
     
+
+
     def _set_xid(self,tag:_Tag,obj:KObject):
         if obj.doc.tree is not None:
             node = obj.doc.tree.root.lookup(obj)

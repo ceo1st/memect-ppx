@@ -716,6 +716,7 @@ REVERSED_WINGDINGS3_MAP={v:k for k,v in WINGDINGS3_MAP.items()}
 
 """
 class WingdingsRecognizer:
+    _SPACE_CODE: Final = 0xF020
     _SQUARE_CODES: Final = (
         0xF06E,
         0xF06F,
@@ -789,6 +790,22 @@ class WingdingsRecognizer:
         if len(patch.shape) == 3:
             patch = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
         return self._crop(patch)
+
+    def _is_blank_patch(self, patch: np.ndarray) -> bool:
+        """判断 patch 中是否没有可识别的墨迹。"""
+        if patch.size == 0:
+            return True
+        if len(patch.shape) == 3:
+            patch = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+
+        min_value = int(np.min(patch))
+        max_value = int(np.max(patch))
+        if max_value - min_value <= 8:
+            return True
+
+        background = float(np.percentile(patch, 95))
+        ink = patch < max(0.0, background - 24.0)
+        return float(np.count_nonzero(ink) / patch.size) < 0.002
 
     def _match_template(self, patch: np.ndarray) -> int | None:
         p = self._preprocess_patch(patch)
@@ -927,6 +944,9 @@ class WingdingsRecognizer:
         return black_ratio, hole_ratio, aspect, right_ratio, bottom_ratio
 
     def recognize_patch(self, patch: np.ndarray, method: str = "vote") -> int | None:
+        if self._is_blank_patch(patch):
+            return self._SPACE_CODE
+
         if method == "template":
             return self._match_template(patch)
         elif method == "phash":
